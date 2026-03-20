@@ -1,0 +1,8 @@
+.mu-full{display:flex;flex-direction:column;height:calc(100vh - 52px)}
+.mu-head{padding:13px 18px;background:var(--bg2);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+.mu-title{font-family:var(--font-display);font-size:14px;font-weight:800;color:var(--text);letter-spacing:-.02em}
+.mu-sub{font-size:10px;color:var(--text3);margin-top:2px;font-family:var(--font-mono)}
+.mu-tabs{background:var(--bg);border-bottom:1px solid var(--border);display:flex;padding:0 18px;flex-shrink:0}
+.mutab{font-size:11px;font-weight:700;padding:10px 12px;cursor:pointer;border-bottom:2px solid transparent;color:var(--text3);white-space:nowrap;font-family:var(--font-display);transition:all var(--transition)}
+.mutab.on{color:var(--text);border-bottom-color:var(--green)}
+.mu-body{flex:1;overflow-y:auto;padding:16px 18px}
