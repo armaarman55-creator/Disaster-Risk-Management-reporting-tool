@@ -84,11 +84,13 @@ async function openSitrep(id, allSitreps) {
   if (!s) return;
   _currentSitrep = s;
 
-  // Auto-populate from live data
-  const [shelters, closures] = await Promise.all([
-    supabase.from('shelters').select('name,ward_number,current_occupancy,capacity,status').eq('municipality_id', _muniId).neq('status', 'closed'),
-    supabase.from('road_closures').select('road_name,status').eq('municipality_id', _muniId).eq('status', 'closed')
+  // Load records for opt-in linking — nothing pre-linked
+  const [sheltersRes, closuresRes] = await Promise.all([
+    supabase.from('shelters').select('id,name,ward_number,current_occupancy,capacity,status').eq('municipality_id', _muniId),
+    supabase.from('road_closures').select('id,road_name,status,reason').eq('municipality_id', _muniId)
   ]);
+  const shelters = sheltersRes.data || [];
+  const closures = closuresRes.data || [];
 
   const num = String(s.sitrep_number).padStart(2, '0');
   const page = document.getElementById('page-sitrep');
@@ -114,7 +116,7 @@ async function openSitrep(id, allSitreps) {
         <div class="srtab" data-tab="public">Public summary</div>
       </div>
       <div class="sr-body" id="sr-body">
-        ${renderSitrepForm(s, shelters.data || [], closures.data || [])}
+        ${renderSitrepForm(s, shelters, closures)}
       </div>
       <div class="share-foot">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
@@ -147,7 +149,7 @@ async function openSitrep(id, allSitreps) {
       const body = document.getElementById('sr-body');
       if (!body) return;
       switch (_activeTab) {
-        case 'form':     body.innerHTML = renderSitrepForm(s, shelters.data || [], closures.data || []); bindFormEvents(s); break;
+        case 'form':     body.innerHTML = renderSitrepForm(s, shelters, closures); bindFormEvents(s); break;
         case 'timeline': body.innerHTML = renderTimeline(s); bindTimelineEvents(s); break;
         case 'actions':  body.innerHTML = renderActions(s); bindActionEvents(s); break;
         case 'public':   body.innerHTML = renderPublicSummary(s, shelters.data || [], closures.data || []); break;
@@ -196,8 +198,8 @@ function renderSitrepForm(s, shelters, closures) {
         <div class="stat-box"><div class="stat-lbl">Injuries</div><input type="number" class="fl-input" id="sr-injuries" value="${s.injuries || 0}" style="font-family:var(--font-display);font-size:22px;font-weight:800;letter-spacing:-.03em;border:none;background:transparent;padding:0;color:var(--red)"/><div class="stat-sub">reported</div></div>
         <div class="stat-box"><div class="stat-lbl">Fatalities</div><input type="number" class="fl-input" id="sr-fatalities" value="${s.fatalities || 0}" style="font-family:var(--font-display);font-size:22px;font-weight:800;letter-spacing:-.03em;border:none;background:transparent;padding:0;color:var(--red)"/><div class="stat-sub">confirmed</div></div>
         <div class="stat-box"><div class="stat-lbl">Properties</div><input type="number" class="fl-input" id="sr-properties" value="${s.properties_damaged || 0}" style="font-family:var(--font-display);font-size:22px;font-weight:800;letter-spacing:-.03em;border:none;background:transparent;padding:0;color:var(--amber)"/><div class="stat-sub">damaged</div></div>
-        <div class="stat-box"><div class="stat-lbl">Sheltered <span class="auto-tag">AUTO</span></div><div class="stat-num blue">${shelters.reduce((t,sh)=>t+(sh.current_occupancy||0),0)}</div><div class="stat-sub">persons</div></div>
-        <div class="stat-box"><div class="stat-lbl">Roads closed <span class="auto-tag">AUTO</span></div><div class="stat-num amber">${closures.length}</div><div class="stat-sub">closures</div></div>
+        <div class="stat-box"><div class="stat-lbl">Sheltered</div><input type="number" class="fl-input" id="sr-sheltered" value="${s.persons_sheltered||0}" style="font-size:22px;font-weight:800;color:var(--blue);border:none;background:transparent;padding:0"/><div class="stat-sub">persons (from linked shelters)</div></div>
+        <div class="stat-box"><div class="stat-lbl">Roads closed</div><input type="number" class="fl-input" id="sr-roads" value="${s.roads_closed||0}" style="font-size:22px;font-weight:800;color:var(--amber);border:none;background:transparent;padding:0"/><div class="stat-sub">from linked closures</div></div>
       </div>
       <div class="fl"><span class="fl-label">Situation narrative</span><textarea class="fl-textarea" id="sr-narrative" rows="4">${s.narrative || ''}</textarea></div>
     </div>
@@ -206,31 +208,40 @@ function renderSitrepForm(s, shelters, closures) {
         Linked records
         <span style="font-size:10px;color:var(--text3);font-weight:400;letter-spacing:0;text-transform:none">Select which records are part of this incident</span>
       </div>
-      <div style="font-size:12px;color:var(--text2);line-height:1.7;margin-bottom:10px">
-        Not all closures, shelters or relief operations are related to a declared incident.
-        Only link records that are directly part of this SitRep.
+      <div style="font-size:12px;color:var(--text2);line-height:1.7;margin-bottom:12px;background:var(--blue-dim);border:1px solid rgba(88,166,255,.2);border-radius:6px;padding:10px 12px">
+        Not every shelter or road closure is related to a declared incident.
+        Tick only the records that are directly part of this SitRep.
+        Linked records will auto-update the sheltered persons and roads closed counts above.
       </div>
       ${shelters.length ? `
-        <div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:6px">Shelters</div>
+        <div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px">Active shelters</div>
         ${shelters.map(sh=>`
-          <label style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid rgba(48,54,61,.3);cursor:pointer">
-            <input type="checkbox" class="sr-link-shelter" value="${sh.id}" style="width:14px;height:14px;cursor:pointer"/>
-            <div>
-              <div style="font-size:12px;font-weight:600;color:var(--text)">${sh.name} — Ward ${sh.ward_number}</div>
-              <div style="font-size:11px;color:var(--text3)">${sh.current_occupancy||0} / ${sh.capacity} persons · ${(sh.status||'').toUpperCase()}</div>
+          <label style="display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--border);border-radius:6px;margin-bottom:6px;cursor:pointer;transition:border-color .15s"
+            onmouseenter="this.style.borderColor='var(--border2)'" onmouseleave="this.style.borderColor='var(--border)'">
+            <input type="checkbox" class="sr-link-shelter"
+              value="${sh.id}"
+              data-occupancy="${sh.current_occupancy||0}"
+              style="width:15px;height:15px;cursor:pointer;accent-color:var(--green);flex-shrink:0"
+              onchange="srUpdateLinkedCounts()"/>
+            <div style="flex:1">
+              <div style="font-size:13px;font-weight:600;color:var(--text)">${sh.name}</div>
+              <div style="font-size:11px;color:var(--text3)">Ward ${sh.ward_number} · ${sh.current_occupancy||0}/${sh.capacity} persons · <span class="badge ${sh.status==='open'?'b-green':sh.status==='at-capacity'?'b-red':'b-amber'}">${(sh.status||'').toUpperCase()}</span></div>
             </div>
-          </label>`).join('')}` : ''}
+          </label>`).join('')}` : '<div style="font-size:12px;color:var(--text3);padding:6px 0">No active shelters found. Add shelters from the Shelters section first.</div>'}
       ${closures.length ? `
-        <div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:.06em;text-transform:uppercase;margin:10px 0 6px">Road closures</div>
+        <div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:.06em;text-transform:uppercase;margin:14px 0 8px">Active road closures</div>
         ${closures.map(rc=>`
-          <label style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid rgba(48,54,61,.3);cursor:pointer">
-            <input type="checkbox" class="sr-link-closure" value="${rc.id}" style="width:14px;height:14px;cursor:pointer"/>
-            <div>
-              <div style="font-size:12px;font-weight:600;color:var(--text)">${rc.road_name}</div>
-              <div style="font-size:11px;color:var(--text3)">${rc.reason||'No reason'} · ${(rc.status||'').toUpperCase()}</div>
+          <label style="display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--border);border-radius:6px;margin-bottom:6px;cursor:pointer;transition:border-color .15s"
+            onmouseenter="this.style.borderColor='var(--border2)'" onmouseleave="this.style.borderColor='var(--border)'">
+            <input type="checkbox" class="sr-link-closure"
+              value="${rc.id}"
+              style="width:15px;height:15px;cursor:pointer;accent-color:var(--red);flex-shrink:0"
+              onchange="srUpdateLinkedCounts()"/>
+            <div style="flex:1">
+              <div style="font-size:13px;font-weight:600;color:var(--text)">${rc.road_name}</div>
+              <div style="font-size:11px;color:var(--text3)">${rc.reason||'No reason specified'} · <span class="badge b-red">CLOSED</span></div>
             </div>
-          </label>`).join('')}` : ''}
-      ${!shelters.length && !closures.length ? '<div style="font-size:12px;color:var(--text3);padding:8px 0">No active shelters or road closures found. Add them first from the Shelters and Routes sections.</div>' : ''}
+          </label>`).join('')}` : '<div style="font-size:12px;color:var(--text3);padding:6px 0">No active road closures found.</div>'}
     </div>
     <div class="fsec">
       <div class="fsec-title">Authorisation</div>
@@ -292,8 +303,13 @@ function renderActions(s) {
 
 function renderPublicSummary(s, shelters, closures) {
   const num = String(s.sitrep_number).padStart(2,'0');
-  const shelterText = shelters.map(sh=>`${sh.name}: ${sh.current_occupancy||0}/${sh.capacity} (${(sh.status||'').toUpperCase()})`).join('\n');
-  const closureText = closures.map(c=>`${c.road_name}: ${(c.status||'').toUpperCase()}`).join('\n');
+  // Only include records that were ticked as linked to this SitRep
+  const linkedShelterIds = [...document.querySelectorAll('.sr-link-shelter:checked')].map(cb => cb.value);
+  const linkedClosureIds = [...document.querySelectorAll('.sr-link-closure:checked')].map(cb => cb.value);
+  const linkedShelters   = shelters.filter(sh => linkedShelterIds.includes(sh.id));
+  const linkedClosures   = closures.filter(rc => linkedClosureIds.includes(rc.id));
+  const shelterText = linkedShelters.map(sh=>`${sh.name}: ${sh.current_occupancy||0}/${sh.capacity} (${(sh.status||'').toUpperCase()})`).join('\n');
+  const closureText = linkedClosures.map(c=>`${c.road_name}: ${(c.status||'').toUpperCase()}`).join('\n');
   const text = `SITUATION UPDATE — SITREP-${num}
 ${_user?.municipalities?.name||''} · ${new Date().toLocaleString('en-ZA')}
 
@@ -322,7 +338,32 @@ Next SitRep due: ${s.next_due ? new Date(s.next_due).toLocaleString('en-ZA') : '
     </div>`;
 }
 
+window.srUpdateLinkedCounts = function() {
+  // Sum occupancy from ticked shelters
+  const shelterTotal = [...document.querySelectorAll('.sr-link-shelter:checked')]
+    .reduce((sum, cb) => sum + parseInt(cb.dataset.occupancy || 0), 0);
+  const closureTotal = document.querySelectorAll('.sr-link-closure:checked').length;
+
+  const shelteredEl = document.getElementById('sr-sheltered');
+  const roadsEl     = document.getElementById('sr-roads');
+  if (shelteredEl) shelteredEl.value = shelterTotal;
+  if (roadsEl)     roadsEl.value     = closureTotal;
+};
+
 function bindFormEvents(s) {
+  // Update linked record counts when checkboxes change
+  function updateLinkedCounts() {
+    const shelterCount  = document.querySelectorAll('.sr-link-shelter:checked').length;
+    const closureCount  = document.querySelectorAll('.sr-link-closure:checked').length;
+    const sc = document.getElementById('sr-shelters-count');
+    const cc = document.getElementById('sr-closures-count');
+    if (sc) sc.textContent = shelterCount;
+    if (cc) cc.textContent = closureCount;
+  }
+  document.querySelectorAll('.sr-link-shelter, .sr-link-closure').forEach(cb => {
+    cb.addEventListener('change', updateLinkedCounts);
+  });
+
   document.getElementById('sr-save-btn')?.addEventListener('click', async () => {
     const { error } = await supabase.from('sitreps').update({
       incident_name: document.getElementById('sr-name')?.value,
@@ -333,10 +374,14 @@ function bindFormEvents(s) {
       injuries: parseInt(document.getElementById('sr-injuries')?.value)||0,
       fatalities: parseInt(document.getElementById('sr-fatalities')?.value)||0,
       properties_damaged: parseInt(document.getElementById('sr-properties')?.value)||0,
-      narrative: document.getElementById('sr-narrative')?.value,
-      issued_by: document.getElementById('sr-authorised-by')?.value,
-      next_due: document.getElementById('sr-next-due')?.value,
-      updated_at: new Date().toISOString()
+      narrative:       document.getElementById('sr-narrative')?.value,
+      issued_by:       document.getElementById('sr-authorised-by')?.value,
+      next_due:        document.getElementById('sr-next-due')?.value,
+      persons_sheltered: parseInt(document.getElementById('sr-sheltered')?.value)||0,
+      roads_closed:    parseInt(document.getElementById('sr-roads')?.value)||0,
+      linked_shelters: [...document.querySelectorAll('.sr-link-shelter:checked')].map(cb=>cb.value),
+      linked_closures: [...document.querySelectorAll('.sr-link-closure:checked')].map(cb=>cb.value),
+      updated_at:      new Date().toISOString()
     }).eq('id', s.id);
     if (!error) showToast('SitRep saved');
   });
