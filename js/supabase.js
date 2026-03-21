@@ -1,33 +1,40 @@
 // js/supabase.js
-// Reads credentials from window.DRMSA_CONFIG, which is set in config.local.js
-// That file is gitignored — your key never touches version control.
+// Waits for window.__cfgReady (set in index.html) before reading credentials.
+// Production: config served by functions/config.js (Cloudflare Pages Function — never public)
+// Local dev:  config read from config.local.js (gitignored)
 
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
 
-const cfg = window.DRMSA_CONFIG || {};
+// Wait for the config promise injected by index.html
+if (window.__cfgReady) await window.__cfgReady;
 
-if (!cfg.SUPABASE_URL || !cfg.SUPABASE_ANON_KEY) {
+const cfg = window.DRMSA_CONFIG;
+
+if (!cfg?.SUPABASE_URL || !cfg?.SUPABASE_ANON_KEY) {
   document.body.innerHTML = `
-    <div style="font-family:monospace;padding:40px;max-width:540px;margin:60px auto;background:#161b22;border:1px solid #f85149;border-radius:10px;color:#e6edf3">
-      <div style="font-size:22px;font-weight:800;color:#f85149;margin-bottom:12px">⚠ Config missing</div>
-      <p style="color:#8b949e;line-height:1.7;margin-bottom:16px">DRMSA needs your Supabase credentials to start.</p>
-      <ol style="color:#8b949e;line-height:2;padding-left:20px">
-        <li>Copy <code style="color:#58a6ff">config.js</code> → <code style="color:#58a6ff">config.local.js</code></li>
-        <li>Open <code style="color:#58a6ff">config.local.js</code></li>
-        <li>Paste your Supabase <strong style="color:#e6edf3">Project URL</strong> and <strong style="color:#e6edf3">anon key</strong></li>
-        <li>Reload the page</li>
-      </ol>
-      <p style="margin-top:16px;font-size:12px;color:#6e7681">Get your keys: Supabase → your project → Settings → API</p>
+    <div style="font-family:system-ui,sans-serif;padding:40px;max-width:560px;margin:60px auto;background:#161b22;border:1px solid #f85149;border-radius:10px;color:#e6edf3">
+      <div style="font-size:20px;font-weight:800;color:#f85149;margin-bottom:12px">⚠ Config missing</div>
+      <p style="color:#8b949e;line-height:1.8;margin-bottom:12px">
+        <strong style="color:#e6edf3">Cloudflare Pages:</strong> Go to your project →
+        Settings → Environment variables and add:
+      </p>
+      <pre style="background:#0d1117;padding:12px;border-radius:6px;font-size:13px;color:#58a6ff;margin-bottom:16px">SUPABASE_URL        = https://your-project.supabase.co
+SUPABASE_ANON_KEY   = eyJhbGci...</pre>
+      <p style="color:#8b949e;line-height:1.8">
+        Then redeploy. The <code style="color:#3fb950">functions/config.js</code> file
+        reads these securely on the server — they are never exposed in your repo or static files.
+      </p>
+      <p style="color:#8b949e;line-height:1.8;margin-top:12px">
+        <strong style="color:#e6edf3">Local dev:</strong> Copy
+        <code style="color:#58a6ff">config.local.example.js</code> →
+        <code style="color:#58a6ff">config.local.js</code> and fill in your keys.
+      </p>
     </div>`;
-  throw new Error('DRMSA: config.local.js not found or empty. See config.js for instructions.');
+  throw new Error('DRMSA: Supabase credentials not found. Check environment variables.');
 }
 
 export const supabase = createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY, {
-  auth: {
-    persistSession: true,
-    autoRefreshToken: true,
-    detectSessionInUrl: true
-  }
+  auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
 });
 
 export async function getCurrentUser() {
