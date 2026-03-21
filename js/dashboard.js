@@ -1,5 +1,4 @@
 // js/dashboard.js
-const _V = '?v=3';
 import { supabase } from './supabase.js';
 import { navigateTo } from './app.js';
 
@@ -40,7 +39,7 @@ export async function initDashboard(user) {
           Your account is not linked to a municipality yet.<br>
           Go to <strong style="color:var(--text)">My Profile</strong> to select your municipality.
         </div>
-        <button class="btn btn-primary" onclick="import(`./app.js${_V}`).then(m=>m.navigateTo('profile'))">Go to My Profile →</button>
+        <button class="btn btn-primary" onclick="window._drmsaNavigate('profile')">Go to My Profile →</button>
       </div>`;
     return;
   }
@@ -300,8 +299,8 @@ function showWardInfo(wid, risk, wardNum) {
       <div class="wi-field"><span class="wi-key">Population</span><span class="wi-val">${wardData.population ? wardData.population.toLocaleString() : 'Not set'}</span></div>
     </div>
     <div class="wi-btns">
-      <button class="btn btn-sm" onclick="import(`./app.js${_V}`).then(m=>m.navigateTo('mitigations'))">Mitigations</button>
-      <button class="btn btn-sm" onclick="import(`./app.js${_V}`).then(m=>m.navigateTo('community'))">Shelters</button>
+      <button class="btn btn-sm" onclick="window._drmsaNavigate('mitigations')">Mitigations</button>
+      <button class="btn btn-sm" onclick="window._drmsaNavigate('community')">Shelters</button>
     </div>`;
 }
 
