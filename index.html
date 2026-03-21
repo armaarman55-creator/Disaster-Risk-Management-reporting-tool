@@ -196,73 +196,73 @@
 <div id="app-screen" style="height:100vh;display:flex;flex-direction:column">
 
   <!-- TOP NAV BAR -->
-  <header id="topnav" style="background:var(--bg2);border-bottom:1px solid var(--border);display:flex;align-items:center;height:52px;flex-shrink:0;z-index:50">
+  <header id="topnav" style="background:var(--bg2);border-bottom:1px solid var(--border);flex-shrink:0;z-index:50">
 
-    <!-- Brand -->
-    <div style="display:flex;align-items:center;gap:10px;padding:0 16px;border-right:1px solid var(--border);height:100%;min-width:180px;flex-shrink:0">
-      <svg viewBox="0 0 24 24" fill="none" width="22" height="22">
-        <polygon points="12,20 3,7 21,7" fill="#1a3a6b" stroke="white" stroke-width="1.2" stroke-linejoin="round"/>
-      </svg>
-      <div>
-        <div style="font-family:Inter,system-ui,sans-serif;font-size:14px;font-weight:800;color:var(--text);letter-spacing:-.02em;line-height:1">DRMSA</div>
-        <div id="user-muni-name" style="font-size:9px;color:var(--text3);letter-spacing:.06em;text-transform:uppercase;line-height:1;margin-top:2px">—</div>
+    <!-- Main bar -->
+    <div style="display:flex;align-items:center;height:52px;gap:4px">
+
+      <!-- Brand -->
+      <div style="display:flex;align-items:center;gap:10px;padding:0 14px;border-right:1px solid var(--border);height:100%;flex-shrink:0">
+        <svg viewBox="0 0 24 24" fill="none" width="22" height="22">
+          <polygon points="12,20 3,7 21,7" fill="#1a3a6b" stroke="white" stroke-width="1.2" stroke-linejoin="round"/>
+        </svg>
+        <div class="hide-mobile">
+          <div style="font-size:14px;font-weight:800;color:var(--text);letter-spacing:-.02em;line-height:1">DRMSA</div>
+          <div id="user-muni-name" style="font-size:9px;color:var(--text3);letter-spacing:.06em;text-transform:uppercase;line-height:1;margin-top:2px">—</div>
+        </div>
+        <div class="show-mobile" style="font-size:14px;font-weight:800;color:var(--text)">DRMSA</div>
+      </div>
+
+      <!-- Hamburger (mobile only) -->
+      <button id="mob-menu-btn" class="show-mobile btn btn-sm" style="margin-left:4px;padding:6px 8px;border:none">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" width="18" height="18"><line x1="2" y1="4" x2="14" y2="4"/><line x1="2" y1="8" x2="14" y2="8"/><line x1="2" y1="12" x2="14" y2="12"/></svg>
+      </button>
+
+      <!-- Desktop nav -->
+      <nav id="desktop-nav" class="hide-mobile" style="display:flex;align-items:center;flex:1;padding:0 4px;gap:1px;overflow-x:auto;height:52px">
+        <div class="tni on" data-page="dashboard"><svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1" y="1" width="5" height="5" rx="1"/><rect x="8" y="1" width="5" height="5" rx="1"/><rect x="1" y="8" width="5" height="5" rx="1"/><rect x="8" y="8" width="5" height="5" rx="1"/></svg>Dashboard</div>
+        <div class="tni" data-page="community"><svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="5" width="10" height="7" rx="1"/><path d="M5 5V4a2 2 0 014 0v1"/></svg>Shelters</div>
+        <div class="tni" data-page="routes"><svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 7h10M8 4l4 3-4 3"/></svg>Routes</div>
+        <div class="tni" data-page="sitrep"><svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M7 1L13 12H1L7 1Z"/><circle cx="7" cy="10" r="1" fill="currentColor" stroke="none"/><line x1="7" y1="5" x2="7" y2="8"/></svg>SitRep</div>
+        <div class="tni" data-page="mopup"><svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="2,8 5,11 12,4"/></svg>Mop-up</div>
+        <div class="tni" data-page="hvc"><svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="2" y="2" width="10" height="10" rx="1"/><path d="M4 5h6M4 8h4"/></svg>HVC Tool</div>
+        <div class="tni" data-page="stakeholders"><svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="5" cy="4" r="2"/><path d="M1 12c0-2.2 1.8-4 4-4s4 1.8 4 4"/><circle cx="11" cy="5" r="1.5"/></svg>Stakeholders</div>
+        <div class="tni" data-page="idp"><svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="2" y="2" width="10" height="10" rx="1"/><path d="M4 5h6M4 8h4M4 11h2"/></svg>IDP</div>
+        <div class="tni" data-page="admin" id="nav-admin" style="display:none"><svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="7" cy="4" r="2.5"/><path d="M1 13c0-3.3 2.7-6 6-6s6 2.7 6 6"/><line x1="10" y1="7" x2="13" y2="10"/></svg>Admin</div>
+      </nav>
+
+      <!-- Right controls -->
+      <div style="display:flex;align-items:center;gap:4px;padding:0 10px;flex-shrink:0;margin-left:auto">
+        <select id="assess-sel-top" class="hide-mobile" style="font-size:11px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:4px 8px;color:var(--text);cursor:pointer;outline:none;font-weight:600;max-width:130px"><option>No assessments</option></select>
+        <button class="btn btn-red btn-sm hide-mobile" id="btn-new-assessment" style="white-space:nowrap;font-size:11px">+ Assessment</button>
+        <button class="theme-btn" id="footer-theme-btn" style="border:none;padding:6px 8px">
+          <svg id="footer-theme-icon" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" width="14" height="14"><circle cx="7" cy="7" r="3"/><path d="M7 1v1M7 12v1M1 7h1M12 7h1M3 3l.7.7M10.3 10.3l.7.7M10.3 3.7L11 3M3 10.3l-.7.7"/></svg>
+          <span id="footer-theme-lbl" class="hide-mobile" style="font-size:11px">Light</span>
+        </button>
+        <div id="user-av" style="width:30px;height:30px;border-radius:50%;background:var(--bg4);border:1px solid var(--border2);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--text2);cursor:pointer;font-family:monospace;flex-shrink:0" title="My profile">—</div>
+        <button class="btn btn-sm hide-mobile" id="footer-signout" style="font-size:11px;padding:5px 8px">Out</button>
       </div>
     </div>
 
-    <!-- Nav items -->
-    <nav style="display:flex;align-items:center;flex:1;padding:0 8px;gap:2px;overflow-x:auto;height:100%">
-      <div class="tni on" data-page="dashboard">
-        <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1" y="1" width="5" height="5" rx="1"/><rect x="8" y="1" width="5" height="5" rx="1"/><rect x="1" y="8" width="5" height="5" rx="1"/><rect x="8" y="8" width="5" height="5" rx="1"/></svg>
-        Dashboard
+    <!-- Mobile drawer menu -->
+    <div id="mob-menu" style="display:none;border-top:1px solid var(--border);background:var(--bg2)">
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:1px;padding:8px">
+        <div class="mob-ni tni" data-page="dashboard">Dashboard</div>
+        <div class="mob-ni tni" data-page="community">Shelters</div>
+        <div class="mob-ni tni" data-page="routes">Routes</div>
+        <div class="mob-ni tni" data-page="sitrep">SitRep</div>
+        <div class="mob-ni tni" data-page="mopup">Mop-up</div>
+        <div class="mob-ni tni" data-page="hvc">HVC Tool</div>
+        <div class="mob-ni tni" data-page="stakeholders">Stakeholders</div>
+        <div class="mob-ni tni" data-page="idp">IDP Linkage</div>
+        <div class="mob-ni tni" data-page="admin" id="nav-admin-mob" style="display:none">Admin</div>
+        <div class="mob-ni tni" data-page="profile">My Profile</div>
       </div>
-      <div class="tni" data-page="community">
-        <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="5" width="10" height="7" rx="1"/><path d="M5 5V4a2 2 0 014 0v1"/></svg>
-        Shelters
+      <div style="padding:10px 12px;border-top:1px solid var(--border);display:flex;gap:8px;align-items:center">
+        <select id="assess-sel-mob" style="font-size:12px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:6px 8px;color:var(--text);flex:1"><option>No assessments</option></select>
+        <button class="btn btn-red btn-sm" id="btn-new-assessment-mob">+ Assessment</button>
+        <button class="btn btn-sm" id="footer-signout-mob" style="font-size:11px">Sign out</button>
       </div>
-      <div class="tni" data-page="routes">
-        <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 7h10M8 4l4 3-4 3"/></svg>
-        Routes
-      </div>
-      <div class="tni" data-page="sitrep">
-        <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M7 1L13 12H1L7 1Z"/><circle cx="7" cy="10" r="1" fill="currentColor" stroke="none"/><line x1="7" y1="5" x2="7" y2="8"/></svg>
-        SitRep
-      </div>
-      <div class="tni" data-page="mopup">
-        <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="2,8 5,11 12,4"/></svg>
-        Mop-up
-      </div>
-      <div class="tni" data-page="hvc">
-        <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="2" y="2" width="10" height="10" rx="1"/><path d="M4 5h6M4 8h4"/></svg>
-        HVC Tool
-      </div>
-      <div class="tni" data-page="stakeholders">
-        <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="5" cy="4" r="2"/><path d="M1 12c0-2.2 1.8-4 4-4s4 1.8 4 4"/><circle cx="11" cy="5" r="1.5"/></svg>
-        Stakeholders
-      </div>
-      <div class="tni" data-page="idp">
-        <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="2" y="2" width="10" height="10" rx="1"/><path d="M4 5h6M4 8h4M4 11h2"/></svg>
-        IDP Linkage
-      </div>
-      <div class="tni" data-page="admin" id="nav-admin" style="display:none">
-        <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="7" cy="4" r="2.5"/><path d="M1 13c0-3.3 2.7-6 6-6s6 2.7 6 6"/><line x1="10" y1="7" x2="13" y2="10"/></svg>
-        Disaster Admin
-      </div>
-    </nav>
-
-    <!-- Right side -->
-    <div style="display:flex;align-items:center;gap:4px;padding:0 12px;flex-shrink:0;border-left:1px solid var(--border)">
-      <select id="assess-sel-top" style="font-size:11px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:4px 8px;color:var(--text);cursor:pointer;outline:none;font-weight:600;max-width:140px"><option>No assessments</option></select>
-      <button class="btn btn-red btn-sm" id="btn-new-assessment" style="white-space:nowrap">+ Assessment</button>
-      <div style="width:1px;height:20px;background:var(--border);margin:0 4px"></div>
-      <!-- Theme -->
-      <button class="theme-btn" id="footer-theme-btn" style="border:none;padding:6px 8px">
-        <svg id="footer-theme-icon" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" width="14" height="14"><circle cx="7" cy="7" r="3"/><path d="M7 1v1M7 12v1M1 7h1M12 7h1M3 3l.7.7M10.3 10.3l.7.7M10.3 3.7L11 3M3 10.3l-.7.7"/></svg>
-        <span id="footer-theme-lbl" style="font-size:11px">Light</span>
-      </button>
-      <!-- User avatar → profile -->
-      <div id="user-av" style="width:30px;height:30px;border-radius:50%;background:var(--bg4);border:1px solid var(--border2);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--text2);cursor:pointer;font-family:monospace;flex-shrink:0" title="My profile">—</div>
-      <!-- Sign out -->
-      <button class="btn btn-sm" id="footer-signout" style="font-size:11px;padding:5px 8px">Out</button>
     </div>
   </header>
 
@@ -338,11 +338,42 @@
 
 <style>
 /* ── TOP NAV ITEMS ── */
-.tni{display:flex;align-items:center;gap:6px;padding:0 12px;height:52px;font-size:12px;font-weight:600;color:var(--text3);cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap;transition:all .15s;flex-shrink:0;font-family:Inter,system-ui,sans-serif}
+.tni{display:flex;align-items:center;gap:6px;padding:0 10px;height:52px;font-size:12px;font-weight:600;color:var(--text3);cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap;transition:all .15s;flex-shrink:0;font-family:Inter,system-ui,sans-serif}
 .tni:hover{color:var(--text);background:var(--bg3)}
 .tni.on{color:var(--text);border-bottom-color:var(--red)}
 .tni svg{width:14px;height:14px;flex-shrink:0;opacity:.7}
 .tni.on svg{opacity:1;stroke:var(--red)!important}
+
+/* ── MOBILE NAV ITEMS ── */
+.mob-ni{padding:10px 8px;font-size:12px;font-weight:600;text-align:center;border-radius:6px;height:auto;border-bottom:none;border:1px solid var(--border)}
+.mob-ni.on{background:var(--red-dim);color:var(--red);border-color:var(--red-mid)}
+
+/* ── RESPONSIVE ── */
+.hide-mobile{display:flex!important}
+.show-mobile{display:none!important}
+@media(max-width:768px){
+  .hide-mobile{display:none!important}
+  .show-mobile{display:flex!important}
+  .kpi-strip{grid-template-columns:repeat(2,1fr)!important}
+  .body-grid{grid-template-columns:1fr!important}
+  .frow{grid-template-columns:1fr!important}
+  .frow-3{grid-template-columns:1fr 1fr!important}
+  .rec-body{grid-template-columns:1fr!important}
+  .stat-grid-3{grid-template-columns:1fr 1fr!important}
+  .auth-screen{flex-direction:column}
+  .auth-left{width:100%!important;min-height:100vh}
+  .auth-right{display:none!important}
+  .share-channels{gap:4px}
+  .sch{font-size:10px;padding:5px 7px}
+  .hvc-tab{min-width:80px!important;font-size:10px!important}
+}
+@media(max-width:480px){
+  .kpi-strip{grid-template-columns:1fr 1fr!important}
+  .dash-main{padding:12px!important}
+  .pb{padding:10px 12px!important}
+  .ph{padding:10px 12px!important}
+  .stat-grid-3{grid-template-columns:1fr!important}
+}
 
 /* ── PAGES ── */
 #app-screen.visible{display:flex!important}
@@ -398,6 +429,32 @@ document.getElementById('switch-to-register')?.addEventListener('click', () => {
   document.getElementById('login-panel').classList.add('hidden');
   document.getElementById('register-panel').classList.remove('hidden');
   loadMunis();
+});
+
+// Hamburger menu toggle
+document.getElementById('mob-menu-btn')?.addEventListener('click', () => {
+  const menu = document.getElementById('mob-menu');
+  if (menu) menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+});
+
+// Close mobile menu when a nav item is clicked
+document.addEventListener('click', (e) => {
+  const ni = e.target.closest('.tni');
+  if (ni && document.getElementById('mob-menu')?.style.display !== 'none') {
+    document.getElementById('mob-menu').style.display = 'none';
+  }
+});
+
+// Mobile assessment button
+document.getElementById('btn-new-assessment-mob')?.addEventListener('click', () => {
+  document.getElementById('mob-menu').style.display = 'none';
+  window._drmsaNavigate?.('hvc');
+});
+
+// Mobile sign out
+document.getElementById('footer-signout-mob')?.addEventListener('click', async () => {
+  const { signOut } = await import('./js/auth.js');
+  signOut();
 });
 
 document.querySelectorAll('.auth-tab').forEach(tab => {
