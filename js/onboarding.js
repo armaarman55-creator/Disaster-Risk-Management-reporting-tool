@@ -10,7 +10,7 @@ const STEPS = [
 ];
 
 export async function initOnboarding(user) {
-  // Check if onboarding needed
+  // Skip onboarding if no municipality linked — dashboard handles this state
   const muniId = user?.municipality_id;
   if (!muniId) return false;
 
