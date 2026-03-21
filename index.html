@@ -10,14 +10,14 @@
 <link rel="manifest" href="manifest.json"/>
 <link rel="icon" href="icons/favicon.svg" type="image/svg+xml"/>
 <link rel="apple-touch-icon" href="icons/icon-192.svg"/>
-<link rel="stylesheet" href="css/main.css?v=3"/>
-<link rel="stylesheet" href="css/auth.css?v=3"/>
-<link rel="stylesheet" href="css/dashboard.css?v=3"/>
-<link rel="stylesheet" href="css/community.css?v=3"/>
-<link rel="stylesheet" href="css/sitrep.css?v=3"/>
-<link rel="stylesheet" href="css/mopup.css?v=3"/>
-<link rel="stylesheet" href="css/share.css?v=3"/>
-<link rel="stylesheet" href="css/onboarding.css?v=3"/>
+<link rel="stylesheet" href="css/main.css?v=4"/>
+<link rel="stylesheet" href="css/auth.css?v=4"/>
+<link rel="stylesheet" href="css/dashboard.css?v=4"/>
+<link rel="stylesheet" href="css/community.css?v=4"/>
+<link rel="stylesheet" href="css/sitrep.css?v=4"/>
+<link rel="stylesheet" href="css/mopup.css?v=4"/>
+<link rel="stylesheet" href="css/share.css?v=4"/>
+<link rel="stylesheet" href="css/onboarding.css?v=4"/>
 </head>
 <body>
 
@@ -193,142 +193,160 @@
 </div>
 
 <!-- APP SHELL -->
-<div id="app-screen" style="height:100vh;grid-template-columns:auto 1fr;grid-template-rows:52px 1fr auto">
+<div id="app-screen" style="height:100vh;display:flex;flex-direction:column">
 
-  <nav id="rail" style="grid-row:1/4;background:var(--bg2);border-right:1px solid var(--border);display:flex;flex-direction:column;width:52px;transition:width .18s cubic-bezier(.4,0,.2,1);overflow:hidden;z-index:50">
-    <div class="rail-brand" style="height:52px;display:flex;align-items:center;gap:11px;padding:0 14px;border-bottom:1px solid var(--border);cursor:pointer;flex-shrink:0;min-width:52px">
-      <div style="flex-shrink:0"><svg viewBox="0 0 24 24" fill="none" width="24" height="24"><polygon points="12,20 3,7 21,7" fill="#1a3a6b" stroke="white" stroke-width="1.2" stroke-linejoin="round"/></svg></div>
-      <div style="opacity:0;transition:opacity .1s;white-space:nowrap" class="rail-text-fade"><div style="font-family:var(--font-display);font-size:14px;font-weight:800;color:var(--text);letter-spacing:-.03em">DRMSA</div><div style="font-size:9px;color:var(--text3);letter-spacing:.08em;text-transform:uppercase;font-family:var(--font-mono)">Risk Platform</div></div>
-    </div>
-    <div style="padding:10px 14px;border-bottom:1px solid var(--border);overflow:hidden;min-width:52px">
-      <div style="font-size:9px;color:var(--text3);font-family:var(--font-mono);font-weight:700;text-transform:uppercase;letter-spacing:.08em;display:none" class="rail-text-fade" id="muni-lbl-r">Municipality</div>
-      <div id="user-muni-name" style="font-size:11px;color:var(--text);font-weight:600;display:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" class="rail-text-fade">—</div>
-      <div id="muni-wards-disp" style="font-size:10px;color:var(--blue);font-family:var(--font-mono);display:none" class="rail-text-fade">—</div>
-    </div>
-    <div style="flex:1;padding:8px;overflow:hidden" id="rail-nav">
-      <div class="ni on" data-page="dashboard"><div class="ni-ico"><svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1" y="1" width="5" height="5" rx="1"/><rect x="8" y="1" width="5" height="5" rx="1"/><rect x="1" y="8" width="5" height="5" rx="1"/><rect x="8" y="8" width="5" height="5" rx="1"/></svg></div><span class="ni-lbl">Dashboard</span></div>
-      <div class="ni" data-page="community"><div class="ni-ico"><svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="5" width="10" height="7" rx="1"/><path d="M5 5V4a2 2 0 014 0v1"/></svg></div><span class="ni-lbl">Shelters & relief</span></div>
-      <div class="ni" data-page="routes"><div class="ni-ico"><svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 7h10M8 4l4 3-4 3"/></svg></div><span class="ni-lbl">Routes</span></div>
-      <div class="ni" data-page="sitrep"><div class="ni-ico"><svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M7 1L13 12H1L7 1Z"/><circle cx="7" cy="10" r="1" fill="currentColor" stroke="none"/><line x1="7" y1="5" x2="7" y2="8"/></svg></div><span class="ni-lbl">SitRep</span></div>
-      <div class="ni" data-page="mopup"><div class="ni-ico"><svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="2,8 5,11 12,4"/></svg></div><span class="ni-lbl">Mop-up</span></div>
-      <div class="ni" data-page="hvc"><div class="ni-ico"><svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="2" y="2" width="10" height="10" rx="1"/><path d="M4 5h6M4 8h4"/></svg></div><span class="ni-lbl">HVC tool</span></div>
-      <div class="ni" data-page="stakeholders"><div class="ni-ico"><svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="5" cy="4" r="2"/><path d="M1 12c0-2.2 1.8-4 4-4s4 1.8 4 4"/></svg></div><span class="ni-lbl">Stakeholders</span></div>
-      <div class="ni" data-page="admin" id="nav-admin" style="display:none"><div class="ni-ico"><svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="7" cy="4" r="2.5"/><path d="M1 13c0-3.3 2.7-6 6-6s6 2.7 6 6"/><path d="M10 7l1.5 1.5L13 7"/></svg></div><span class="ni-lbl">Disaster Admin</span></div>
-      <div class="ni" data-page="profile"><div class="ni-ico"><svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="7" cy="4" r="2.5"/><path d="M1 13c0-3.3 2.7-6 6-6s6 2.7 6 6"/></svg></div><span class="ni-lbl">My profile</span></div>
-    </div>
-    <div style="border-top:1px solid var(--border);padding:8px">
-      <div id="rail-theme-btn" style="height:34px;display:flex;align-items:center;gap:10px;padding:0 9px;cursor:pointer;overflow:hidden;border-radius:6px;transition:background .18s">
-        <svg id="rail-theme-icon" viewBox="0 0 14 14" fill="none" stroke="var(--text3)" stroke-width="1.5" stroke-linecap="round" width="14" height="14" style="flex-shrink:0"><circle cx="7" cy="7" r="3"/><path d="M7 1v1M7 12v1M1 7h1M12 7h1M3 3l.7.7M10.3 10.3l.7.7M10.3 3.7L11 3M3 10.3l-.7.7"/></svg>
-        <span id="rail-theme-lbl" style="font-size:12px;color:var(--text2);opacity:0;transition:opacity .1s;white-space:nowrap" class="rail-text-fade">Light mode</span>
-      </div>
-      <div id="rail-expand-btn" style="height:34px;display:flex;align-items:center;justify-content:center;cursor:pointer;border-radius:6px;transition:background .18s">
-        <svg viewBox="0 0 10 10" fill="none" stroke="var(--text3)" stroke-width="2" stroke-linecap="round" width="12" height="12" id="rail-chevron"><polyline points="3,2 7,5 3,8"/></svg>
+  <!-- TOP NAV BAR -->
+  <header id="topnav" style="background:var(--bg2);border-bottom:1px solid var(--border);display:flex;align-items:center;height:52px;flex-shrink:0;z-index:50">
+
+    <!-- Brand -->
+    <div style="display:flex;align-items:center;gap:10px;padding:0 16px;border-right:1px solid var(--border);height:100%;min-width:180px;flex-shrink:0">
+      <svg viewBox="0 0 24 24" fill="none" width="22" height="22">
+        <polygon points="12,20 3,7 21,7" fill="#1a3a6b" stroke="white" stroke-width="1.2" stroke-linejoin="round"/>
+      </svg>
+      <div>
+        <div style="font-family:Inter,system-ui,sans-serif;font-size:14px;font-weight:800;color:var(--text);letter-spacing:-.02em;line-height:1">DRMSA</div>
+        <div id="user-muni-name" style="font-size:9px;color:var(--text3);letter-spacing:.06em;text-transform:uppercase;line-height:1;margin-top:2px">—</div>
       </div>
     </div>
-    <div style="padding:10px;border-top:1px solid var(--border)">
-      <div style="display:flex;align-items:center;gap:9px;overflow:hidden">
-        <div id="user-av" style="width:28px;height:28px;border-radius:50%;background:var(--bg3);border:1px solid var(--border2);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:var(--text2);flex-shrink:0;font-family:var(--font-mono);cursor:pointer">—</div>
-        <div style="overflow:hidden" class="rail-text-fade" id="user-info-wrap">
-          <div id="user-name-disp" style="font-size:12px;color:var(--text);font-weight:600;white-space:nowrap;font-family:var(--font-display)">—</div>
-          <div id="user-role-disp" style="font-size:10px;color:var(--text3);white-space:nowrap;font-family:var(--font-mono)">—</div>
+
+    <!-- Nav items -->
+    <nav style="display:flex;align-items:center;flex:1;padding:0 8px;gap:2px;overflow-x:auto;height:100%">
+      <div class="tni on" data-page="dashboard">
+        <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1" y="1" width="5" height="5" rx="1"/><rect x="8" y="1" width="5" height="5" rx="1"/><rect x="1" y="8" width="5" height="5" rx="1"/><rect x="8" y="8" width="5" height="5" rx="1"/></svg>
+        Dashboard
+      </div>
+      <div class="tni" data-page="community">
+        <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="5" width="10" height="7" rx="1"/><path d="M5 5V4a2 2 0 014 0v1"/></svg>
+        Shelters
+      </div>
+      <div class="tni" data-page="routes">
+        <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 7h10M8 4l4 3-4 3"/></svg>
+        Routes
+      </div>
+      <div class="tni" data-page="sitrep">
+        <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M7 1L13 12H1L7 1Z"/><circle cx="7" cy="10" r="1" fill="currentColor" stroke="none"/><line x1="7" y1="5" x2="7" y2="8"/></svg>
+        SitRep
+      </div>
+      <div class="tni" data-page="mopup">
+        <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="2,8 5,11 12,4"/></svg>
+        Mop-up
+      </div>
+      <div class="tni" data-page="hvc">
+        <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="2" y="2" width="10" height="10" rx="1"/><path d="M4 5h6M4 8h4"/></svg>
+        HVC Tool
+      </div>
+      <div class="tni" data-page="stakeholders">
+        <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="5" cy="4" r="2"/><path d="M1 12c0-2.2 1.8-4 4-4s4 1.8 4 4"/><circle cx="11" cy="5" r="1.5"/></svg>
+        Stakeholders
+      </div>
+      <div class="tni" data-page="admin" id="nav-admin" style="display:none">
+        <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="7" cy="4" r="2.5"/><path d="M1 13c0-3.3 2.7-6 6-6s6 2.7 6 6"/><line x1="10" y1="7" x2="13" y2="10"/></svg>
+        Disaster Admin
+      </div>
+    </nav>
+
+    <!-- Right side -->
+    <div style="display:flex;align-items:center;gap:4px;padding:0 12px;flex-shrink:0;border-left:1px solid var(--border)">
+      <select id="assess-sel-top" style="font-size:11px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:4px 8px;color:var(--text);cursor:pointer;outline:none;font-weight:600;max-width:140px"><option>No assessments</option></select>
+      <button class="btn btn-red btn-sm" id="btn-new-assessment" style="white-space:nowrap">+ Assessment</button>
+      <div style="width:1px;height:20px;background:var(--border);margin:0 4px"></div>
+      <!-- Theme -->
+      <button class="theme-btn" id="footer-theme-btn" style="border:none;padding:6px 8px">
+        <svg id="footer-theme-icon" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" width="14" height="14"><circle cx="7" cy="7" r="3"/><path d="M7 1v1M7 12v1M1 7h1M12 7h1M3 3l.7.7M10.3 10.3l.7.7M10.3 3.7L11 3M3 10.3l-.7.7"/></svg>
+        <span id="footer-theme-lbl" style="font-size:11px">Light</span>
+      </button>
+      <!-- User avatar → profile -->
+      <div id="user-av" style="width:30px;height:30px;border-radius:50%;background:var(--bg4);border:1px solid var(--border2);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--text2);cursor:pointer;font-family:monospace;flex-shrink:0" title="My profile">—</div>
+      <!-- Sign out -->
+      <button class="btn btn-sm" id="footer-signout" style="font-size:11px;padding:5px 8px">Out</button>
+    </div>
+  </header>
+
+  <!-- CONTENT AREA -->
+  <div id="content-area" style="flex:1;overflow:hidden;display:flex;flex-direction:column">
+
+    <!-- Breadcrumb bar -->
+    <div style="background:var(--bg);border-bottom:1px solid var(--border);padding:6px 22px;display:flex;align-items:center;gap:8px;flex-shrink:0">
+      <span style="font-size:11px;color:var(--text3)" id="tb-crumb">Dashboard</span>
+      <div style="flex:1"></div>
+      <span style="font-size:11px;color:var(--text3)" id="user-role-disp"></span>
+      <span style="font-size:11px;color:var(--text3)" id="user-name-disp"></span>
+    </div>
+
+    <div style="flex:1;overflow-y:auto;display:flex;flex-direction:column" id="pages-wrap">
+      <div class="page visible" id="page-dashboard"><div class="dash-main">
+        <div class="saws-bar" id="saws-alert-bar" style="display:none"><div class="saws-bar-line"></div><div class="saws-bar-body"><div class="saws-bar-title">Weather Warning</div><div class="saws-bar-desc" id="saws-bar-desc"></div></div><span class="saws-dismiss" id="saws-dismiss">Dismiss ×</span></div>
+        <div class="kpi-strip">
+          <div class="kpi red"><div class="kpi-eye">Extremely high risk</div><div class="kpi-num red" id="kpi-xh">—</div><div class="kpi-foot">hazard types</div></div>
+          <div class="kpi amber"><div class="kpi-eye">High risk</div><div class="kpi-num amber" id="kpi-h">—</div><div class="kpi-foot">hazard types</div></div>
+          <div class="kpi green"><div class="kpi-eye">IDP linked</div><div class="kpi-num green" id="kpi-idp">—</div><div class="kpi-foot">funded mitigations</div></div>
+          <div class="kpi blue"><div class="kpi-eye">Active shelters</div><div class="kpi-num blue" id="kpi-shelters">—</div><div class="kpi-foot">open now</div></div>
         </div>
-      </div>
-    </div>
-  </nav>
-
-  <div style="background:var(--bg2);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 22px;gap:14px;flex-shrink:0;height:52px">
-    <span style="font-family:var(--font-display);font-size:15px;font-weight:800;color:var(--text);letter-spacing:-.025em" id="tb-page-title">Dashboard</span>
-    <div style="width:1px;height:16px;background:var(--border2)"></div>
-    <span style="font-size:11px;color:var(--text3);font-family:var(--font-mono)" id="tb-crumb">—</span>
-    <div style="flex:1"></div>
-    <select id="assess-sel-top" style="font-size:12px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:5px 10px;color:var(--text);font-family:var(--font-display);cursor:pointer;outline:none;font-weight:600"><option>No assessments</option></select>
-    <button class="btn btn-red btn-sm" id="btn-new-assessment">+ New assessment</button>
-  </div>
-
-  <div id="content-area" style="overflow-y:auto;background:var(--bg);display:flex;flex-direction:column">
-    <div class="page visible" id="page-dashboard"><div class="dash-main">
-      <div class="saws-bar" id="saws-alert-bar"><div class="saws-bar-line"></div><div class="saws-bar-body"><div class="saws-bar-title">SAWS Weather Warnings</div><div class="saws-bar-desc" id="saws-bar-desc">Checking for active warnings…</div></div><span class="saws-dismiss" id="saws-dismiss">Dismiss ×</span></div>
-      <div class="kpi-strip">
-        <div class="kpi red"><div class="kpi-eye">Extremely high risk</div><div class="kpi-num red" id="kpi-xh">—</div><div class="kpi-foot">hazard types</div></div>
-        <div class="kpi amber"><div class="kpi-eye">High risk</div><div class="kpi-num amber" id="kpi-h">—</div><div class="kpi-foot">hazard types</div></div>
-        <div class="kpi green"><div class="kpi-eye">IDP linked</div><div class="kpi-num green" id="kpi-idp">—</div><div class="kpi-foot">funded mitigations</div></div>
-        <div class="kpi blue"><div class="kpi-eye">Active shelters</div><div class="kpi-num blue" id="kpi-shelters">—</div><div class="kpi-foot">open now</div></div>
-      </div>
-      <div class="body-grid">
-        <div style="display:flex;flex-direction:column;gap:16px">
-          <div class="panel"><div class="ph"><div><div class="ph-title">Hazard risk profile</div><div class="ph-sub" id="hz-sub">No assessment loaded</div></div></div><div class="pb"><table class="hz-tbl" id="hz-tbl"><tr><td colspan="5" style="padding:20px;text-align:center;color:var(--text3);font-size:12px">Complete an HVC assessment to see your hazard risk profile.</td></tr></table></div></div>
-          <div class="panel"><div class="ph"><div><div class="ph-title">IDP alignment</div><div class="ph-sub">Mitigation linkage status</div></div></div><div class="pb" style="text-align:center;color:var(--text3);font-size:12px;padding:20px">No mitigations added yet.</div></div>
-        </div>
-        <div class="right-col">
-          <div class="map-panel">
-            <div class="map-head"><div class="map-title">Ward hazard map</div></div>
-            <div class="map-canvas">
-              <div class="map-layer-ctrl"><div class="lyr on">Hazard</div><div class="lyr">Shelters</div></div>
-              <svg id="ward-svg" width="100%" height="200" viewBox="0 0 310 200" style="cursor:pointer"><g id="ward-g"><text x="155" y="100" text-anchor="middle" font-size="11" fill="var(--text3)" font-family="monospace">No ward data — complete HVC assessment</text></g></svg>
-              <div class="map-assess-bar"><span class="mab-lbl">Assessment</span><select class="mab-sel" id="assess-map"><option>None</option></select><span class="mab-code" id="mab-code">—</span></div>
-            </div>
-            <div class="map-legend"><div class="leg"><div class="leg-sq" style="background:#f85149"></div>Extr. high</div><div class="leg"><div class="leg-sq" style="background:#d29922"></div>High</div><div class="leg"><div class="leg-sq" style="background:#3fb950"></div>Tolerable</div><div class="leg"><div class="leg-sq" style="background:#58a6ff"></div>Low</div></div>
-            <div class="ward-info-panel"><div class="wi-empty" id="wi-empty">Select a ward to view its risk profile</div><div id="wi-content" class="hidden"></div></div>
+        <div class="body-grid">
+          <div style="display:flex;flex-direction:column;gap:16px">
+            <div class="panel"><div class="ph"><div><div class="ph-title">Hazard risk profile</div><div class="ph-sub" id="hz-sub">No assessment loaded</div></div></div><div class="pb"><table class="hz-tbl" id="hz-tbl"><tr><td colspan="5" style="padding:20px;text-align:center;color:var(--text3);font-size:12px">Complete an HVC assessment to see your hazard risk profile.</td></tr></table></div></div>
+            <div class="panel"><div class="ph"><div><div class="ph-title">IDP alignment</div><div class="ph-sub">Mitigation linkage status</div></div></div><div class="pb" style="text-align:center;color:var(--text3);font-size:12px;padding:20px">No mitigations added yet.</div></div>
           </div>
-          <div class="trend-panel"><div class="trend-ph"><span class="trend-ph-title">Seasonal trend</span><select class="trend-sel" id="trend-sel"><option>No data</option></select></div><div id="trend-body" style="padding:12px 16px;font-size:12px;color:var(--text3)">Complete an assessment to see trends.</div></div>
+          <div class="right-col">
+            <div class="map-panel">
+              <div class="map-head"><div class="map-title">Ward hazard map</div></div>
+              <div class="map-canvas">
+                <div class="map-layer-ctrl"><div class="lyr on">Hazard</div><div class="lyr">Shelters</div></div>
+                <svg id="ward-svg" width="100%" height="200" viewBox="0 0 310 200" style="cursor:pointer"><g id="ward-g"><text x="155" y="100" text-anchor="middle" font-size="11" fill="var(--text3)" font-family="monospace">No ward data</text></g></svg>
+                <div class="map-assess-bar"><span class="mab-lbl">Assessment</span><select class="mab-sel" id="assess-map"><option>None</option></select><span class="mab-code" id="mab-code">—</span></div>
+              </div>
+              <div class="map-legend"><div class="leg"><div class="leg-sq" style="background:#f85149"></div>Extr. high</div><div class="leg"><div class="leg-sq" style="background:#d29922"></div>High</div><div class="leg"><div class="leg-sq" style="background:#3fb950"></div>Tolerable</div><div class="leg"><div class="leg-sq" style="background:#58a6ff"></div>Low</div></div>
+              <div class="ward-info-panel"><div class="wi-empty" id="wi-empty">Select a ward to view its risk profile</div><div id="wi-content" class="hidden"></div></div>
+            </div>
+            <div class="trend-panel"><div class="trend-ph"><span class="trend-ph-title">Seasonal trend</span><select class="trend-sel" id="trend-sel"><option>No data</option></select></div><div id="trend-body" style="padding:12px 16px;font-size:12px;color:var(--text3)">Complete an assessment to see trends.</div></div>
+          </div>
         </div>
-      </div>
-    </div></div>
-    <div class="page" id="page-community"><div class="page-tabs"><div class="ptab on" data-tab="shelters">Shelters</div><div class="ptab" data-tab="relief-ops">Relief operations</div><div class="ptab" data-tab="saws">SAWS warnings</div></div><div class="page-body" id="community-body"></div></div>
-    <div class="page" id="page-routes"><div class="page-body" id="routes-body"></div></div>
-    <div class="page" id="page-sitrep"></div>
-    <div class="page" id="page-mopup"></div>
-    <div class="page" id="page-hvc"></div>
-    <div class="page" id="page-stakeholders"><div class="page-body" id="stakeholders-body"></div></div>
-    <div class="page" id="page-risk-map"><div style="padding:40px;text-align:center;color:var(--text3);font-size:12px;font-family:var(--font-mono)">Risk map — full ward boundary view (MDB ArcGIS integration)</div></div>
-    <div class="page" id="page-history"><div style="padding:40px;text-align:center;color:var(--text3);font-size:12px;font-family:var(--font-mono)">Assessment history</div></div>
-    <div class="page" id="page-mitigations"><div style="padding:40px;text-align:center;color:var(--text3);font-size:12px;font-family:var(--font-mono)">Mitigation library</div></div>
-    <div class="page" id="page-idp"><div style="padding:40px;text-align:center;color:var(--text3);font-size:12px;font-family:var(--font-mono)">IDP linkage</div></div>
-    <div class="page" id="page-reports"><div style="padding:40px;text-align:center;color:var(--text3);font-size:12px;font-family:var(--font-mono)">Reports & export centre</div></div>
-    <div class="page" id="page-admin"></div>
-    <div class="page" id="page-profile"></div>
+      </div></div>
+      <div class="page" id="page-community"><div class="page-tabs"><div class="ptab on" data-tab="shelters">Shelters</div><div class="ptab" data-tab="relief-ops">Relief operations</div><div class="ptab" data-tab="saws">SAWS warnings</div></div><div class="page-body" id="community-body"></div></div>
+      <div class="page" id="page-routes"><div class="page-body" id="routes-body"></div></div>
+      <div class="page" id="page-sitrep"></div>
+      <div class="page" id="page-mopup"></div>
+      <div class="page" id="page-hvc"></div>
+      <div class="page" id="page-stakeholders"><div class="page-body" id="stakeholders-body"></div></div>
+      <div class="page" id="page-admin"></div>
+      <div class="page" id="page-profile"></div>
+      <div class="page" id="page-risk-map"><div style="padding:40px;text-align:center;color:var(--text3);font-size:12px">Risk map — full ward boundary view</div></div>
+      <div class="page" id="page-history"><div style="padding:40px;text-align:center;color:var(--text3);font-size:12px">Assessment history</div></div>
+      <div class="page" id="page-mitigations"><div style="padding:40px;text-align:center;color:var(--text3);font-size:12px">Mitigation library</div></div>
+      <div class="page" id="page-idp"><div style="padding:40px;text-align:center;color:var(--text3);font-size:12px">IDP linkage</div></div>
+      <div class="page" id="page-reports"><div style="padding:40px;text-align:center;color:var(--text3);font-size:12px">Reports & export centre</div></div>
+    </div>
   </div>
 
-  <footer class="app-footer" style="grid-column:2">
+  <!-- FOOTER -->
+  <footer class="app-footer">
     <div style="display:flex;align-items:center;gap:10px">
       <span>Created by <strong style="color:var(--text2)">Diswayne Maarman</strong></span>
       <div class="footer-sep"></div>
-      <span>DRMSA Disaster Risk Management Platform</span>
-      <div class="footer-sep"></div>
       <span class="footer-os">OPEN SOURCE</span>
-      <span style="font-size:10px;color:var(--text3);font-family:var(--font-mono)">Apache 2.0</span>
-      <div class="footer-sep"></div>
-      <span style="font-size:10px;color:var(--text3)">DRMSA is an open-source disaster risk management tool intended for use by municipal disaster management centres, district municipalities, and registered NGOs. Information published through this platform is managed by authorised officials and is for awareness and informational purposes only.</span>
+      <span style="font-size:10px;color:var(--text3)">Apache 2.0</span>
     </div>
-    <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
-      <button class="theme-btn" id="footer-theme-btn">
-        <svg id="footer-theme-icon" viewBox="0 0 14 14" fill="none" stroke-width="1.5" stroke-linecap="round" width="13" height="13"><circle cx="7" cy="7" r="3"/><path d="M7 1v1M7 12v1M1 7h1M12 7h1M3 3l.7.7M10.3 10.3l.7.7M10.3 3.7L11 3M3 10.3l-.7.7"/></svg>
-        <span id="footer-theme-lbl">Light mode</span>
-      </button>
-      <button class="theme-btn" id="footer-signout">Sign out</button>
+    <div style="display:flex;align-items:center;gap:8px">
+      <span style="font-size:11px;color:var(--text3)" id="muni-wards-disp"></span>
     </div>
   </footer>
 </div>
 
 <style>
-.ni{height:36px;border-radius:6px;display:flex;align-items:center;gap:10px;padding:0 9px;cursor:pointer;overflow:hidden;white-space:nowrap;margin-bottom:1px;transition:background .18s}
-.ni:hover{background:var(--bg3)}
-.ni.on{background:var(--red-dim)}
-.ni-ico{width:20px;height:20px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
-.ni-ico svg{width:14px;height:14px;stroke:var(--text3)}
-.ni.on .ni-ico svg{stroke:var(--red)}
-.ni-lbl{font-size:12px;color:var(--text2);opacity:0;transition:opacity .1s;pointer-events:none;font-weight:500}
-.ni.on .ni-lbl{color:var(--text);font-weight:600}
-#rail.open{width:220px!important}
-#rail.open .rail-text-fade{opacity:1!important}
-#rail.open .ni-lbl{opacity:1!important;pointer-events:auto!important;width:auto!important}
-#rail.open .ni{overflow:visible!important}
-#rail.open #muni-lbl-r,#rail.open #user-muni-name,#rail.open #muni-wards-disp{display:block!important}
-#rail.open #user-info-wrap{opacity:1!important}
-#app-screen.visible{display:grid}
-.page{display:none;flex:1;flex-direction:column}
+/* ── TOP NAV ITEMS ── */
+.tni{display:flex;align-items:center;gap:6px;padding:0 12px;height:52px;font-size:12px;font-weight:600;color:var(--text3);cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap;transition:all .15s;flex-shrink:0;font-family:Inter,system-ui,sans-serif}
+.tni:hover{color:var(--text);background:var(--bg3)}
+.tni.on{color:var(--text);border-bottom-color:var(--red)}
+.tni svg{width:14px;height:14px;flex-shrink:0;opacity:.7}
+.tni.on svg{opacity:1;stroke:var(--red)!important}
+
+/* ── PAGES ── */
+#app-screen.visible{display:flex!important}
+.page{display:none;flex:1;flex-direction:column;min-height:0}
 .page.visible{display:flex}
-.rail-brand{height:52px;display:flex;align-items:center;gap:11px;padding:0 14px;border-bottom:1px solid var(--border);cursor:pointer;flex-shrink:0;min-width:52px}
+
+/* ── KEEP LEGACY CLASSES WORKING ── */
+.ni{display:none}
 </style>
 
 <!-- Config: Cloudflare Pages Function in production, config.local.js for local dev.
