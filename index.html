@@ -10,14 +10,14 @@
 <link rel="manifest" href="manifest.json"/>
 <link rel="icon" href="icons/favicon.svg" type="image/svg+xml"/>
 <link rel="apple-touch-icon" href="icons/icon-192.svg"/>
-<link rel="stylesheet" href="css/main.css?v=2"/>
-<link rel="stylesheet" href="css/auth.css?v=2"/>
-<link rel="stylesheet" href="css/dashboard.css?v=2"/>
-<link rel="stylesheet" href="css/community.css?v=2"/>
-<link rel="stylesheet" href="css/sitrep.css?v=2"/>
-<link rel="stylesheet" href="css/mopup.css?v=2"/>
-<link rel="stylesheet" href="css/share.css?v=2"/>
-<link rel="stylesheet" href="css/onboarding.css?v=2"/>
+<link rel="stylesheet" href="css/main.css?v=3"/>
+<link rel="stylesheet" href="css/auth.css?v=3"/>
+<link rel="stylesheet" href="css/dashboard.css?v=3"/>
+<link rel="stylesheet" href="css/community.css?v=3"/>
+<link rel="stylesheet" href="css/sitrep.css?v=3"/>
+<link rel="stylesheet" href="css/mopup.css?v=3"/>
+<link rel="stylesheet" href="css/share.css?v=3"/>
+<link rel="stylesheet" href="css/onboarding.css?v=3"/>
 </head>
 <body>
 
@@ -319,10 +319,12 @@
 .ni.on .ni-ico svg{stroke:var(--red)}
 .ni-lbl{font-size:12px;color:var(--text2);opacity:0;transition:opacity .1s;pointer-events:none;font-weight:500}
 .ni.on .ni-lbl{color:var(--text);font-weight:600}
-#rail.open{width:220px}
+#rail.open{width:220px!important}
 #rail.open .rail-text-fade{opacity:1!important}
-#rail.open .ni-lbl{opacity:1}
+#rail.open .ni-lbl{opacity:1!important;pointer-events:auto!important;width:auto!important}
+#rail.open .ni{overflow:visible!important}
 #rail.open #muni-lbl-r,#rail.open #user-muni-name,#rail.open #muni-wards-disp{display:block!important}
+#rail.open #user-info-wrap{opacity:1!important}
 #app-screen.visible{display:grid}
 .page{display:none;flex:1;flex-direction:column}
 .page.visible{display:flex}
