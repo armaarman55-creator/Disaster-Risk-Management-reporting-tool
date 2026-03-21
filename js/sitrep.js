@@ -202,8 +202,35 @@ function renderSitrepForm(s, shelters, closures) {
       <div class="fl"><span class="fl-label">Situation narrative</span><textarea class="fl-textarea" id="sr-narrative" rows="4">${s.narrative || ''}</textarea></div>
     </div>
     <div class="fsec">
-      <div class="fsec-title">Shelter & relief <span class="auto-tag">AUTO-POPULATED</span></div>
-      ${shelters.length ? shelters.map(sh=>`<div class="auto-row"><div class="ar-label">${sh.name} — Ward ${sh.ward_number}</div><div class="ar-value">${sh.current_occupancy||0} / ${sh.capacity} persons · ${(sh.status||'').toUpperCase()}</div></div>`).join('') : '<div style="font-size:12px;color:var(--text3);padding:8px">No active shelters found.</div>'}
+      <div class="fsec-title">
+        Linked records
+        <span style="font-size:10px;color:var(--text3);font-weight:400;letter-spacing:0;text-transform:none">Select which records are part of this incident</span>
+      </div>
+      <div style="font-size:12px;color:var(--text2);line-height:1.7;margin-bottom:10px">
+        Not all closures, shelters or relief operations are related to a declared incident.
+        Only link records that are directly part of this SitRep.
+      </div>
+      ${shelters.length ? `
+        <div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:6px">Shelters</div>
+        ${shelters.map(sh=>`
+          <label style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid rgba(48,54,61,.3);cursor:pointer">
+            <input type="checkbox" class="sr-link-shelter" value="${sh.id}" style="width:14px;height:14px;cursor:pointer"/>
+            <div>
+              <div style="font-size:12px;font-weight:600;color:var(--text)">${sh.name} — Ward ${sh.ward_number}</div>
+              <div style="font-size:11px;color:var(--text3)">${sh.current_occupancy||0} / ${sh.capacity} persons · ${(sh.status||'').toUpperCase()}</div>
+            </div>
+          </label>`).join('')}` : ''}
+      ${closures.length ? `
+        <div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:.06em;text-transform:uppercase;margin:10px 0 6px">Road closures</div>
+        ${closures.map(rc=>`
+          <label style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid rgba(48,54,61,.3);cursor:pointer">
+            <input type="checkbox" class="sr-link-closure" value="${rc.id}" style="width:14px;height:14px;cursor:pointer"/>
+            <div>
+              <div style="font-size:12px;font-weight:600;color:var(--text)">${rc.road_name}</div>
+              <div style="font-size:11px;color:var(--text3)">${rc.reason||'No reason'} · ${(rc.status||'').toUpperCase()}</div>
+            </div>
+          </label>`).join('')}` : ''}
+      ${!shelters.length && !closures.length ? '<div style="font-size:12px;color:var(--text3);padding:8px 0">No active shelters or road closures found. Add them first from the Shelters and Routes sections.</div>' : ''}
     </div>
     <div class="fsec">
       <div class="fsec-title">Authorisation</div>
