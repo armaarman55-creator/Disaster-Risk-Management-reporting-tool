@@ -22,13 +22,39 @@ let _muniId = null;
 export async function initDashboard(user) {
   _muniId = user?.municipality_id;
   window._drmsaUser = user;
-  await loadAssessmentData();
-  renderKPIs();
-  renderHazardTable();
-  renderWardMap();
-  renderTrend(0);
-  renderIDPSummary();
-  initDashboardEvents();
+
+  // If no municipality set, show a helpful empty state instead of errors
+  if (!_muniId) {
+    const dash = document.getElementById('page-dashboard');
+    const kpiStrip = dash?.querySelector('.kpi-strip');
+    const bodyGrid = dash?.querySelector('.body-grid');
+    const sawsBar  = document.getElementById('saws-alert-bar');
+    if (sawsBar) sawsBar.style.display = 'none';
+    if (kpiStrip) kpiStrip.style.opacity = '0.3';
+    if (bodyGrid) bodyGrid.innerHTML = `
+      <div style="grid-column:1/-1;text-align:center;padding:60px 20px">
+        <div style="font-size:32px;margin-bottom:16px">⚠</div>
+        <div style="font-family:Inter,system-ui,sans-serif;font-size:16px;font-weight:700;color:var(--text);margin-bottom:8px">No municipality linked</div>
+        <div style="font-size:13px;color:var(--text3);line-height:1.7;margin-bottom:20px">
+          Your account is not linked to a municipality yet.<br>
+          Go to <strong style="color:var(--text)">My Profile</strong> to select your municipality.
+        </div>
+        <button class="btn btn-primary" onclick="import('./app.js').then(m=>m.navigateTo('profile'))">Go to My Profile →</button>
+      </div>`;
+    return;
+  }
+
+  try {
+    await loadAssessmentData();
+    renderKPIs();
+    renderHazardTable();
+    await renderWardMap();
+    renderTrend(0);
+    renderIDPSummary();
+    initDashboardEvents();
+  } catch(e) {
+    console.warn('Dashboard render error:', e);
+  }
 }
 
 async function loadAssessmentData() {
