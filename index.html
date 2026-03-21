@@ -24,12 +24,13 @@
 <!-- AUTH SCREEN -->
 <div id="auth-screen" class="auth-screen">
   <div class="auth-left">
+
+    <!-- Brand -->
     <div class="auth-brand">
       <div class="auth-brand-icon">
-        <svg viewBox="0 0 36 36" fill="none" width="36" height="36">
-          <path d="M18 3L33 30H3L18 3Z" stroke="#f85149" stroke-width="2" stroke-linejoin="round"/>
-          <circle cx="18" cy="24" r="2" fill="#f85149"/>
-          <line x1="18" y1="13" x2="18" y2="21" stroke="#f85149" stroke-width="2" stroke-linecap="round"/>
+        <!-- Navy blue downward triangle with thin white border -->
+        <svg viewBox="0 0 40 40" fill="none" width="40" height="40">
+          <polygon points="20,34 4,10 36,10" fill="#1a3a6b" stroke="white" stroke-width="1.8" stroke-linejoin="round"/>
         </svg>
       </div>
       <div>
@@ -37,58 +38,132 @@
         <div class="auth-brand-sub">Risk Platform</div>
       </div>
     </div>
-    <div id="login-panel">
-      <div class="auth-heading">Sign in</div>
-      <div class="auth-sub">Access your municipality's disaster risk management dashboard.</div>
-      <div class="auth-tabs">
-        <div class="auth-tab on" data-tab="login">Sign in</div>
-        <div class="auth-tab" data-tab="register">Create account</div>
+
+    <!-- Tabs (3: Sign in / Register / Reset) -->
+    <div class="auth-tabs" id="auth-tabs">
+      <div class="auth-tab on" data-tab="login">Sign in</div>
+      <div class="auth-tab" data-tab="register">Register</div>
+      <div class="auth-tab" data-tab="reset" id="tab-reset" style="display:none">Reset</div>
+    </div>
+
+    <!-- ── PANEL: SIGN IN ── -->
+    <div id="panel-login">
+      <div class="auth-heading">Welcome back</div>
+      <div class="auth-sub">Sign in to your municipality's disaster risk management dashboard.</div>
+      <div class="auth-error" id="signin-error"></div>
+      <div class="field-group">
+        <div class="field-label">Email address</div>
+        <input class="field-input" type="email" id="login-email" placeholder="you@municipality.gov.za" autocomplete="email"/>
       </div>
-      <div id="signin-form">
-        <div class="auth-error" id="signin-error"></div>
-        <div class="field-group"><div class="field-label">Email address</div><input class="field-input" type="email" id="login-email" placeholder="you@municipality.gov.za" autocomplete="email"/></div>
-        <div class="field-group"><div class="field-label">Password</div><input class="field-input" type="password" id="login-pass" placeholder="••••••••••" autocomplete="current-password"/></div>
-        <button class="auth-btn auth-btn-primary" id="btn-signin">Sign in to dashboard</button>
-        <button class="auth-btn auth-btn-secondary" id="btn-guest">Continue as guest (read-only)</button>
-        <div class="auth-divider">or</div>
-        <div style="text-align:center;font-size:12px;color:var(--text3)">New user? <span style="color:var(--blue);cursor:pointer" id="switch-to-register">Request access →</span></div>
+      <div class="field-group">
+        <div class="field-label">Password</div>
+        <div class="pw-wrap">
+          <input class="field-input" type="password" id="login-pass" placeholder="Your password" autocomplete="current-password"/>
+          <button class="pw-toggle" type="button" aria-label="Show password"><svg viewBox="0 0 16 16"><path d="M1 8s2.5-5 7-5 7 5 7 5-2.5 5-7 5-7-5-7-5z"/><circle cx="8" cy="8" r="2"/></svg></button>
+        </div>
+      </div>
+      <div style="text-align:right;margin-top:-6px;margin-bottom:14px">
+        <span style="font-size:12px;color:var(--blue);cursor:pointer;font-family:var(--font-body)" id="switch-to-reset">Forgot password?</span>
+      </div>
+      <button class="auth-btn auth-btn-primary" id="btn-signin">Sign in</button>
+      <button class="auth-btn auth-btn-secondary" id="btn-guest">Continue as guest (read-only)</button>
+      <div class="admin-info-box" style="margin-top:16px">
+        <strong>Admin users</strong> have a separate dashboard section accessible after sign-in via the admin panel in the rail sidebar. All users for the same municipality share the same data — your role determines what you can edit.
       </div>
     </div>
-    <div id="register-panel" class="hidden">
+
+    <!-- ── PANEL: REGISTER ── -->
+    <div id="panel-register" class="hidden">
       <div class="auth-heading">Create account</div>
-      <div class="auth-sub">Register for access. Your account will be reviewed before activation.</div>
-      <div class="auth-tabs">
-        <div class="auth-tab" data-tab="login">Sign in</div>
-        <div class="auth-tab on" data-tab="register">Create account</div>
+      <div class="auth-sub">Register for access. Your Disaster Officer will approve your account.</div>
+      <div class="auth-notice"><strong>Open source.</strong> DRMSA is free for all South African municipalities and registered NGOs. Multiple users per municipality are supported — each with their own role.</div>
+      <div class="auth-error" id="reg-error"></div>
+      <div class="field-row-2">
+        <div class="field-group"><div class="field-label">First name</div><input class="field-input" id="reg-first" placeholder="First name"/></div>
+        <div class="field-group"><div class="field-label">Surname</div><input class="field-input" id="reg-last" placeholder="Surname"/></div>
       </div>
-      <div id="register-form">
-        <div class="auth-notice"><strong>Open source platform.</strong> DRMSA is free for all South African municipalities and registered NGOs.</div>
-        <div class="auth-error" id="reg-error"></div>
-        <div class="field-row-2">
-          <div class="field-group"><div class="field-label">First name</div><input class="field-input" id="reg-first" placeholder="First name"/></div>
-          <div class="field-group"><div class="field-label">Surname</div><input class="field-input" id="reg-last" placeholder="Surname"/></div>
-        </div>
-        <div class="field-group"><div class="field-label">Work email</div><input class="field-input" type="email" id="reg-email" placeholder="you@municipality.gov.za"/></div>
-        <div class="field-group"><div class="field-label">Municipality</div><select class="field-select" id="reg-muni"><option value="">— Select municipality —</option></select></div>
-        <div class="field-group">
-          <div class="field-label">Access role</div>
-          <div class="role-cards">
-            <div class="role-card selected" data-role="disaster_officer"><div class="role-card-icon" style="background:var(--red-dim)"><svg viewBox="0 0 14 14" fill="none" style="stroke:var(--red);stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;width:14px;height:14px"><path d="M7 1L13 12H1L7 1Z"/></svg></div><div class="role-card-name">Disaster Officer</div><div class="role-card-desc">Full edit access</div></div>
-            <div class="role-card" data-role="planner"><div class="role-card-icon" style="background:var(--amber-dim)"><svg viewBox="0 0 14 14" fill="none" style="stroke:var(--amber);stroke-width:1.5;stroke-linecap:round;width:14px;height:14px"><rect x="2" y="2" width="10" height="10" rx="1"/><path d="M4 5h6M4 8h4"/></svg></div><div class="role-card-name">Planner</div><div class="role-card-desc">IDP planning</div></div>
-            <div class="role-card" data-role="viewer"><div class="role-card-icon" style="background:var(--blue-dim)"><svg viewBox="0 0 14 14" fill="none" style="stroke:var(--blue);stroke-width:1.5;stroke-linecap:round;width:14px;height:14px"><circle cx="7" cy="7" r="4"/><circle cx="7" cy="7" r="2" fill="var(--blue)" stroke="none"/></svg></div><div class="role-card-name">Viewer</div><div class="role-card-desc">Read-only</div></div>
+      <div class="field-group">
+        <div class="field-label">Work email</div>
+        <input class="field-input" type="email" id="reg-email" placeholder="you@municipality.gov.za"/>
+      </div>
+      <div class="field-group">
+        <div class="field-label">Municipality</div>
+        <select class="field-select" id="reg-muni">
+          <option value="">Loading municipalities…</option>
+        </select>
+      </div>
+      <div class="field-group">
+        <div class="field-label">Access role</div>
+        <div class="role-cards">
+          <div class="role-card selected" data-role="disaster_officer">
+            <div class="role-card-icon" style="background:rgba(26,95,180,.12)">
+              <svg viewBox="0 0 14 14" fill="none" style="stroke:#1a5fb4;stroke-width:1.5;width:14px;height:14px;stroke-linecap:round;stroke-linejoin:round"><path d="M7 2L12 11H2L7 2Z"/></svg>
+            </div>
+            <div class="role-card-name">Disaster Officer</div>
+            <div class="role-card-desc">Full edit access</div>
+          </div>
+          <div class="role-card" data-role="planner">
+            <div class="role-card-icon" style="background:var(--amber-dim)">
+              <svg viewBox="0 0 14 14" fill="none" style="stroke:var(--amber);stroke-width:1.5;width:14px;height:14px;stroke-linecap:round"><rect x="2" y="2" width="10" height="10" rx="1"/><path d="M4 5h6M4 8h4"/></svg>
+            </div>
+            <div class="role-card-name">IDP Planner</div>
+            <div class="role-card-desc">Mitigations &amp; IDP</div>
+          </div>
+          <div class="role-card" data-role="viewer">
+            <div class="role-card-icon" style="background:var(--blue-dim)">
+              <svg viewBox="0 0 14 14" fill="none" style="stroke:var(--blue);stroke-width:1.5;width:14px;height:14px;stroke-linecap:round"><path d="M1 7s2.5-4.5 6-4.5S13 7 13 7s-2.5 4.5-6 4.5S1 7 1 7z"/><circle cx="7" cy="7" r="1.8"/></svg>
+            </div>
+            <div class="role-card-name">Viewer</div>
+            <div class="role-card-desc">Read-only</div>
           </div>
         </div>
-        <div class="field-row-2">
-          <div class="field-group"><div class="field-label">Password</div><input class="field-input" type="password" id="reg-pass" placeholder="Min 8 characters"/></div>
-          <div class="field-group"><div class="field-label">Confirm</div><input class="field-input" type="password" id="reg-confirm" placeholder="Repeat password"/></div>
-        </div>
-        <button class="auth-btn auth-btn-primary" id="btn-register">Submit registration request</button>
-        <div style="margin-top:12px;font-size:11px;color:var(--text3);text-align:center">Your account will be reviewed within 24 hours.</div>
       </div>
+      <div class="field-row-2">
+        <div class="field-group">
+          <div class="field-label">Password</div>
+          <div class="pw-wrap">
+            <input class="field-input" type="password" id="reg-pass" placeholder="Min 8 characters"/>
+            <button class="pw-toggle" type="button"><svg viewBox="0 0 16 16"><path d="M1 8s2.5-5 7-5 7 5 7 5-2.5 5-7 5-7-5-7-5z"/><circle cx="8" cy="8" r="2"/></svg></button>
+          </div>
+        </div>
+        <div class="field-group">
+          <div class="field-label">Confirm password</div>
+          <div class="pw-wrap">
+            <input class="field-input" type="password" id="reg-confirm" placeholder="Repeat password"/>
+            <button class="pw-toggle" type="button"><svg viewBox="0 0 16 16"><path d="M1 8s2.5-5 7-5 7 5 7 5-2.5 5-7 5-7-5-7-5z"/><circle cx="8" cy="8" r="2"/></svg></button>
+          </div>
+        </div>
+      </div>
+      <button class="auth-btn auth-btn-primary" id="btn-register">Submit registration</button>
+      <div style="margin-top:10px;font-size:12px;color:var(--text3);text-align:center;font-family:var(--font-body)">Awaiting approval by your Municipal Disaster Officer.</div>
     </div>
-  </div>
+
+    <!-- ── PANEL: RESET PASSWORD ── -->
+    <div id="panel-reset" class="hidden">
+      <div class="auth-heading">Reset password</div>
+      <div class="auth-sub">Enter your email and we'll send you a link to reset your password.</div>
+      <div class="auth-error" id="reset-error"></div>
+      <div class="auth-reset-msg" id="reset-msg">
+        ✓ Reset link sent. Check your inbox — including your spam folder.
+      </div>
+      <div class="field-group">
+        <div class="field-label">Email address</div>
+        <input class="field-input" type="email" id="reset-email" placeholder="you@municipality.gov.za"/>
+      </div>
+      <button class="auth-btn auth-btn-primary" id="btn-reset">Send reset link</button>
+      <button class="auth-btn auth-btn-secondary" id="switch-to-login">Back to sign in</button>
+    </div>
+
+  </div><!-- /auth-left -->
+
   <div class="auth-right">
-    <div class="auth-right-bg"><svg viewBox="0 0 600 600" fill="none"><path d="M300 50L550 500H50L300 50Z" stroke="#f85149" stroke-width="1"/><path d="M300 150L450 400H150L300 150Z" stroke="#f85149" stroke-width="0.5"/></svg></div>
+    <div class="auth-right-bg">
+      <svg viewBox="0 0 600 600" fill="none">
+        <polygon points="300,540 60,140 540,140" stroke="#1a3a6b" stroke-width="1.5"/>
+        <polygon points="300,440 140,200 460,200" stroke="#1a3a6b" stroke-width="0.8"/>
+        <polygon points="300,340 220,220 380,220" stroke="#1a3a6b" stroke-width="0.4"/>
+      </svg>
+    </div>
     <div class="auth-stats">
       <div class="auth-stat red"><div class="auth-stat-label">Municipalities SA</div><div class="auth-stat-num red">257</div><div class="auth-stat-sub">local municipalities</div></div>
       <div class="auth-stat amber"><div class="auth-stat-label">Hazard types</div><div class="auth-stat-num amber">38</div><div class="auth-stat-sub">classified in library</div></div>
@@ -106,7 +181,7 @@
 
   <nav id="rail" style="grid-row:1/4;background:var(--bg2);border-right:1px solid var(--border);display:flex;flex-direction:column;width:52px;transition:width .18s cubic-bezier(.4,0,.2,1);overflow:hidden;z-index:50">
     <div class="rail-brand" style="height:52px;display:flex;align-items:center;gap:11px;padding:0 14px;border-bottom:1px solid var(--border);cursor:pointer;flex-shrink:0;min-width:52px">
-      <div style="flex-shrink:0"><svg viewBox="0 0 24 24" fill="none" width="24" height="24"><path d="M12 2L22 20H2L12 2Z" stroke="#f85149" stroke-width="1.8" stroke-linejoin="round"/><circle cx="12" cy="16" r="1.4" fill="#f85149"/><line x1="12" y1="8" x2="12" y2="13.5" stroke="#f85149" stroke-width="1.6" stroke-linecap="round"/></svg></div>
+      <div style="flex-shrink:0"><svg viewBox="0 0 24 24" fill="none" width="24" height="24"><polygon points="12,20 3,7 21,7" fill="#1a3a6b" stroke="white" stroke-width="1.2" stroke-linejoin="round"/></svg></div>
       <div style="opacity:0;transition:opacity .1s;white-space:nowrap" class="rail-text-fade"><div style="font-family:var(--font-display);font-size:14px;font-weight:800;color:var(--text);letter-spacing:-.03em">DRMSA</div><div style="font-size:9px;color:var(--text3);letter-spacing:.08em;text-transform:uppercase;font-family:var(--font-mono)">Risk Platform</div></div>
     </div>
     <div style="padding:10px 14px;border-bottom:1px solid var(--border);overflow:hidden;min-width:52px">
