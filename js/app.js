@@ -16,7 +16,6 @@ export async function initApp(user) {
   if (appScreen) appScreen.classList.add('visible');
 
   // Wire up nav and rail FIRST — unconditionally
-  initRail();
   initNav();
   initFooter();
 
@@ -106,50 +105,18 @@ function roleLabel(r) {
   return { admin: 'Admin', disaster_officer: 'Disaster Officer', planner: 'IDP Planner', viewer: 'Viewer' }[r] || r || 'User';
 }
 
-// ── RAIL ──────────────────────────────────────────────────
-function initRail() {
-  const rail    = document.getElementById('rail');
-  const chevron = document.getElementById('rail-chevron');
-
-  function toggleRail(e) {
-    e?.stopPropagation();
-    if (!rail) return;
-    const isOpen = rail.classList.toggle('open');
-    if (chevron) chevron.style.transform = isOpen ? 'scaleX(-1)' : 'scaleX(1)';
-    // Force width reflow
-    rail.style.width = isOpen ? '220px' : '52px';
-    console.log('Rail toggled:', isOpen ? 'open' : 'closed');
-  }
-
-  // Use event delegation on the rail itself to avoid cloning issues
-  const expandBtn = document.getElementById('rail-expand-btn');
-  const brandEl   = document.querySelector('.rail-brand');
-
-  // Remove old listeners safely
-  if (expandBtn) {
-    expandBtn.onclick = toggleRail;
-  }
-  if (brandEl) {
-    brandEl.onclick = (e) => {
-      // Only toggle if clicking brand area, not nav items
-      if (!e.target.closest('.ni')) toggleRail(e);
-    };
-  }
-}
+// Rail removed — using top nav instead
 
 // ── NAV ───────────────────────────────────────────────────
 function initNav() {
-  document.querySelectorAll('.ni').forEach(item => {
-    // Clone to remove any existing listeners
-    const newItem = item.cloneNode(true);
-    item.parentNode.replaceChild(newItem, item);
-    newItem.addEventListener('click', () => {
-      const page = newItem.dataset.page;
-      if (page) navigateTo(page, newItem);
+  document.querySelectorAll('.tni').forEach(item => {
+    item.addEventListener('click', () => {
+      const page = item.dataset.page;
+      if (page) navigateTo(page, item);
     });
   });
-
   document.getElementById('btn-new-assessment')?.addEventListener('click', () => navigateTo('hvc'));
+  document.getElementById('user-av')?.addEventListener('click', () => navigateTo('profile'));
 }
 
 export function navigateTo(pageId, navItem) {
@@ -161,11 +128,11 @@ export function navigateTo(pageId, navItem) {
   if (page) page.classList.add('visible');
 
   // Update nav highlight
-  document.querySelectorAll('.ni').forEach(n => n.classList.remove('on'));
+  document.querySelectorAll('.tni').forEach(n => n.classList.remove('on'));
   if (navItem) {
     navItem.classList.add('on');
   } else {
-    document.querySelector(`.ni[data-page="${pageId}"]`)?.classList.add('on');
+    document.querySelector(`.tni[data-page="${pageId}"]`)?.classList.add('on');
   }
 
   // Update breadcrumb
