@@ -176,7 +176,7 @@ function renderShelterCard(s) {
         <button class="btn btn-green btn-sm shelter-update" data-id="${s.id}">Update</button>
         <button class="btn btn-sm shelter-edit" data-id="${s.id}">Edit details</button>
         <button class="btn btn-sm shelter-share" data-id="${s.id}">Share</button>
-        <button class="btn btn-sm" onclick="window._downloadRecord('shelter','${s.id}','${s.name.replace(/'/g,"\\'")}')">↓ Save</button>
+        <button class="btn btn-sm shelter-dl" data-id="${s.id}" data-name="${s.name}">↓ Save</button>
         <button class="btn btn-sm btn-red shelter-delete" data-id="${s.id}" style="margin-left:auto">Delete</button>
       </div>
     </div>`;
@@ -225,6 +225,18 @@ function bindShelterEvents(shelters) {
         url:`${window.location.origin}/public/shelters/${s.id}`,
         text:`SHELTER — ${s.name}\nWard ${s.ward_number} · ${s.address||''}\nStatus: ${(s.status||'').toUpperCase()}\nCapacity: ${s.current_occupancy||0} / ${s.capacity}`
       });
+    });
+  });
+
+  // Download
+  document.querySelectorAll('.shelter-dl').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const el   = document.getElementById(`sc-${btn.dataset.id}`);
+      const text = el ? el.innerText : btn.dataset.name;
+      const blob = new Blob([text], {type:'text/plain'});
+      const url  = URL.createObjectURL(blob);
+      const a    = Object.assign(document.createElement('a'), {href:url, download:`DRMSA-shelter-${btn.dataset.name}.txt`});
+      a.click(); URL.revokeObjectURL(url);
     });
   });
 
@@ -352,7 +364,7 @@ function renderReliefCard(op) {
       <div class="rec-foot">
         <button class="btn btn-sm btn-green relief-edit" data-id="${op.id}">Edit</button>
         <button class="btn btn-sm relief-share" data-id="${op.id}">Share</button>
-        <button class="btn btn-sm" onclick="window._downloadRecord('relief','${op.id}','${op.name.replace(/'/g,"\\'")}')">↓ Save</button>
+        <button class="btn btn-sm relief-dl" data-id="${op.id}" data-name="${op.name}">↓ Save</button>
         <button class="btn btn-sm btn-red relief-delete" data-id="${op.id}" style="margin-left:auto">Delete</button>
       </div>
     </div>`;
@@ -373,6 +385,17 @@ function bindReliefEvents(ops) {
       await renderReliefOps(document.getElementById('community-body'));
     });
   });
+  // Download
+  document.querySelectorAll('.relief-dl').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const text = `RELIEF OPERATION\n${btn.dataset.name}`;
+      const blob = new Blob([text], {type:'text/plain'});
+      const url  = URL.createObjectURL(blob);
+      const a    = Object.assign(document.createElement('a'), {href:url, download:`DRMSA-relief-${btn.dataset.name}.txt`});
+      a.click(); URL.revokeObjectURL(url);
+    });
+  });
+
   document.querySelectorAll('.relief-share').forEach(btn => {
     btn.addEventListener('click', () => {
       const op = ops.find(o => o.id === btn.dataset.id);
