@@ -1,5 +1,4 @@
 // js/app.js
-const _V = '?v=3'; // bump this to bust module cache
 import { signOut } from './auth.js';
 import { supabase } from './supabase.js';
 
@@ -24,7 +23,7 @@ export async function initApp(user) {
   // If user profile failed to load (null), retry once directly
   if (!_user || !_user.id) {
     try {
-      const { getCurrentUser } = await import(`./supabase.js${_V}`);
+      const { getCurrentUser } = await import('./supabase.js');
       const retried = await getCurrentUser();
       if (retried) _user = retried;
     } catch(e) { console.warn('User retry failed:', e); }
@@ -38,11 +37,11 @@ export async function initApp(user) {
 
   // Check onboarding
   try {
-    const { initOnboarding } = await import(`./onboarding.js${_V}`);
+    const { initOnboarding } = await import('./onboarding.js');
     const needsOnboarding = await initOnboarding(user);
     if (!needsOnboarding) {
       navigateTo('dashboard');
-      const { initDashboard } = await import(`./dashboard.js${_V}`);
+      const { initDashboard } = await import('./dashboard.js');
       await initDashboard(user);
     }
   } catch(e) {
@@ -50,7 +49,7 @@ export async function initApp(user) {
     // Still navigate to dashboard even if onboarding check fails
     navigateTo('dashboard');
     try {
-      const { initDashboard } = await import(`./dashboard.js${_V}`);
+      const { initDashboard } = await import('./dashboard.js');
       await initDashboard(user);
     } catch(e2) {
       console.warn('Dashboard init error:', e2);
@@ -92,11 +91,15 @@ function showNomuniWarning() {
   const banner = document.createElement('div');
   banner.id = 'no-muni-banner';
   banner.style.cssText = 'background:var(--amber-dim);border-bottom:1px solid var(--amber);padding:10px 22px;font-size:12px;color:var(--amber);display:flex;align-items:center;gap:12px;flex-shrink:0;font-family:monospace;font-weight:600';
-  banner.innerHTML = `⚠ No municipality linked to your account. 
-    <button class="btn btn-sm" style="border-color:var(--amber);color:var(--amber)" onclick="import(`./profile.js${_V}`).then(m=>m.initProfile(window._drmsaUser));document.getElementById('no-muni-banner').remove()">
+  banner.innerHTML = `⚠ No municipality linked to your account.
+    <button class="btn btn-sm" id="fix-muni-btn" style="border-color:var(--amber);color:var(--amber)">
       Fix in My Profile →
     </button>`;
   content.insertBefore(banner, content.firstChild);
+  document.getElementById('fix-muni-btn')?.addEventListener('click', () => {
+    banner.remove();
+    navigateTo('profile');
+  });
 }
 
 function roleLabel(r) {
@@ -190,15 +193,15 @@ export function navigateTo(pageId, navItem) {
 async function loadPageModule(pageId) {
   try {
     switch (pageId) {
-      case 'dashboard':    { const m = await import(`./dashboard.js${_V}`);    m.initDashboard(_user);    break; }
-      case 'community':    { const m = await import(`./community.js${_V}`);    m.initCommunity(_user);    break; }
-      case 'routes':       { const m = await import(`./routes.js${_V}`);       m.initRoutes(_user);       break; }
-      case 'sitrep':       { const m = await import(`./sitrep.js${_V}`);       m.initSitrep(_user);       break; }
-      case 'mopup':        { const m = await import(`./mopup.js${_V}`);        m.initMopup(_user);        break; }
-      case 'stakeholders': { const m = await import(`./stakeholders.js${_V}`); m.initStakeholders(_user); break; }
-      case 'hvc':          { const m = await import(`./hvc.js${_V}`);          m.initHVC(_user);          break; }
-      case 'admin':        { const m = await import(`./admin.js${_V}`);        m.initAdmin(_user);        break; }
-      case 'profile':      { const m = await import(`./profile.js${_V}`);      m.initProfile(_user);      break; }
+      case 'dashboard':    { const m = await import('./dashboard.js');    m.initDashboard(_user);    break; }
+      case 'community':    { const m = await import('./community.js');    m.initCommunity(_user);    break; }
+      case 'routes':       { const m = await import('./routes.js');       m.initRoutes(_user);       break; }
+      case 'sitrep':       { const m = await import('./sitrep.js');       m.initSitrep(_user);       break; }
+      case 'mopup':        { const m = await import('./mopup.js');        m.initMopup(_user);        break; }
+      case 'stakeholders': { const m = await import('./stakeholders.js'); m.initStakeholders(_user); break; }
+      case 'hvc':          { const m = await import('./hvc.js');          m.initHVC(_user);          break; }
+      case 'admin':        { const m = await import('./admin.js');        m.initAdmin(_user);        break; }
+      case 'profile':      { const m = await import('./profile.js');      m.initProfile(_user);      break; }
     }
   } catch(e) {
     console.warn('Page module load failed:', pageId, e);
