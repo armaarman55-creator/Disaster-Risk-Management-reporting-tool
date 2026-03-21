@@ -21,6 +21,7 @@ let _muniId = null;
 
 export async function initDashboard(user) {
   _muniId = user?.municipality_id;
+  window._drmsaUser = user;
   await loadAssessmentData();
   renderKPIs();
   renderHazardTable();
@@ -91,42 +92,129 @@ function renderHazardTable() {
     </tr>`).join('');
 }
 
-function renderWardMap() {
+async function renderWardMap() {
   const g = document.getElementById('ward-g');
   if (!g) return;
-  g.innerHTML = '';
 
-  const hazards = _assessmentData?.hazards || [];
+  g.innerHTML = '<text x="155" y="95" text-anchor="middle" font-size="10" fill="var(--text3)" font-family="monospace">Loading ward boundaries…</text>';
+
   const wardRisk = {};
   _wardData.forEach(w => { wardRisk[w.ward_number] = w.dominant_risk || 'Negligible'; });
 
-  WARD_POLYGONS.forEach((wp, idx) => {
-    const risk = wardRisk[idx + 1] || 'Negligible';
-    const fill = RISK_COLOURS[risk] || '#6e7681';
-    const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
-    poly.setAttribute('points', wp.pts);
-    poly.setAttribute('fill', fill);
-    poly.setAttribute('fill-opacity', '0.42');
-    poly.setAttribute('stroke', fill);
-    poly.setAttribute('stroke-width', '1.2');
-    poly.style.cursor = 'pointer';
-    poly.addEventListener('mouseenter', function() { this.setAttribute('fill-opacity', '0.68'); });
-    poly.addEventListener('mouseleave', function() { this.setAttribute('fill-opacity', '0.42'); });
-    poly.addEventListener('click', () => showWardInfo(wp.id, risk, idx + 1));
-    g.appendChild(poly);
+  // Try MDB ArcGIS REST API for real ward boundaries
+  const muniCode = window._drmsaUser?.municipalities?.code;
+  let mdbWards = null;
 
-    const pts = wp.pts.split(' ').map(p => p.split(',').map(Number));
-    const cx = Math.round(pts.reduce((s, p) => s + p[0], 0) / pts.length);
-    const cy = Math.round(pts.reduce((s, p) => s + p[1], 0) / pts.length);
-    const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-    t.setAttribute('x', cx); t.setAttribute('y', cy);
-    t.setAttribute('text-anchor', 'middle'); t.setAttribute('dominant-baseline', 'central');
-    t.setAttribute('font-size', '8'); t.setAttribute('fill', 'rgba(230,237,243,0.9)');
-    t.setAttribute('font-weight', '700'); t.setAttribute('font-family', 'JetBrains Mono,monospace');
-    t.setAttribute('pointer-events', 'none');
-    t.textContent = wp.id;
-    g.appendChild(t);
-  });
+  if (muniCode) {
+    try {
+      // Map muni code to MDB CAT_B value
+      const url = `https://services7.arcgis.com/oeoyTUJC8HEeYsRB/arcgis/rest/services/MDB_Wards_2020/FeatureServer/0/query` +
+        `?where=CAT_B+LIKE+%27${encodeURIComponent(muniCode)}%25%27` +
+        `&outFields=WARD_ID,WARD_NO,CAT_B,MUNICNAME` +
+        `&outSR=4326&f=geojson&resultRecordCount=100`;
+      const res = await fetch(url);
+      const data = await res.json();
+      if (data?.features?.length) mdbWards = data.features;
+    } catch(e) {
+      console.warn('MDB API failed:', e);
+    }
+  }
+
+  g.innerHTML = '';
+
+  if (mdbWards?.length) {
+    // Project GeoJSON coords to SVG viewBox 0 0 310 200
+    const allCoords = mdbWards.flatMap(f => {
+      const geom = f.geometry;
+      if (!geom) return [];
+      const rings = geom.type === 'MultiPolygon' ? geom.coordinates.flat(1) : geom.coordinates;
+      return rings.flat();
+    });
+
+    const lngs = allCoords.map(c => c[0]);
+    const lats = allCoords.map(c => c[1]);
+    const minLng = Math.min(...lngs), maxLng = Math.max(...lngs);
+    const minLat = Math.min(...lats), maxLat = Math.max(...lats);
+
+    const project = ([lng, lat]) => [
+      Math.round(((lng - minLng) / (maxLng - minLng)) * 290 + 10),
+      Math.round(((maxLat - lat) / (maxLat - minLat)) * 180 + 10)
+    ];
+
+    mdbWards.forEach(f => {
+      const props = f.properties;
+      const wardNo = props.WARD_NO || props.WARD_ID;
+      const risk = wardRisk[wardNo] || 'Negligible';
+      const fill = RISK_COLOURS[risk] || '#6e7681';
+
+      const geom = f.geometry;
+      if (!geom) return;
+      const rings = geom.type === 'MultiPolygon' ? geom.coordinates.flat(1) : geom.coordinates;
+
+      rings.forEach(ring => {
+        const pts = ring.map(coord => project(coord).join(',')).join(' ');
+        const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+        poly.setAttribute('points', pts);
+        poly.setAttribute('fill', fill);
+        poly.setAttribute('fill-opacity', '0.42');
+        poly.setAttribute('stroke', fill);
+        poly.setAttribute('stroke-width', '0.8');
+        poly.style.cursor = 'pointer';
+        poly.addEventListener('mouseenter', function() { this.setAttribute('fill-opacity', '0.68'); });
+        poly.addEventListener('mouseleave', function() { this.setAttribute('fill-opacity', '0.42'); });
+        poly.addEventListener('click', () => showWardInfo(wardNo, risk, wardNo));
+        g.appendChild(poly);
+      });
+
+      // Ward label
+      const allPts = rings.flat().map(project);
+      const cx = Math.round(allPts.reduce((s,p)=>s+p[0],0)/allPts.length);
+      const cy = Math.round(allPts.reduce((s,p)=>s+p[1],0)/allPts.length);
+      const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      t.setAttribute('x', cx); t.setAttribute('y', cy);
+      t.setAttribute('text-anchor', 'middle'); t.setAttribute('dominant-baseline', 'central');
+      t.setAttribute('font-size', '7'); t.setAttribute('fill', 'rgba(230,237,243,0.85)');
+      t.setAttribute('font-weight', '700'); t.setAttribute('font-family', 'monospace');
+      t.setAttribute('pointer-events', 'none');
+      t.textContent = `W${wardNo}`;
+      g.appendChild(t);
+    });
+
+  } else {
+    // Fallback: simple placeholder polygons
+    WARD_POLYGONS.forEach((wp, idx) => {
+      const risk = wardRisk[idx + 1] || 'Negligible';
+      const fill = RISK_COLOURS[risk] || '#6e7681';
+      const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+      poly.setAttribute('points', wp.pts);
+      poly.setAttribute('fill', fill); poly.setAttribute('fill-opacity', '0.42');
+      poly.setAttribute('stroke', fill); poly.setAttribute('stroke-width', '1.2');
+      poly.style.cursor = 'pointer';
+      poly.addEventListener('mouseenter', function() { this.setAttribute('fill-opacity', '0.68'); });
+      poly.addEventListener('mouseleave', function() { this.setAttribute('fill-opacity', '0.42'); });
+      poly.addEventListener('click', () => showWardInfo(wp.id, risk, idx + 1));
+      g.appendChild(poly);
+      const pts = wp.pts.split(' ').map(p=>p.split(',').map(Number));
+      const cx = Math.round(pts.reduce((s,p)=>s+p[0],0)/pts.length);
+      const cy = Math.round(pts.reduce((s,p)=>s+p[1],0)/pts.length);
+      const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      t.setAttribute('x',cx); t.setAttribute('y',cy);
+      t.setAttribute('text-anchor','middle'); t.setAttribute('dominant-baseline','central');
+      t.setAttribute('font-size','8'); t.setAttribute('fill','rgba(230,237,243,0.9)');
+      t.setAttribute('font-weight','700'); t.setAttribute('font-family','monospace');
+      t.setAttribute('pointer-events','none');
+      t.textContent = wp.id;
+      g.appendChild(t);
+    });
+
+    // Show note
+    const note = document.createElementNS('http://www.w3.org/2000/svg','text');
+    note.setAttribute('x','155'); note.setAttribute('y','195');
+    note.setAttribute('text-anchor','middle'); note.setAttribute('font-size','8');
+    note.setAttribute('fill','var(--text3)'); note.setAttribute('font-family','monospace');
+    note.textContent = 'Ward boundaries load when municipality is set';
+    g.appendChild(note);
+  }
 }
 
 function showWardInfo(wid, risk, wardNum) {
