@@ -1,8 +1,18 @@
 // js/idp.js — IDP Linkage & Spatial Mitigation Register
 import { supabase } from './supabase.js';
-import { showToast } from './toast.js';
+
+function showToast(msg, isError=false) {
+  document.querySelectorAll('.drmsa-toast').forEach(t => t.remove());
+  const t = document.createElement('div');
+  t.className = 'drmsa-toast';
+  t.style.cssText = `position:fixed;bottom:80px;right:24px;background:var(--bg2);border:1px solid ${isError?'var(--red)':'var(--green)'};color:${isError?'var(--red)':'var(--green)'};padding:12px 20px;border-radius:8px;font-size:13px;font-weight:600;z-index:9999;box-shadow:0 4px 24px rgba(0,0,0,.35);display:flex;align-items:center;gap:10px;max-width:340px;transition:opacity .3s;font-family:Inter,system-ui,sans-serif`;
+  t.innerHTML = `<span style="font-size:16px">${isError?'✕':'✓'}</span><span>${msg}</span>`;
+  document.body.appendChild(t);
+  setTimeout(()=>{t.style.opacity='0';setTimeout(()=>t.remove(),300);},3000);
+}
 
 let _muniId = null;
+let _libCache = [];
 let _user   = null;
 let _wards  = [];
 let _hazards = [];
@@ -304,6 +314,7 @@ async function showLibrary() {
   const area = document.getElementById('idp-library-area');
   if (!area) return;
   if (area.innerHTML) { area.innerHTML=''; return; }
+  _libCache = []; // reset cache
 
   const names = _hazards.map(h=>h.hazard_name);
   const { data: suggestions } = await supabase
@@ -328,21 +339,17 @@ async function showLibrary() {
             ${s.legislation_ref?`<div style="font-size:11px;color:var(--text3);margin-top:3px">${s.legislation_ref}</div>`:''}
             ${s.cost_estimate?`<div style="font-size:11px;color:var(--text3)">${s.cost_estimate}</div>`:''}
           </div>
-          <button class="btn btn-sm btn-green" style="flex-shrink:0" data-lib='${JSON.stringify({
-            hazard_name:s.hazard_name,description:s.description,
-            mitigation_type:s.mitigation_type,idp_kpa:s.idp_kpa,
-            legislation_ref:s.legislation_ref,drr_strategy:s.drr_strategy,
-            cost_estimate:s.cost_estimate
-          }).replace(/'/g,"&#39;")}'>+ Add</button>
+          <button class="btn btn-sm btn-green idp-lib-add" style="flex-shrink:0"
+            data-idx="${_libCache.push({hazard_name:s.hazard_name,description:s.description,mitigation_type:s.mitigation_type,idp_kpa:s.idp_kpa,legislation_ref:s.legislation_ref,drr_strategy:s.drr_strategy,cost_estimate:s.cost_estimate})-1}">+ Add</button>
         </div>`).join('')
       : '<div style="font-size:12px;color:var(--text3)">No library suggestions for your assessed hazards. Complete an HVC assessment first.</div>'}
     </div>`;
 
-  area.querySelectorAll('[data-lib]').forEach(btn => {
+  area.querySelectorAll('.idp-lib-add').forEach(btn => {
     btn.addEventListener('click', () => {
-      const data = JSON.parse(btn.dataset.lib);
-      area.innerHTML = '';
-      showMitForm(data);
+      const idx  = parseInt(btn.dataset.idx);
+      const data = _libCache[idx];
+      if (data) { area.innerHTML = ''; showMitForm(data); }
     });
   });
 }
