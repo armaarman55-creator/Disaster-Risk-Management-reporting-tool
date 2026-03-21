@@ -1,4 +1,5 @@
 // js/dashboard.js
+const _V = '?v=3';
 import { supabase } from './supabase.js';
 import { navigateTo } from './app.js';
 
@@ -39,7 +40,7 @@ export async function initDashboard(user) {
           Your account is not linked to a municipality yet.<br>
           Go to <strong style="color:var(--text)">My Profile</strong> to select your municipality.
         </div>
-        <button class="btn btn-primary" onclick="import('./app.js').then(m=>m.navigateTo('profile'))">Go to My Profile →</button>
+        <button class="btn btn-primary" onclick="import(`./app.js${_V}`).then(m=>m.navigateTo('profile'))">Go to My Profile →</button>
       </div>`;
     return;
   }
@@ -133,23 +134,57 @@ async function renderWardMap() {
 
   if (muniCode) {
     try {
-      // MDB ArcGIS — CAT_B field contains the municipality code
-      // Use exact match, not LIKE, to avoid cross-boundary results
-      // resultRecordCount=200 ensures all wards returned (Oudtshoorn=13, George=27, etc.)
-      const where = encodeURIComponent(`CAT_B='${muniCode}'`);
-      const url = `https://services7.arcgis.com/oeoyTUJC8HEeYsRB/arcgis/rest/services/MDB_Wards_2020/FeatureServer/0/query` +
-        `?where=${where}` +
-        `&outFields=WARD_ID,WARD_NO,CAT_B,MUNICNAME` +
-        `&outSR=4326&f=geojson` +
-        `&resultRecordCount=200` +
-        `&returnGeometry=true`;
-      console.log('MDB Ward API URL:', url);
-      const res = await fetch(url);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      console.log(`MDB API returned ${data?.features?.length || 0} wards for ${muniCode}`);
-      if (data?.features?.length) mdbWards = data.features;
-      else console.warn('MDB API: no wards found. Check municipality code:', muniCode);
+      const BASE = 'https://services7.arcgis.com/oeoyTUJC8HEeYsRB/arcgis/rest/services/MDB_Wards_2020/FeatureServer/0/query';
+
+      // Step 1: probe one record to discover actual field names
+      const probeUrl = `${BASE}?where=1%3D1&outFields=*&f=json&resultRecordCount=1`;
+      const probeRes = await fetch(probeUrl);
+      const probeData = await probeRes.json();
+      const fields = (probeData.fields || []).map(f => f.name);
+      console.log('MDB API fields:', fields);
+
+      // Step 2: find correct municipality field (could be CAT_B, LB_BND_C, MUNICNAME, etc.)
+      const muniName = window._drmsaUser?.municipalities?.name?.replace(' LM','').replace(' DM','').trim() || '';
+      
+      // Try different field/value combinations
+      const attempts = [];
+      
+      // Try by code fields first
+      const codeFields = fields.filter(f => f.match(/CAT|CODE|LB_|MUNI.*C/i));
+      codeFields.forEach(f => attempts.push(`${f}='${muniCode}'`));
+      
+      // Try by name
+      const nameFields = fields.filter(f => f.match(/NAME|MUNI/i));
+      nameFields.forEach(f => {
+        if (muniName) attempts.push(`${f} LIKE '%${muniName}%'`);
+      });
+
+      console.log('MDB: will try queries:', attempts.slice(0,3));
+
+      let found = false;
+      for (const where of attempts) {
+        const url = `${BASE}?where=${encodeURIComponent(where)}&outFields=*&outSR=4326&f=geojson&resultRecordCount=200&returnGeometry=true`;
+        console.log('MDB trying:', where);
+        const res = await fetch(url);
+        if (!res.ok) continue;
+        const data = await res.json();
+        const count = data?.features?.length || 0;
+        console.log(`MDB: "${where}" → ${count} wards`);
+        if (count > 0) {
+          mdbWards = data.features;
+          console.log('MDB: SUCCESS with query:', where);
+          found = true;
+          break;
+        }
+      }
+
+      if (!found) {
+        console.warn('MDB: all queries returned 0 wards. Available fields:', fields);
+        // Log a sample attribute to help debug
+        if (probeData.features?.[0]) {
+          console.log('MDB sample record attributes:', probeData.features[0].attributes);
+        }
+      }
     } catch(e) {
       console.warn('MDB API failed:', e.message);
     }
@@ -265,8 +300,8 @@ function showWardInfo(wid, risk, wardNum) {
       <div class="wi-field"><span class="wi-key">Population</span><span class="wi-val">${wardData.population ? wardData.population.toLocaleString() : 'Not set'}</span></div>
     </div>
     <div class="wi-btns">
-      <button class="btn btn-sm" onclick="import('./app.js').then(m=>m.navigateTo('mitigations'))">Mitigations</button>
-      <button class="btn btn-sm" onclick="import('./app.js').then(m=>m.navigateTo('community'))">Shelters</button>
+      <button class="btn btn-sm" onclick="import(`./app.js${_V}`).then(m=>m.navigateTo('mitigations'))">Mitigations</button>
+      <button class="btn btn-sm" onclick="import(`./app.js${_V}`).then(m=>m.navigateTo('community'))">Shelters</button>
     </div>`;
 }
 
