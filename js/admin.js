@@ -157,15 +157,30 @@ async function loadMuniSettings() {
     <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border)">
       <div style="font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--text3);font-family:monospace;margin-bottom:4px">Municipality ID</div>
       <div style="font-size:10px;color:var(--text3);font-family:monospace;word-break:break-all">${muni.id}</div>
+    </div>
+
+    <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border)">
+      <div style="font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--text3);font-family:monospace;margin-bottom:10px">Social media links</div>
+      <div style="font-size:12px;color:var(--text3);margin-bottom:10px;line-height:1.6">
+        These links are used when sharing content to social platforms. If not set, a prompt will appear asking users to add them first.
+      </div>
+      <div class="fl"><span class="fl-label">Facebook page URL</span><input class="fl-input" id="ms-facebook" value="${muni.social_facebook||''}" placeholder="https://facebook.com/YourMunicipality"/></div>
+      <div class="fl"><span class="fl-label">X / Twitter handle</span><input class="fl-input" id="ms-twitter" value="${muni.social_twitter||''}" placeholder="@YourMunicipality (without @)"/></div>
+      <div class="fl"><span class="fl-label">WhatsApp number (with country code)</span><input class="fl-input" id="ms-whatsapp" value="${muni.social_whatsapp||''}" placeholder="27821234567"/></div>
+      <div class="fl"><span class="fl-label">Municipality website</span><input class="fl-input" id="ms-website" value="${muni.social_website||''}" placeholder="https://www.yourmunicipality.gov.za"/></div>
     </div>`;
 
   document.getElementById('save-ms-btn')?.addEventListener('click', async () => {
     const { error } = await supabase.from('municipalities').update({
-      name:       document.getElementById('ms-name')?.value,
-      code:       document.getElementById('ms-code')?.value,
-      ward_count: parseInt(document.getElementById('ms-wards')?.value)||0,
-      district:   document.getElementById('ms-district')?.value,
-      province:   document.getElementById('ms-province')?.value,
+      name:             document.getElementById('ms-name')?.value,
+      code:             document.getElementById('ms-code')?.value,
+      ward_count:       parseInt(document.getElementById('ms-wards')?.value)||0,
+      district:         document.getElementById('ms-district')?.value,
+      province:         document.getElementById('ms-province')?.value,
+      social_facebook:  document.getElementById('ms-facebook')?.value.trim()||null,
+      social_twitter:   document.getElementById('ms-twitter')?.value.trim()||null,
+      social_whatsapp:  document.getElementById('ms-whatsapp')?.value.trim()||null,
+      social_website:   document.getElementById('ms-website')?.value.trim()||null,
     }).eq('id', _user.municipality_id);
     if (!error) showToast('Municipality settings saved');
     else showToast(error.message, true);
