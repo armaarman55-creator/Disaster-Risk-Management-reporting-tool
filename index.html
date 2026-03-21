@@ -309,10 +309,24 @@
 .rail-brand{height:52px;display:flex;align-items:center;gap:11px;padding:0 14px;border-bottom:1px solid var(--border);cursor:pointer;flex-shrink:0;min-width:52px}
 </style>
 
-<!-- Config loads before ES modules. config.local.js is gitignored and holds your real keys.
-     config.js is the committed template — empty values, safe to push. -->
-<script src="config.js"></script>
-<script src="config.local.js" onerror="/* config.local.js missing — supabase.js will show setup instructions */"></script>
+<!-- Config: Cloudflare Pages Function in production, config.local.js for local dev.
+     window.__cfgReady is a Promise that resolves once DRMSA_CONFIG is set. -->
+<script>
+window.__cfgReady = (async () => {
+  try {
+    const res = await fetch('/config');
+    if (res.ok) { const t = await res.text(); eval(t); if (window.DRMSA_CONFIG?.SUPABASE_URL) return; }
+  } catch(e) {}
+  // Local dev fallback
+  await new Promise(resolve => {
+    const s = document.createElement('script');
+    s.src = 'config.local.js';
+    s.onload = resolve;
+    s.onerror = resolve;
+    document.head.appendChild(s);
+  });
+})();
+</script>
 
 <script type="module">
 import { initPWA } from './js/pwa.js';
