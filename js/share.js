@@ -3,8 +3,26 @@ import { ALL_IMAGES } from './svg-images.js';
 
 let selectedImage = null;
 
-export function openShareModal({ type, title, text, url, imageCategory }) {
+export async function openShareModal({ type, title, text, url, imageCategory }) {
   closeShareModal();
+
+  // Check if social links are configured
+  let socialLinks = window._drmsaSocialLinks || null;
+  if (!socialLinks) {
+    try {
+      const { supabase } = await import('./supabase.js');
+      const muniId = window._drmsaUser?.municipality_id;
+      if (muniId) {
+        const { data } = await supabase.from('municipalities')
+          .select('social_facebook,social_twitter,social_whatsapp,social_website')
+          .eq('id', muniId).single();
+        if (data) {
+          window._drmsaSocialLinks = data;
+          socialLinks = data;
+        }
+      }
+    } catch(e) {}
+  }
   const images = ALL_IMAGES[imageCategory] || [];
   selectedImage = images[0] || null;
 
@@ -47,10 +65,20 @@ export function openShareModal({ type, title, text, url, imageCategory }) {
 }
 
 function buildChannels(url, title, text) {
-  const wa = `https://wa.me/?text=${encodeURIComponent(text + '\n' + url)}`;
-  const fb = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}`;
-  const tw = `https://twitter.com/intent/tweet?text=${encodeURIComponent(title)}&url=${encodeURIComponent(url)}`;
-  const mail = `mailto:?subject=${encodeURIComponent(title)}&body=${encodeURIComponent(text + '\n\n' + url)}`;
+  const links   = window._drmsaSocialLinks || {};
+  const hasSocial= !!(links.social_facebook || links.social_twitter || links.social_whatsapp);
+  const noSocialMsg = '⚠ No social media links set. Please add your municipality\'s social media links in the Disaster Admin Panel → Municipality settings → Social media links.';
+
+  // Use municipality social links if set, otherwise use generic sharer
+  const waNum = links.social_whatsapp;
+  const wa    = waNum
+    ? `https://wa.me/${waNum}?text=${encodeURIComponent(text + '\n' + url)}`
+    : `https://wa.me/?text=${encodeURIComponent(text + '\n' + url)}`;
+  const fbPage = links.social_facebook;
+  const fb     = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}`;
+  const twHandle = links.social_twitter ? `via @${links.social_twitter} ` : '';
+  const tw    = `https://twitter.com/intent/tweet?text=${encodeURIComponent(title + ' ' + twHandle)}&url=${encodeURIComponent(url)}`;
+  const mail  = `mailto:?subject=${encodeURIComponent(title)}&body=${encodeURIComponent(text + '\n\n' + url)}`;
 
   return `
     <a class="sch wa" href="${wa}" target="_blank">
