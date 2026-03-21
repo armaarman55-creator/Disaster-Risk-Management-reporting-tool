@@ -30,7 +30,16 @@ async function renderStakeholders() {
       <input class="fl-input" id="stakeholder-search" placeholder="Search organisation or contact…" style="flex:1;max-width:280px"/>
       <select class="fl-sel" id="sector-filter" style="width:180px">
         <option value="">All sectors</option>
-        ${['Fire services','Health / EMS','Law enforcement','Meteorological','Government','NGO','Utility','Transport','Agriculture','Other'].map(s=>`<option>${s}</option>`).join('')}
+        ${[
+        'Fire Brigade / Fire Services','South African Police Service (SAPS)',
+        'Emergency Medical Services (EMS / Ambulance)','Hospitals & Clinics',
+        'South African Weather Service (SAWS)','South African National Defence Force (SANDF)',
+        'Provincial Traffic / Law Enforcement','SANRAL',
+        'Dept: Water & Sanitation','Eskom','Dept: Agriculture','Dept: Social Development',
+        'Dept: Health','Dept: Education','Dept: Public Works','Dept: Environmental Affairs (DEADP)',
+        'SANParks / CapeNature','Red Cross / NGOs','Ward Committees',
+        'Community Organisations (CBOs)','Private Sector / Business','Media','Other'
+      ].map(s=>`<option>${s}</option>`).join('')}
       </select>
     </div>
     <div id="orgs-list">
@@ -86,7 +95,32 @@ function showAddOrgForm(body) {
   form.className = 'panel';
   form.style.marginBottom = '12px';
   form.style.border = '1px solid var(--red)';
-  const sectors = ['Fire services','Health / EMS','Law enforcement','Meteorological','Government','NGO','Utility','Transport','Agriculture','Other'];
+  const sectors = [
+    'Fire Brigade / Fire Services',
+    'South African Police Service (SAPS)',
+    'Emergency Medical Services (EMS / Ambulance)',
+    'Hospitals & Clinics',
+    'South African Weather Service (SAWS)',
+    'South African National Defence Force (SANDF)',
+    'Provincial Traffic / Law Enforcement',
+    'SANRAL',
+    'Dept: Water & Sanitation',
+    'Eskom',
+    'Dept: Agriculture',
+    'Dept: Social Development',
+    'Dept: Health',
+    'Dept: Education',
+    'Dept: Public Works',
+    'Dept: Environmental Affairs (DEADP)',
+    'SANParks / CapeNature',
+    'Red Cross / NGOs',
+    'Ward Committees',
+    'Community Organisations (CBOs)',
+    'Private Sector / Business',
+    'Media',
+    'Other Government',
+    'Other'
+  ];
   form.innerHTML = `
     <div class="ph"><div class="ph-title">Add new organisation</div></div>
     <div class="pb">
