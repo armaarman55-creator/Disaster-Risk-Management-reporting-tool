@@ -250,3 +250,8 @@ function setEl(id, val) {
 }
 
 export function getUser()  { return _user; }
+
+// Global navigate helper — safe to use in onclick attributes (no import() needed)
+window._drmsaNavigate = function(pageId) {
+  navigateTo(pageId);
+};
