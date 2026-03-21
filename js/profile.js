@@ -7,6 +7,27 @@ export async function initProfile(user) {
   _user = user;
   const page = document.getElementById('page-profile');
   if (!page) return;
+
+  // Re-fetch user in case it was null when app loaded
+  if (!_user || !_user.id) {
+    const { supabase } = await import('./supabase.js');
+    const { data: { user: authUser } } = await supabase.auth.getUser();
+    if (authUser) {
+      const { data: profile } = await supabase
+        .from('user_profiles')
+        .select('*, municipalities(name, code, district, ward_count)')
+        .eq('id', authUser.id)
+        .single();
+      _user = profile || { id: authUser.id, email: authUser.email };
+      _user.email = authUser.email;
+    }
+  }
+
+  if (!_user) {
+    page.innerHTML = '<div style="padding:40px;color:var(--red);font-size:13px">Could not load your profile. Please sign out and sign back in.</div>';
+    return;
+  }
+
   await renderProfile(page);
 }
 
