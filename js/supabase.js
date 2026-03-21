@@ -40,11 +40,18 @@ export const supabase = createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY, {
 export async function getCurrentUser() {
   const { data: { user }, error } = await supabase.auth.getUser();
   if (error || !user) return null;
+
   const { data: profile } = await supabase
     .from('user_profiles')
     .select('*, municipalities(name, code, district, ward_count)')
     .eq('id', user.id)
     .single();
+
+  if (!profile) return null;
+
+  // Always attach the auth email so we have it regardless of profile state
+  profile.email = user.email;
+
   return profile;
 }
 
