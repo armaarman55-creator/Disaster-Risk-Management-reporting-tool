@@ -20,8 +20,17 @@ export async function initApp(user) {
   initNav();
   initFooter();
 
+  // If user profile failed to load (null), retry once directly
+  if (!_user || !_user.id) {
+    try {
+      const { getCurrentUser } = await import('./supabase.js');
+      const retried = await getCurrentUser();
+      if (retried) _user = retried;
+    } catch(e) { console.warn('User retry failed:', e); }
+  }
+
   // Then populate UI with user data
-  populateUserUI(user);
+  populateUserUI(_user);
 
   // Fetch weather if configured
   fetchWeatherWarnings();
