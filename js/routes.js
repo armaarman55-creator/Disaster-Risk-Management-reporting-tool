@@ -3,6 +3,7 @@ import { supabase } from './supabase.js';
 import { openShareModal } from './share.js';
 
 let _muniId = null;
+let _closures = [];
 
 export async function initRoutes(user) {
   _muniId = user?.municipality_id;
@@ -19,90 +20,68 @@ async function renderRoutes() {
     .eq('municipality_id', _muniId)
     .order('created_at', { ascending: false });
 
+  _closures = closures || [];
+
   body.innerHTML = `
     <div class="sec-hdr">
       <div>
         <div class="sec-hdr-title">Road closures & alternative routes</div>
-        <div class="sec-hdr-sub">${closures?.filter(c => c.status === 'closed').length || 0} active closures</div>
+        <div class="sec-hdr-sub">${_closures.filter(c=>c.status==='closed').length} active closures</div>
       </div>
       <button class="btn btn-red" id="add-closure-btn">+ Add closure</button>
     </div>
-    ${closures?.length ? closures.map(c => renderClosureCard(c)).join('') : emptyState('No road closures recorded.')}`;
+    <div id="add-closure-area"></div>
+    <div id="closures-list">
+      ${_closures.length ? _closures.map(c => renderClosureCard(c)).join('') : emptyState('No road closures recorded.')}
+    </div>`;
 
-  document.getElementById('add-closure-btn')?.addEventListener('click', () => showAddClosureForm(body, closures));
-
-  body.querySelectorAll('.closure-share').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const id = btn.dataset.id;
-      const closure = closures?.find(c => c.id === id);
-      if (!closure) return;
-      const alt = closure.alternative_routes?.[0];
-      openShareModal({
-        type: 'closure', title: closure.road_name, imageCategory: 'closure',
-        url: `${window.location.origin}/public/routes/${id}`,
-        text: `ROAD CLOSED — ${closure.road_name}\nReason: ${closure.reason || 'N/A'}\nClosed: ${closure.closed_since ? new Date(closure.closed_since).toLocaleString('en-ZA') : 'N/A'}\nReopening: ${closure.expected_reopen || 'Unknown'}${alt ? `\n\nALTERNATIVE: ${alt.description}\n${alt.extra_distance ? '+' + alt.extra_distance + 'km' : ''}` : ''}`
-      });
-    });
-  });
-
-  body.querySelectorAll('.closure-save').forEach(btn => {
-    btn.addEventListener('click', () => saveClosure(btn.dataset.id));
-  });
-
-  body.querySelectorAll('.pub-tog').forEach(tog => {
-    tog.addEventListener('click', () => {
-      const track = tog.querySelector('.tog-track');
-      const lbl = tog.querySelector('span');
-      track?.classList.toggle('on');
-      const isOn = track?.classList.contains('on');
-      if (lbl) { lbl.textContent = isOn ? 'LIVE' : 'DRAFT'; lbl.style.color = isOn ? 'var(--green)' : 'var(--text3)'; }
-      supabase.from('road_closures').update({ is_published: isOn }).eq('id', tog.dataset.id);
-    });
-  });
+  document.getElementById('add-closure-btn')?.addEventListener('click', () => showAddClosureForm());
+  bindClosureEvents();
 }
 
 function renderClosureCard(c) {
-  const statusColour = { closed: 'var(--red)', partial: 'var(--amber)', open: 'var(--green)' };
   const alt = c.alternative_routes?.[0];
+  const statusColour = { closed:'var(--red)', partial:'var(--amber)', open:'var(--green)' };
 
   return `
-    <div class="rec-card" style="border-left:3px solid ${statusColour[c.status] || 'var(--border)'}">
+    <div class="rec-card" id="closure-${c.id}" style="margin-bottom:12px;border-left:3px solid ${statusColour[c.status]||'var(--border)'}">
       <div class="rec-head">
         <div>
           <div class="rec-name">${c.road_name}</div>
-          <div class="rec-meta">${c.reason || 'No reason specified'} · Ward ${Array.isArray(c.affected_wards) ? c.affected_wards.join(', ') : (c.affected_wards || '?')}</div>
+          <div class="rec-meta">${c.reason||'No reason'} · Ward${Array.isArray(c.affected_wards)?'s '+c.affected_wards.join(', '):' '+c.affected_wards||'?'}</div>
         </div>
         <div class="rec-badges">
-          <span class="badge ${c.status === 'closed' ? 'b-red' : c.status === 'partial' ? 'b-amber' : 'b-green'}">${(c.status || 'unknown').toUpperCase()}</span>
-          <div class="pub-tog" data-id="${c.id}" data-published="${c.is_published}">
-            <div class="tog-track ${c.is_published ? 'on' : ''}"><div class="tog-knob"></div></div>
-            <span style="font-size:10px;font-weight:700;font-family:var(--font-mono);color:${c.is_published ? 'var(--green)' : 'var(--text3)'}">${c.is_published ? 'LIVE' : 'DRAFT'}</span>
+          <span class="badge ${c.status==='closed'?'b-red':c.status==='partial'?'b-amber':'b-green'}">${(c.status||'unknown').toUpperCase()}</span>
+          <div class="pub-tog" data-id="${c.id}" data-table="road_closures">
+            <div class="tog-track ${c.is_published?'on':''}"><div class="tog-knob"></div></div>
+            <span style="font-size:10px;font-weight:700;font-family:monospace;color:${c.is_published?'var(--green)':'var(--text3)'}">${c.is_published?'LIVE':'DRAFT'}</span>
           </div>
         </div>
       </div>
       <div class="rec-body">
-        <div class="rf"><span class="rf-key">Closed since</span><span class="rf-val mono" style="font-size:11px">${c.closed_since ? new Date(c.closed_since).toLocaleString('en-ZA') : '—'}</span></div>
-        <div class="rf"><span class="rf-key">Expected reopening</span>
-          <input class="fl-input" value="${c.expected_reopen || ''}" id="reopen-${c.id}" placeholder="e.g. 25 Mar 2025"/>
-        </div>
-        <div class="rf"><span class="rf-key">Authority</span><span class="rf-val">${c.authority || '—'}</span></div>
+        <div class="rf"><span class="rf-key">Closed since</span><span class="rf-val mono" style="font-size:11px">${c.closed_since?new Date(c.closed_since).toLocaleString('en-ZA'):'—'}</span></div>
+        <div class="rf"><span class="rf-key">Expected reopening</span><input class="fl-input" value="${c.expected_reopen||''}" id="reopen-${c.id}" placeholder="e.g. 25 Mar 2025"/></div>
+        <div class="rf"><span class="rf-key">Authority</span><span class="rf-val">${c.authority||'—'}</span></div>
         <div class="rf"><span class="rf-key">Status</span>
           <select class="fl-sel" id="cstatus-${c.id}">
-            <option value="closed" ${c.status === 'closed' ? 'selected' : ''}>Fully closed</option>
-            <option value="partial" ${c.status === 'partial' ? 'selected' : ''}>Partial / Use caution</option>
-            <option value="open" ${c.status === 'open' ? 'selected' : ''}>Reopened</option>
+            <option value="closed"   ${c.status==='closed'  ?'selected':''}>Fully closed</option>
+            <option value="partial"  ${c.status==='partial' ?'selected':''}>Partial / Use caution</option>
+            <option value="open"     ${c.status==='open'    ?'selected':''}>Reopened</option>
           </select>
         </div>
       </div>
+
       ${alt ? `
-      <div class="alt-route-box">
-        <div class="alt-label">Alternative route</div>
-        <div style="font-size:12px;color:var(--text2);line-height:1.5">${alt.description}</div>
-        ${alt.extra_distance ? `<div style="font-size:11px;color:var(--text3);margin-top:3px">Additional distance: +${alt.extra_distance} km · ${alt.vehicle_suitability || 'All vehicles'}</div>` : ''}
-      </div>` : `
-      <div style="padding:10px 16px">
-        <button class="btn btn-sm btn-green" onclick="addAlternativeRoute('${c.id}')">+ Add alternative route</button>
-      </div>`}
+        <div class="alt-route-box">
+          <div class="alt-label">Alternative route</div>
+          <div style="font-size:12px;color:var(--text2);line-height:1.5">${alt.description}</div>
+          ${alt.extra_distance?`<div style="font-size:11px;color:var(--text3);margin-top:3px">+${alt.extra_distance} km · ${alt.vehicle_suitability||'All vehicles'}</div>`:''}
+          <button class="btn btn-sm" style="margin-top:8px" data-edit-alt="${alt.id}" data-closure="${c.id}">Edit route</button>
+        </div>` : `
+        <div style="padding:10px 16px" id="alt-area-${c.id}">
+          <button class="btn btn-sm btn-green add-alt-btn" data-closure="${c.id}">+ Add alternative route</button>
+        </div>`}
+
       <div class="rec-foot">
         <button class="btn btn-sm btn-green closure-save" data-id="${c.id}">Save</button>
         <button class="btn btn-sm closure-share" data-id="${c.id}">Share</button>
@@ -110,88 +89,177 @@ function renderClosureCard(c) {
     </div>`;
 }
 
-function showAddClosureForm(body, existing) {
-  const form = document.createElement('div');
-  form.className = 'rec-card';
-  form.style.border = '1px solid var(--red)';
-  form.innerHTML = `
-    <div class="rec-head"><div class="rec-name">New road closure</div></div>
-    <div style="padding:16px">
+function showAddAltRouteForm(closureId, containerId) {
+  const area = document.getElementById(containerId || `alt-area-${closureId}`);
+  if (!area) return;
+
+  area.innerHTML = `
+    <div style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:14px">
+      <div style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:10px;font-family:Inter,system-ui,sans-serif">Alternative route details</div>
+      <div class="fl"><span class="fl-label">Route description</span>
+        <textarea class="fl-textarea" id="alt-desc-${closureId}" rows="2" placeholder="e.g. Turn left at Main St, continue via Oak Ave to rejoin R62..."></textarea>
+      </div>
       <div class="frow">
-        <div class="fl"><span class="fl-label">Road name / number</span><input class="fl-input" id="new-road-name" placeholder="e.g. R62 Main Road"/></div>
-        <div class="fl"><span class="fl-label">Status</span>
-          <select class="fl-sel" id="new-road-status">
-            <option value="closed">Fully closed</option>
-            <option value="partial">Partial / Caution</option>
+        <div class="fl"><span class="fl-label">Extra distance (km)</span><input class="fl-input" type="number" id="alt-dist-${closureId}" placeholder="e.g. 4"/></div>
+        <div class="fl"><span class="fl-label">Vehicle suitability</span>
+          <select class="fl-sel" id="alt-veh-${closureId}">
+            <option>All vehicles</option>
+            <option>Light vehicles only</option>
+            <option>4x4 only</option>
+            <option>No heavy vehicles</option>
           </select>
         </div>
       </div>
-      <div class="fl"><span class="fl-label">Reason for closure</span><input class="fl-input" id="new-road-reason" placeholder="e.g. Flash flood damage"/></div>
-      <div class="frow">
-        <div class="fl"><span class="fl-label">Affected wards</span><input class="fl-input" id="new-road-wards" placeholder="e.g. 1, 4"/></div>
-        <div class="fl"><span class="fl-label">Authority</span>
-          <select class="fl-sel" id="new-road-auth">
-            <option>SANRAL</option><option>DRPW</option><option>Municipal</option><option>SAPS</option>
-          </select>
-        </div>
+      <div class="fl"><span class="fl-label">Road condition</span>
+        <select class="fl-sel" id="alt-cond-${closureId}">
+          <option>Good</option><option>Fair</option><option>Poor</option><option>Gravel</option>
+        </select>
       </div>
-      <div class="fl"><span class="fl-label">Expected reopening</span><input class="fl-input" id="new-road-reopen" placeholder="e.g. 25 March 2025 or Unknown"/></div>
       <div style="display:flex;gap:8px;margin-top:8px">
-        <button class="btn btn-green btn-sm" id="save-new-closure">Save closure</button>
-        <button class="btn btn-sm" onclick="this.closest('.rec-card').remove()">Cancel</button>
+        <button class="btn btn-green btn-sm" id="save-alt-${closureId}">Save route</button>
+        <button class="btn btn-sm" onclick="document.getElementById('alt-area-${closureId}').innerHTML='<button class=\\'btn btn-sm btn-green add-alt-btn\\' data-closure=\\'${closureId}\\'>+ Add alternative route</button>'">Cancel</button>
       </div>
     </div>`;
 
-  body.insertBefore(form, body.querySelector('.rec-card'));
+  // Bind save button immediately after rendering
+  document.getElementById(`save-alt-${closureId}`)?.addEventListener('click', async () => {
+    const desc = document.getElementById(`alt-desc-${closureId}`)?.value.trim();
+    if (!desc) { alert('Please enter a route description.'); return; }
 
-  document.getElementById('save-new-closure')?.addEventListener('click', async () => {
+    const { error } = await supabase.from('alternative_routes').insert({
+      closure_id:          closureId,
+      municipality_id:     _muniId,
+      description:         desc,
+      extra_distance:      parseInt(document.getElementById(`alt-dist-${closureId}`)?.value) || null,
+      vehicle_suitability: document.getElementById(`alt-veh-${closureId}`)?.value,
+      road_condition:      document.getElementById(`alt-cond-${closureId}`)?.value,
+      is_published:        false
+    });
+
+    if (!error) { showToast('Alternative route saved'); await renderRoutes(); }
+    else showToast(error.message, true);
+  });
+
+  // Re-bind add-alt buttons after any DOM change
+  document.querySelectorAll('.add-alt-btn').forEach(btn => {
+    btn.addEventListener('click', () => showAddAltRouteForm(btn.dataset.closure));
+  });
+}
+
+function showAddClosureForm() {
+  const area = document.getElementById('add-closure-area');
+  if (!area) return;
+  if (area.innerHTML) { area.innerHTML = ''; return; }
+
+  area.innerHTML = `
+    <div class="rec-card" style="margin-bottom:16px;border:1px solid var(--red)">
+      <div class="rec-head"><div class="rec-name">New road closure</div></div>
+      <div style="padding:16px">
+        <div class="frow">
+          <div class="fl"><span class="fl-label">Road name / number</span><input class="fl-input" id="new-road-name" placeholder="e.g. R62 Main Road, Schoemanshoek"/></div>
+          <div class="fl"><span class="fl-label">Status</span>
+            <select class="fl-sel" id="new-road-status">
+              <option value="closed">Fully closed</option>
+              <option value="partial">Partial / Caution</option>
+            </select>
+          </div>
+        </div>
+        <div class="fl"><span class="fl-label">Reason for closure</span><input class="fl-input" id="new-road-reason" placeholder="e.g. Flash flood damage to road surface"/></div>
+        <div class="frow">
+          <div class="fl"><span class="fl-label">Affected wards (comma separated)</span><input class="fl-input" id="new-road-wards" placeholder="e.g. 1, 4, 7"/></div>
+          <div class="fl"><span class="fl-label">Authority</span>
+            <select class="fl-sel" id="new-road-auth">
+              <option>SANRAL</option><option>DRPW</option><option>Municipal</option><option>SAPS</option><option>Traffic</option>
+            </select>
+          </div>
+        </div>
+        <div class="fl"><span class="fl-label">Expected reopening</span><input class="fl-input" id="new-road-reopen" placeholder="e.g. 25 March 2025 or Unknown"/></div>
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <button class="btn btn-green btn-sm" id="save-new-closure-btn">Save closure</button>
+          <button class="btn btn-sm" onclick="document.getElementById('add-closure-area').innerHTML=''">Cancel</button>
+        </div>
+      </div>
+    </div>`;
+
+  document.getElementById('save-new-closure-btn')?.addEventListener('click', async () => {
     const roadName = document.getElementById('new-road-name')?.value.trim();
     if (!roadName) { alert('Road name is required.'); return; }
+
+    const wardsRaw = document.getElementById('new-road-wards')?.value;
+    const wards = wardsRaw ? wardsRaw.split(',').map(w=>w.trim()).filter(Boolean) : [];
+
     const { error } = await supabase.from('road_closures').insert({
       municipality_id: _muniId,
-      road_name: roadName,
-      status: document.getElementById('new-road-status')?.value,
-      reason: document.getElementById('new-road-reason')?.value,
-      affected_wards: document.getElementById('new-road-wards')?.value.split(',').map(w => w.trim()),
-      authority: document.getElementById('new-road-auth')?.value,
+      road_name:       roadName,
+      status:          document.getElementById('new-road-status')?.value,
+      reason:          document.getElementById('new-road-reason')?.value,
+      affected_wards:  wards,
+      authority:       document.getElementById('new-road-auth')?.value,
       expected_reopen: document.getElementById('new-road-reopen')?.value,
-      closed_since: new Date().toISOString(),
-      is_published: false
+      closed_since:    new Date().toISOString(),
+      is_published:    false
     });
-    if (!error) { form.remove(); await renderRoutes(); }
-    else alert('Error saving: ' + error.message);
+
+    if (!error) { area.innerHTML = ''; showToast('Closure saved'); await renderRoutes(); }
+    else showToast(error.message, true);
   });
 }
 
-async function saveClosure(id) {
-  const { error } = await supabase.from('road_closures').update({
-    status: document.getElementById(`cstatus-${id}`)?.value,
-    expected_reopen: document.getElementById(`reopen-${id}`)?.value,
-    updated_at: new Date().toISOString()
-  }).eq('id', id);
-  if (!error) showToast('Closure updated');
-}
-
-window.addAlternativeRoute = async function(closureId) {
-  const desc = prompt('Describe the alternative route:');
-  if (!desc) return;
-  const dist = prompt('Extra distance in km (leave blank if none):');
-  await supabase.from('alternative_routes').insert({
-    closure_id: closureId, municipality_id: _muniId,
-    description: desc, extra_distance: dist ? parseInt(dist) : null,
-    vehicle_suitability: 'All vehicles'
+function bindClosureEvents() {
+  // Add alt route buttons
+  document.querySelectorAll('.add-alt-btn').forEach(btn => {
+    btn.addEventListener('click', () => showAddAltRouteForm(btn.dataset.closure));
   });
-  await renderRoutes();
-};
+
+  // Save closure
+  document.querySelectorAll('.closure-save').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const id = btn.dataset.id;
+      const { error } = await supabase.from('road_closures').update({
+        status:          document.getElementById(`cstatus-${id}`)?.value,
+        expected_reopen: document.getElementById(`reopen-${id}`)?.value,
+        updated_at:      new Date().toISOString()
+      }).eq('id', id);
+      if (!error) showToast('Closure updated');
+      else showToast(error.message, true);
+    });
+  });
+
+  // Share
+  document.querySelectorAll('.closure-share').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const c = _closures.find(x => x.id === btn.dataset.id);
+      if (!c) return;
+      const alt = c.alternative_routes?.[0];
+      openShareModal({
+        type: 'closure', title: c.road_name, imageCategory: 'closure',
+        url: `${window.location.origin}/public/routes/${c.id}`,
+        text: `ROAD CLOSED — ${c.road_name}\nReason: ${c.reason||'N/A'}\nClosed: ${c.closed_since?new Date(c.closed_since).toLocaleString('en-ZA'):'N/A'}\nExpected reopening: ${c.expected_reopen||'Unknown'}${alt?`\n\nALTERNATIVE: ${alt.description}`:''}`,
+      });
+    });
+  });
+
+  // Publish toggles
+  document.querySelectorAll('.pub-tog').forEach(tog => {
+    tog.addEventListener('click', async () => {
+      const track = tog.querySelector('.tog-track');
+      const lbl   = tog.querySelector('span');
+      track?.classList.toggle('on');
+      const isOn = track?.classList.contains('on');
+      if (lbl) { lbl.textContent = isOn?'LIVE':'DRAFT'; lbl.style.color = isOn?'var(--green)':'var(--text3)'; }
+      await supabase.from(tog.dataset.table||'road_closures').update({ is_published: isOn }).eq('id', tog.dataset.id);
+    });
+  });
+}
 
 function emptyState(msg) {
-  return `<div style="text-align:center;padding:48px 20px;color:var(--text3);font-size:12px;font-family:var(--font-mono)">${msg}</div>`;
+  return `<div style="text-align:center;padding:48px 20px;color:var(--text3);font-size:12px;font-family:monospace">${msg}</div>`;
 }
 
-function showToast(msg, isError = false) {
+function showToast(msg, isError=false) {
   const t = document.createElement('div');
-  t.style.cssText = `position:fixed;bottom:80px;right:24px;background:${isError ? 'var(--red-dim)' : 'var(--green-dim)'};border:1px solid ${isError ? 'var(--red)' : 'var(--green)'};color:${isError ? 'var(--red)' : 'var(--green)'};padding:10px 16px;border-radius:6px;font-size:12px;font-family:var(--font-mono);font-weight:700;z-index:500`;
+  t.style.cssText = `position:fixed;bottom:80px;right:24px;background:${isError?'var(--red-dim)':'var(--green-dim)'};border:1px solid ${isError?'var(--red)':'var(--green)'};color:${isError?'var(--red)':'var(--green)'};padding:10px 16px;border-radius:6px;font-size:12px;font-family:monospace;font-weight:700;z-index:500`;
   t.textContent = msg;
   document.body.appendChild(t);
-  setTimeout(() => { t.style.opacity = '0'; setTimeout(() => t.remove(), 300); }, 2500);
+  setTimeout(()=>{t.style.opacity='0';setTimeout(()=>t.remove(),300);},2500);
 }
