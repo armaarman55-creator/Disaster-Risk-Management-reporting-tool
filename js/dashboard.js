@@ -1,6 +1,5 @@
 // js/dashboard.js
 import { supabase } from './supabase.js';
-import { navigateTo } from './app.js';
 
 const WARD_POLYGONS = [
   { id: 'W1', pts: '24,14 88,6 102,50 58,72 12,58' },
