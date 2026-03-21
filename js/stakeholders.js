@@ -119,14 +119,18 @@ function showAddOrgForm(body) {
     'Private Sector / Business',
     'Media',
     'Other Government',
-    'Other'
+    'Other / Custom'
   ];
   form.innerHTML = `
     <div class="ph"><div class="ph-title">Add new organisation</div></div>
     <div class="pb">
       <div class="frow">
         <div class="fl"><span class="fl-label">Organisation name</span><input class="fl-input" id="new-org-name" placeholder="e.g. Fire Brigade"/></div>
-        <div class="fl"><span class="fl-label">Sector</span><select class="fl-sel" id="new-org-sector">${sectors.map(s=>`<option>${s}</option>`).join('')}</select></div>
+        <div class="fl">
+          <span class="fl-label">Sector <span style="color:var(--text3);font-size:10px">(select or type your own)</span></span>
+          <input class="fl-input" id="new-org-sector" list="sector-list" placeholder="Select or type a sector"/>
+          <datalist id="sector-list">${sectors.map(s=>`<option value="${s}"/>`).join('')}</datalist>
+        </div>
       </div>
       <div class="fl"><span class="fl-label">Address</span><input class="fl-input" id="new-org-address" placeholder="Physical address"/></div>
       <div class="frow">
