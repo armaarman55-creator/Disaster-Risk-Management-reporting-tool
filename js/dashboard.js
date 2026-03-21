@@ -133,16 +133,25 @@ async function renderWardMap() {
 
   if (muniCode) {
     try {
-      // Map muni code to MDB CAT_B value
+      // MDB ArcGIS — CAT_B field contains the municipality code
+      // Use exact match, not LIKE, to avoid cross-boundary results
+      // resultRecordCount=200 ensures all wards returned (Oudtshoorn=13, George=27, etc.)
+      const where = encodeURIComponent(`CAT_B='${muniCode}'`);
       const url = `https://services7.arcgis.com/oeoyTUJC8HEeYsRB/arcgis/rest/services/MDB_Wards_2020/FeatureServer/0/query` +
-        `?where=CAT_B+LIKE+%27${encodeURIComponent(muniCode)}%25%27` +
+        `?where=${where}` +
         `&outFields=WARD_ID,WARD_NO,CAT_B,MUNICNAME` +
-        `&outSR=4326&f=geojson&resultRecordCount=100`;
+        `&outSR=4326&f=geojson` +
+        `&resultRecordCount=200` +
+        `&returnGeometry=true`;
+      console.log('MDB Ward API URL:', url);
       const res = await fetch(url);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
+      console.log(`MDB API returned ${data?.features?.length || 0} wards for ${muniCode}`);
       if (data?.features?.length) mdbWards = data.features;
+      else console.warn('MDB API: no wards found. Check municipality code:', muniCode);
     } catch(e) {
-      console.warn('MDB API failed:', e);
+      console.warn('MDB API failed:', e.message);
     }
   }
 
