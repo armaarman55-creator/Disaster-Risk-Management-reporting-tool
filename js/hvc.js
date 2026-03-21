@@ -84,8 +84,30 @@ export async function initHVC(user) {
 
   // Load wards for affected areas selector
   if (_muniId) {
-    const { data } = await supabase.from('wards').select('ward_number,area_name').eq('municipality_id', _muniId).order('ward_number');
+    const { data } = await supabase
+      .from('wards')
+      .select('ward_number,area_name')
+      .eq('municipality_id', _muniId)
+      .order('ward_number');
     _wards = data || [];
+
+    // If no wards in DB but municipality has a ward_count, seed them
+    if (!_wards.length && _user?.municipalities?.ward_count > 0) {
+      const wardCount = _user.municipalities.ward_count;
+      const rows = Array.from({ length: wardCount }, (_, i) => ({
+        municipality_id: _muniId,
+        ward_number: i + 1,
+        area_name: null
+      }));
+      const { data: seeded, error } = await supabase
+        .from('wards')
+        .insert(rows)
+        .select('ward_number,area_name');
+      if (!error && seeded) {
+        _wards = seeded;
+        console.log(`Seeded ${seeded.length} wards for municipality`);
+      }
+    }
   }
 
   await renderHVCPage();
@@ -252,9 +274,24 @@ function renderHazardRow(hazard, cat, isCustom=false) {
       <div class="hvc-hint" id="hint-${id}-${key}" style="font-size:10px;color:var(--text3);margin-top:3px;min-height:14px;line-height:1.4;display:none"></div>`;
   };
 
-  const wardOpts = _wards.length
-    ? _wards.map(w=>`<option value="${w.ward_number}">Ward ${w.ward_number}${w.area_name?' — '+w.area_name:''}</option>`).join('')
-    : '<option value="">No wards loaded</option>';
+  // Build ward options — use DB wards if available, else generate from municipality ward_count
+  let wardOpts = '';
+  if (_wards.length) {
+    wardOpts = _wards.map(w =>
+      `<option value="${w.ward_number}">Ward ${w.ward_number}${w.area_name ? ' — ' + w.area_name : ''}</option>`
+    ).join('');
+  } else {
+    // Fall back to generating ward numbers from municipality ward_count
+    const wardCount = _user?.municipalities?.ward_count || 0;
+    if (wardCount > 0) {
+      wardOpts = Array.from({ length: wardCount }, (_, i) =>
+        `<option value="${i + 1}">Ward ${i + 1}</option>`
+      ).join('');
+    } else {
+      // Last resort — allow free text entry instead of a select
+      wardOpts = null;
+    }
+  }
 
   return `
     <div class="panel" style="margin-bottom:8px" id="hrow-${id}">
@@ -290,11 +327,19 @@ function renderHazardRow(hazard, cat, isCustom=false) {
             </div>
             <div class="fl">
               <span class="fl-label">Wards/areas affected</span>
-              <select class="fl-sel" id="wards-${id}" multiple
-                style="font-size:11px;padding:4px 6px;min-height:72px">
-                ${wardOpts}
-              </select>
-              <div style="font-size:10px;color:var(--text3);margin-top:2px">Hold Ctrl/Cmd to select multiple</div>
+              ${wardOpts !== null ? `
+                <select class="fl-sel" id="wards-${id}" multiple
+                  style="font-size:11px;padding:4px 6px;min-height:72px">
+                  ${wardOpts}
+                </select>
+                <div style="font-size:10px;color:var(--text3);margin-top:2px">Hold Ctrl/Cmd to select multiple</div>
+              ` : `
+                <input class="fl-input" id="wards-${id}" placeholder="e.g. Ward 1, Ward 3, Schoemanshoek"
+                  style="font-size:12px"/>
+                <div style="font-size:10px;color:var(--text3);margin-top:2px">
+                  Type ward numbers or area names. Set ward count in Disaster Admin Panel to enable a selector.
+                </div>
+              `}
             </div>
           </div>
 
@@ -432,9 +477,17 @@ window.recalcHazard = function(id) {
   const pVals = [pi,pu,pg].filter(v=>v!==null);
   const pIdx  = pVals.length ? pVals.reduce((a,b)=>a+b,0)/pVals.length : null;
 
-  // Get selected wards
-  const wardSel = document.getElementById(`wards-${id}`);
-  const wards   = wardSel ? [...wardSel.selectedOptions].map(o=>o.value) : [];
+  // Get selected wards — handles both multi-select and text input fallback
+  const wardEl = document.getElementById(`wards-${id}`);
+  let wards = [];
+  if (wardEl) {
+    if (wardEl.tagName === 'SELECT') {
+      wards = [...wardEl.selectedOptions].map(o => o.value);
+    } else {
+      // Text input — split by comma
+      wards = wardEl.value.split(',').map(w => w.trim()).filter(Boolean);
+    }
+  }
 
   _scores[id] = { hScore, vScore, cScore, resilience, riskRating, pIdx,
     aa,pb,fr,pr, vp,ve,vs,vt,vn, ci,cp,cq,cf,ch,cs, pi,pu,pg, wards };
