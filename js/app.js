@@ -167,6 +167,7 @@ async function loadPageModule(pageId) {
       case 'mopup':        { const m = await import('./mopup.js');        m.initMopup(_user);        break; }
       case 'stakeholders': { const m = await import('./stakeholders.js'); m.initStakeholders(_user); break; }
       case 'hvc':          { const m = await import('./hvc.js');          m.initHVC(_user);          break; }
+      case 'idp':          { const m = await import('./idp.js');          m.initIDP(_user);          break; }
       case 'admin':        { const m = await import('./admin.js');        m.initAdmin(_user);        break; }
       case 'profile':      { const m = await import('./profile.js');      m.initProfile(_user);      break; }
     }
