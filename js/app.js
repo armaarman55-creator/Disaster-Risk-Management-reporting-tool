@@ -1,5 +1,4 @@
 // js/app.js
-import { signOut } from './auth.js';
 import { supabase } from './supabase.js';
 
 let _user = null;
@@ -180,7 +179,10 @@ async function loadPageModule(pageId) {
 function initFooter() {
   document.getElementById('footer-theme-btn')?.addEventListener('click', toggleTheme);
   document.getElementById('rail-theme-btn')?.addEventListener('click',   toggleTheme);
-  document.getElementById('footer-signout')?.addEventListener('click',   signOut);
+  document.getElementById('footer-signout')?.addEventListener('click', async () => {
+    const { signOut } = await import('./auth.js');
+    signOut();
+  });
 
   // Clicking avatar or name goes to profile
   ['user-av', 'user-info-wrap'].forEach(id => {
