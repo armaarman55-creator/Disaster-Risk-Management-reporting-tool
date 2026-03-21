@@ -126,147 +126,125 @@ async function renderWardMap() {
   const wardRisk = {};
   _wardData.forEach(w => { wardRisk[w.ward_number] = w.dominant_risk || 'Negligible'; });
 
-  // Try MDB ArcGIS REST API for real ward boundaries
   const muniCode = window._drmsaUser?.municipalities?.code;
+  const muniName = (window._drmsaUser?.municipalities?.name || '')
+    .replace(' LM','').replace(' DM','').replace(' Metropolitan Municipality','').trim();
   let mdbWards = null;
 
   if (muniCode) {
     try {
       const BASE = 'https://services7.arcgis.com/oeoyTUJC8HEeYsRB/arcgis/rest/services/MDB_Wards_2020/FeatureServer/0/query';
 
-      // Step 1: probe one record to discover actual field names
-      const probeUrl = `${BASE}?where=1%3D1&outFields=*&f=json&resultRecordCount=1`;
-      const probeRes = await fetch(probeUrl);
+      // Probe one record to discover field names
+      const probeRes  = await fetch(`${BASE}?where=1%3D1&outFields=*&f=json&resultRecordCount=1`);
       const probeData = await probeRes.json();
-      const fields = (probeData.fields || []).map(f => f.name);
-      console.log('MDB API fields:', fields);
+      const fields    = (probeData.fields || []).map(f => f.name);
+      const sample    = probeData.features?.[0]?.attributes || {};
+      console.log('MDB fields:', fields);
+      console.log('MDB sample:', sample);
 
-      // Step 2: find correct municipality field (could be CAT_B, LB_BND_C, MUNICNAME, etc.)
-      const muniName = window._drmsaUser?.municipalities?.name?.replace(' LM','').replace(' DM','').trim() || '';
-      
-      // Try different field/value combinations
+      // Detect ward number field
+      const wardNumField = fields.find(f => /ward.?n(o|um)/i.test(f)) || 'WARD_NO';
+      // Detect municipality code/name field
+      const codeFields = fields.filter(f => /cat_b|lb_|muni.*c/i.test(f));
+      const nameFields = fields.filter(f => /muni.*name|municname/i.test(f));
+
+      console.log('Ward num field:', wardNumField, 'Code fields:', codeFields, 'Name fields:', nameFields);
+
+      // Build query attempts — code match first, then name
       const attempts = [];
-      
-      // Try by code fields first
-      const codeFields = fields.filter(f => f.match(/CAT|CODE|LB_|MUNI.*C/i));
       codeFields.forEach(f => attempts.push(`${f}='${muniCode}'`));
-      
-      // Try by name
-      const nameFields = fields.filter(f => f.match(/NAME|MUNI/i));
-      nameFields.forEach(f => {
-        if (muniName) attempts.push(`${f} LIKE '%${muniName}%'`);
-      });
+      nameFields.forEach(f => { if (muniName) attempts.push(`${f} LIKE '%${muniName}%'`); });
 
-      console.log('MDB: will try queries:', attempts.slice(0,3));
-
-      let found = false;
       for (const where of attempts) {
-        const url = `${BASE}?where=${encodeURIComponent(where)}&outFields=*&outSR=4326&f=geojson&resultRecordCount=200&returnGeometry=true`;
-        console.log('MDB trying:', where);
-        const res = await fetch(url);
+        const url  = `${BASE}?where=${encodeURIComponent(where)}&outFields=*&outSR=4326&f=geojson&resultRecordCount=200&returnGeometry=true`;
+        const res  = await fetch(url);
         if (!res.ok) continue;
         const data = await res.json();
-        const count = data?.features?.length || 0;
-        console.log(`MDB: "${where}" → ${count} wards`);
-        if (count > 0) {
-          mdbWards = data.features;
-          console.log('MDB: SUCCESS with query:', where);
-          found = true;
-          break;
-        }
+        const n    = data?.features?.length || 0;
+        console.log(`MDB "${where}" → ${n} features`);
+        if (n > 0) { mdbWards = data.features; _mdbWardNumField = wardNumField; break; }
       }
-
-      if (!found) {
-        console.warn('MDB: all queries returned 0 wards. Available fields:', fields);
-        // Log a sample attribute to help debug
-        if (probeData.features?.[0]) {
-          console.log('MDB sample record attributes:', probeData.features[0].attributes);
-        }
-      }
-    } catch(e) {
-      console.warn('MDB API failed:', e.message);
-    }
+    } catch(e) { console.warn('MDB API failed:', e.message); }
   }
 
   g.innerHTML = '';
 
   if (mdbWards?.length) {
-    // Project GeoJSON coords to SVG viewBox 0 0 310 200
+    // Project GeoJSON to SVG 0 0 310 200
     const allCoords = mdbWards.flatMap(f => {
       const geom = f.geometry;
       if (!geom) return [];
       const rings = geom.type === 'MultiPolygon' ? geom.coordinates.flat(1) : geom.coordinates;
       return rings.flat();
     });
-
-    const lngs = allCoords.map(c => c[0]);
-    const lats = allCoords.map(c => c[1]);
-    const minLng = Math.min(...lngs), maxLng = Math.max(...lngs);
-    const minLat = Math.min(...lats), maxLat = Math.max(...lats);
-
-    const project = ([lng, lat]) => [
-      Math.round(((lng - minLng) / (maxLng - minLng)) * 290 + 10),
-      Math.round(((maxLat - lat) / (maxLat - minLat)) * 180 + 10)
+    const lngs = allCoords.map(c => c[0]), lats = allCoords.map(c => c[1]);
+    const minLng=Math.min(...lngs), maxLng=Math.max(...lngs);
+    const minLat=Math.min(...lats), maxLat=Math.max(...lats);
+    const project = ([lng,lat]) => [
+      ((lng-minLng)/(maxLng-minLng))*290+10,
+      ((maxLat-lat)/(maxLat-minLat))*180+10
     ];
 
     mdbWards.forEach(f => {
-      const props = f.properties;
-      const wardNo = props.WARD_NO || props.WARD_ID;
-      const risk = wardRisk[wardNo] || 'Negligible';
-      const fill = RISK_COLOURS[risk] || '#6e7681';
-
-      const geom = f.geometry;
+      const props  = f.properties || {};
+      // Try multiple field name variants
+      const wardNo = props[_mdbWardNumField]
+        ?? props['WARD_NO'] ?? props['WARD_NUM'] ?? props['WardNo']
+        ?? props['ward_no'] ?? props['ward_num'] ?? '?';
+      const risk   = wardRisk[parseInt(wardNo)] || 'Negligible';
+      const fill   = RISK_COLOURS[risk] || '#6e7681';
+      const geom   = f.geometry;
       if (!geom) return;
-      const rings = geom.type === 'MultiPolygon' ? geom.coordinates.flat(1) : geom.coordinates;
+      const rings  = geom.type==='MultiPolygon' ? geom.coordinates.flat(1) : geom.coordinates;
 
       rings.forEach(ring => {
-        const pts = ring.map(coord => project(coord).join(',')).join(' ');
-        const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+        const pts = ring.map(coord => project(coord).map(v=>v.toFixed(1)).join(',')).join(' ');
+        const poly = document.createElementNS('http://www.w3.org/2000/svg','polygon');
         poly.setAttribute('points', pts);
         poly.setAttribute('fill', fill);
-        poly.setAttribute('fill-opacity', '0.42');
+        poly.setAttribute('fill-opacity','0.45');
         poly.setAttribute('stroke', fill);
-        poly.setAttribute('stroke-width', '0.8');
+        poly.setAttribute('stroke-width','0.6');
         poly.style.cursor = 'pointer';
-        poly.addEventListener('mouseenter', function() { this.setAttribute('fill-opacity', '0.68'); });
-        poly.addEventListener('mouseleave', function() { this.setAttribute('fill-opacity', '0.42'); });
+        poly.addEventListener('mouseenter', function(){ this.setAttribute('fill-opacity','0.75'); });
+        poly.addEventListener('mouseleave', function(){ this.setAttribute('fill-opacity','0.45'); });
         poly.addEventListener('click', () => showWardInfo(wardNo, risk, wardNo));
         g.appendChild(poly);
       });
 
-      // Ward label
+      // Centroid label
       const allPts = rings.flat().map(project);
-      const cx = Math.round(allPts.reduce((s,p)=>s+p[0],0)/allPts.length);
-      const cy = Math.round(allPts.reduce((s,p)=>s+p[1],0)/allPts.length);
-      const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-      t.setAttribute('x', cx); t.setAttribute('y', cy);
-      t.setAttribute('text-anchor', 'middle'); t.setAttribute('dominant-baseline', 'central');
-      t.setAttribute('font-size', '7'); t.setAttribute('fill', 'rgba(230,237,243,0.85)');
-      t.setAttribute('font-weight', '700'); t.setAttribute('font-family', 'monospace');
-      t.setAttribute('pointer-events', 'none');
+      const cx = allPts.reduce((s,p)=>s+p[0],0)/allPts.length;
+      const cy = allPts.reduce((s,p)=>s+p[1],0)/allPts.length;
+      const t  = document.createElementNS('http://www.w3.org/2000/svg','text');
+      t.setAttribute('x', cx.toFixed(1)); t.setAttribute('y', cy.toFixed(1));
+      t.setAttribute('text-anchor','middle'); t.setAttribute('dominant-baseline','central');
+      t.setAttribute('font-size','7'); t.setAttribute('fill','rgba(230,237,243,0.9)');
+      t.setAttribute('font-weight','700'); t.setAttribute('font-family','monospace');
+      t.setAttribute('pointer-events','none');
       t.textContent = `W${wardNo}`;
       g.appendChild(t);
     });
 
   } else {
-    // Fallback: simple placeholder polygons
+    // Fallback placeholder polygons
     WARD_POLYGONS.forEach((wp, idx) => {
-      const risk = wardRisk[idx + 1] || 'Negligible';
+      const risk = wardRisk[idx+1] || 'Negligible';
       const fill = RISK_COLOURS[risk] || '#6e7681';
-      const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
-      poly.setAttribute('points', wp.pts);
-      poly.setAttribute('fill', fill); poly.setAttribute('fill-opacity', '0.42');
-      poly.setAttribute('stroke', fill); poly.setAttribute('stroke-width', '1.2');
-      poly.style.cursor = 'pointer';
-      poly.addEventListener('mouseenter', function() { this.setAttribute('fill-opacity', '0.68'); });
-      poly.addEventListener('mouseleave', function() { this.setAttribute('fill-opacity', '0.42'); });
-      poly.addEventListener('click', () => showWardInfo(wp.id, risk, idx + 1));
+      const poly = document.createElementNS('http://www.w3.org/2000/svg','polygon');
+      poly.setAttribute('points',wp.pts); poly.setAttribute('fill',fill);
+      poly.setAttribute('fill-opacity','0.42'); poly.setAttribute('stroke',fill); poly.setAttribute('stroke-width','1.2');
+      poly.style.cursor='pointer';
+      poly.addEventListener('mouseenter',function(){this.setAttribute('fill-opacity','0.68');});
+      poly.addEventListener('mouseleave',function(){this.setAttribute('fill-opacity','0.42');});
+      poly.addEventListener('click',()=>showWardInfo(wp.id,risk,idx+1));
       g.appendChild(poly);
-      const pts = wp.pts.split(' ').map(p=>p.split(',').map(Number));
-      const cx = Math.round(pts.reduce((s,p)=>s+p[0],0)/pts.length);
-      const cy = Math.round(pts.reduce((s,p)=>s+p[1],0)/pts.length);
-      const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-      t.setAttribute('x',cx); t.setAttribute('y',cy);
+      const pts=wp.pts.split(' ').map(p=>p.split(',').map(Number));
+      const cx=pts.reduce((s,p)=>s+p[0],0)/pts.length;
+      const cy=pts.reduce((s,p)=>s+p[1],0)/pts.length;
+      const t=document.createElementNS('http://www.w3.org/2000/svg','text');
+      t.setAttribute('x',cx.toFixed(1)); t.setAttribute('y',cy.toFixed(1));
       t.setAttribute('text-anchor','middle'); t.setAttribute('dominant-baseline','central');
       t.setAttribute('font-size','8'); t.setAttribute('fill','rgba(230,237,243,0.9)');
       t.setAttribute('font-weight','700'); t.setAttribute('font-family','monospace');
@@ -274,16 +252,21 @@ async function renderWardMap() {
       t.textContent = wp.id;
       g.appendChild(t);
     });
-
-    // Show note
-    const note = document.createElementNS('http://www.w3.org/2000/svg','text');
+    const note=document.createElementNS('http://www.w3.org/2000/svg','text');
     note.setAttribute('x','155'); note.setAttribute('y','195');
     note.setAttribute('text-anchor','middle'); note.setAttribute('font-size','8');
     note.setAttribute('fill','var(--text3)'); note.setAttribute('font-family','monospace');
-    note.textContent = 'Ward boundaries load when municipality is set';
+    note.textContent='Showing placeholder — MDB API unavailable or municipality not found';
     g.appendChild(note);
   }
+
+  // Init zoom after rendering
+  initMapZoom();
 }
+
+// Track MDB ward number field globally
+let _mdbWardNumField = 'WARD_NO';
+
 
 function showWardInfo(wid, risk, wardNum) {
   document.getElementById('wi-empty')?.classList.add('hidden');
@@ -332,6 +315,97 @@ function renderTrend(hazardIdx) {
 
 function renderIDPSummary() {
   // IDP stats will come from DB in production; showing empty state
+}
+
+function initMapZoom() {
+  const svg     = document.getElementById('ward-svg');
+  const g       = document.getElementById('ward-g');
+  const canvas  = svg?.closest('.map-canvas');
+  if (!svg || !g) return;
+
+  let scale=1, tx=0, ty=0, dragging=false, startX=0, startY=0, lastTx=0, lastTy=0;
+
+  function applyTransform() {
+    g.setAttribute('transform', `translate(${tx},${ty}) scale(${scale})`);
+  }
+
+  // Zoom buttons
+  document.getElementById('map-zoom-in')?.addEventListener('click', () => {
+    scale = Math.min(scale * 1.4, 12);
+    applyTransform();
+  });
+  document.getElementById('map-zoom-out')?.addEventListener('click', () => {
+    scale = Math.max(scale / 1.4, 0.8);
+    applyTransform();
+  });
+  document.getElementById('map-zoom-reset')?.addEventListener('click', () => {
+    scale=1; tx=0; ty=0; applyTransform();
+  });
+
+  // Scroll wheel zoom (desktop)
+  svg.addEventListener('wheel', e => {
+    e.preventDefault();
+    const rect = svg.getBoundingClientRect();
+    const mx   = e.clientX - rect.left;
+    const my   = e.clientY - rect.top;
+    const delta = e.deltaY < 0 ? 1.15 : 0.87;
+    const newScale = Math.max(0.8, Math.min(12, scale * delta));
+    tx = mx - (mx - tx) * (newScale / scale);
+    ty = my - (my - ty) * (newScale / scale);
+    scale = newScale;
+    applyTransform();
+  }, { passive: false });
+
+  // Mouse drag (desktop)
+  svg.addEventListener('mousedown', e => {
+    dragging=true; startX=e.clientX-tx; startY=e.clientY-ty;
+    svg.style.cursor='grabbing';
+  });
+  window.addEventListener('mousemove', e => {
+    if (!dragging) return;
+    tx=e.clientX-startX; ty=e.clientY-startY;
+    applyTransform();
+  });
+  window.addEventListener('mouseup', () => {
+    dragging=false; svg.style.cursor='crosshair';
+  });
+
+  // Touch pinch zoom + drag (mobile)
+  let lastDist=0, lastMidX=0, lastMidY=0;
+  svg.addEventListener('touchstart', e => {
+    if (e.touches.length === 2) {
+      const t1=e.touches[0], t2=e.touches[1];
+      lastDist = Math.hypot(t2.clientX-t1.clientX, t2.clientY-t1.clientY);
+      lastMidX = (t1.clientX+t2.clientX)/2;
+      lastMidY = (t1.clientY+t2.clientY)/2;
+    } else if (e.touches.length === 1) {
+      startX=e.touches[0].clientX-tx;
+      startY=e.touches[0].clientY-ty;
+    }
+    e.preventDefault();
+  }, { passive: false });
+
+  svg.addEventListener('touchmove', e => {
+    e.preventDefault();
+    const rect = svg.getBoundingClientRect();
+    if (e.touches.length === 2) {
+      const t1=e.touches[0], t2=e.touches[1];
+      const dist = Math.hypot(t2.clientX-t1.clientX, t2.clientY-t1.clientY);
+      const midX = (t1.clientX+t2.clientX)/2 - rect.left;
+      const midY = (t1.clientY+t2.clientY)/2 - rect.top;
+      const ratio = dist / lastDist;
+      const newScale = Math.max(0.8, Math.min(12, scale * ratio));
+      tx = midX - (midX - tx) * (newScale / scale);
+      ty = midY - (midY - ty) * (newScale / scale);
+      scale = newScale;
+      lastDist=dist; lastMidX=midX; lastMidY=midY;
+      applyTransform();
+    } else if (e.touches.length === 1) {
+      tx=e.touches[0].clientX-startX;
+      ty=e.touches[0].clientY-startY;
+      applyTransform();
+    }
+  }, { passive: false });
 }
 
 function initDashboardEvents() {
