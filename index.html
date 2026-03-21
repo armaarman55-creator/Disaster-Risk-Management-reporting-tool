@@ -334,7 +334,7 @@
 <script>
 window.__cfgReady = (async () => {
   try {
-    const res = await fetch('/config');
+    const res = await fetch('/api/config');
     if (res.ok) { const t = await res.text(); eval(t); if (window.DRMSA_CONFIG?.SUPABASE_URL) return; }
   } catch(e) {}
   // Local dev fallback
