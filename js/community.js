@@ -206,7 +206,11 @@ async function renderSAWS(body) {
       <div><div class="sec-hdr-title">SAWS weather warnings</div><div class="sec-hdr-sub">Auto-fetched · ${warnings?.filter(w => w.is_active).length || 0} active</div></div>
       <button class="btn btn-red" id="add-saws-btn">+ Manual alert</button>
     </div>
+    <div id="saws-form-area"></div>
     ${warnings?.length ? warnings.map(w => renderSAWSCard(w)).join('') : emptyState('No active warnings. Warnings will appear here when fetched from SAWS or added manually.')}`;
+
+  // Bind AFTER innerHTML is set
+  document.getElementById('add-saws-btn')?.addEventListener('click', () => showSAWSForm(body, _muniId));
 }
 
 function renderSAWSCard(w) {
@@ -238,8 +242,66 @@ function togglePublish(tog) {
   supabase.from('shelters').update({ is_published: isOn }).eq('id', id);
 }
 
+function showSAWSForm(body, muniId) {
+  const area = document.getElementById('saws-form-area');
+  if (!area) return;
+  if (area.innerHTML) { area.innerHTML = ''; return; }
+
+  area.innerHTML = `
+    <div style="background:var(--bg3);border:1px solid var(--red-mid);border-radius:8px;padding:16px;margin-bottom:16px">
+      <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:12px">Add manual weather warning</div>
+      <div class="fl"><span class="fl-label">Warning title</span><input class="fl-input" id="sw-title" placeholder="e.g. Severe thunderstorm warning"/></div>
+      <div class="frow">
+        <div class="fl"><span class="fl-label">Warning type</span>
+          <select class="fl-sel" id="sw-type">
+            <option>Thunderstorm</option><option>Flash Flood</option><option>Strong Wind</option>
+            <option>Fire Danger</option><option>Heatwave</option><option>Cold Front</option>
+            <option>Drought</option><option>Hailstorm</option>
+          </select>
+        </div>
+        <div class="fl"><span class="fl-label">Severity</span>
+          <select class="fl-sel" id="sw-severity">
+            <option value="advisory">Advisory</option>
+            <option value="warning">Warning</option>
+            <option value="severe">Severe</option>
+          </select>
+        </div>
+      </div>
+      <div class="fl"><span class="fl-label">Description</span><textarea class="fl-textarea" id="sw-desc" rows="3" placeholder="Describe the warning, affected areas and precautions..."></textarea></div>
+      <div class="frow">
+        <div class="fl"><span class="fl-label">Valid from</span><input class="fl-input" type="datetime-local" id="sw-from"/></div>
+        <div class="fl"><span class="fl-label">Valid to</span><input class="fl-input" type="datetime-local" id="sw-to"/></div>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button class="btn btn-red btn-sm" id="save-saws-btn">Save warning</button>
+        <button class="btn btn-sm" onclick="document.getElementById('saws-form-area').innerHTML=''">Cancel</button>
+      </div>
+    </div>`;
+
+  document.getElementById('save-saws-btn')?.addEventListener('click', async () => {
+    const title = document.getElementById('sw-title')?.value.trim();
+    if (!title) { alert('Please enter a warning title.'); return; }
+
+    const { error } = await supabase.from('saws_warnings').insert({
+      municipality_id: muniId,
+      title,
+      warning_type: document.getElementById('sw-type')?.value,
+      severity:     document.getElementById('sw-severity')?.value,
+      description:  document.getElementById('sw-desc')?.value,
+      valid_from:   document.getElementById('sw-from')?.value || null,
+      valid_to:     document.getElementById('sw-to')?.value   || null,
+      is_active:    true,
+      is_manual:    true,
+      source:       'Manual entry'
+    });
+
+    if (!error) { area.innerHTML = ''; showToast('Warning saved'); await renderSAWS(body); }
+    else showToast(error.message, true);
+  });
+}
+
 function emptyState(msg) {
-  return `<div style="text-align:center;padding:48px 20px;color:var(--text3);font-size:12px;font-family:var(--font-mono)">${msg}</div>`;
+  return `<div style="text-align:center;padding:48px 20px;color:var(--text3);font-size:12px;font-family:monospace">${msg}</div>`;
 }
 
 function showToast(msg, isError = false) {
