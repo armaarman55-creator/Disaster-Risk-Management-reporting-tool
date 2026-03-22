@@ -1043,11 +1043,8 @@ async function exportAssessmentCSV(id, label) {
   ];
 
   const allRows = [...meta, ...rows];
-  const csv = allRows.map(r =>
   const escQ = function(v) { return '"' + String(v||'').split('"').join('""') + '"'; };
   const csv = allRows.map(function(r) { return r.map(escQ).join(','); }).join('\n');
-  ).join('
-');
 
   const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
   const url  = URL.createObjectURL(blob);
