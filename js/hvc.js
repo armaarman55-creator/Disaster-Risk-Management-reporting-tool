@@ -198,6 +198,7 @@ function renderAssessmentList(assessments) {
           <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
             <span class="badge ${a.status==='complete'?'b-green':'b-amber'}">${(a.status||'draft').toUpperCase()}</span>
             <button class="btn btn-sm" data-open="${a.id}">View</button>
+            <button class="btn btn-sm btn-green" data-edit="${a.id}">Edit</button>
             <button class="btn btn-sm" data-export-pdf="${a.id}" data-label="${a.label||a.season+' '+a.year}">↓ PDF</button>
             <button class="btn btn-sm" data-export-csv="${a.id}" data-label="${a.label||a.season+' '+a.year}">↓ CSV</button>
             <button class="btn btn-sm btn-red" data-delete="${a.id}" data-label="${a.label||a.season+' '+a.year}">Delete</button>
@@ -221,6 +222,11 @@ function bindListEvents() {
   // Export CSV
   document.querySelectorAll('[data-export-csv]').forEach(btn => {
     btn.addEventListener('click', () => exportAssessmentCSV(btn.dataset.exportCsv, btn.dataset.label));
+  });
+
+  // Edit
+  document.querySelectorAll('[data-edit]').forEach(btn => {
+    btn.addEventListener('click', () => editAssessment(btn.dataset.edit));
   });
 
   // Delete
@@ -809,6 +815,7 @@ async function openAssessment(id) {
       <button class="btn btn-sm" id="hvc-back">← Back to list</button>
       <div style="display:flex;gap:6px;flex-wrap:wrap">
         <button class="btn btn-sm" id="show-matrix">Risk matrix</button>
+        <button class="btn btn-sm btn-green" id="view-edit">Edit assessment</button>
         <button class="btn btn-sm btn-green" id="view-export-pdf">↓ Export PDF</button>
         <button class="btn btn-sm btn-green" id="view-export-csv">↓ Export CSV</button>
         <button class="btn btn-sm btn-red" id="view-delete">Delete assessment</button>
@@ -866,9 +873,202 @@ async function openAssessment(id) {
     const m = document.getElementById('matrix-view');
     if (m) m.style.display = m.style.display==='none'?'block':'none';
   });
+  document.getElementById('view-edit')?.addEventListener('click', () => editAssessment(id));
   document.getElementById('view-export-pdf')?.addEventListener('click', () => exportAssessmentPDF(id, label));
   document.getElementById('view-export-csv')?.addEventListener('click', () => exportAssessmentCSV(id, label));
   document.getElementById('view-delete')?.addEventListener('click', () => deleteAssessment(id, label));
+}
+
+// ── EDIT ASSESSMENT ──────────────────────────────────────
+async function editAssessment(id) {
+  const [scoresRes, assessRes] = await Promise.all([
+    supabase.from('hvc_hazard_scores').select('*').eq('assessment_id', id),
+    supabase.from('hvc_assessments').select('*').eq('id', id).single()
+  ]);
+
+  const scores     = scoresRes.data || [];
+  const assessment = assessRes.data || {};
+
+  // Pre-fill _scores from existing data so recalcHazard shows correct values
+  scores.forEach(s => {
+    const id_ = slug(s.hazard_name);
+    _scores[id_] = {
+      hScore: s.hazard_score, vScore: s.vulnerability_score,
+      cScore: s.capacity_score, resilience: s.resilience_index,
+      riskRating: s.risk_rating, pIdx: s.priority_index,
+      aa: s.affected_area, pb: s.probability, fr: s.frequency, pr: s.predictability,
+      vp: s.vp, ve: s.ve, vs: s.vs, vt: s.vt, vn: s.vn,
+      ci: s.ci, cp: s.cp, cq: s.cq, cf: s.cf, ch: s.ch, cs: s.cs,
+      pi: s.importance, pu: s.urgency, pg: s.growth,
+      wards: s.affected_wards || []
+    };
+  });
+
+  // Render the new form with pre-filled values
+  _customHazards = [];
+  const content = document.getElementById('hvc-content');
+  if (!content) return;
+
+  content.innerHTML = `<div style="padding:22px">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap">
+      <button class="btn btn-sm" id="hvc-edit-back">← Cancel</button>
+      <div style="font-size:14px;font-weight:700;color:var(--text)">
+        Editing: ${assessment.label || assessment.season + ' ' + assessment.year}
+      </div>
+      <span class="badge b-amber">EDIT MODE</span>
+    </div>
+    ${renderNewForm().replace(
+      '<div style="padding:22px">',
+      '<div>'
+    )}
+  </div>`;
+
+  // Pre-fill assessment details
+  const labelEl  = document.getElementById('a-label');
+  const seasonEl = document.getElementById('a-season');
+  const yearEl   = document.getElementById('a-year');
+  const leadEl   = document.getElementById('a-lead');
+  if (labelEl)  labelEl.value  = assessment.label || '';
+  if (seasonEl) seasonEl.value = assessment.season || '';
+  if (yearEl)   yearEl.value   = assessment.year   || '';
+  if (leadEl)   leadEl.value   = assessment.lead_assessor || '';
+
+  // Tick applicable hazards and pre-fill scores
+  scores.forEach(s => {
+    const hid = slug(s.hazard_name);
+    const cb  = document.querySelector(`.hvc-applicable[data-hazard="${hid}"]`);
+    if (cb) {
+      cb.checked = true;
+      const body = document.getElementById(`hbody-${hid}`);
+      if (body) body.style.display = 'block';
+    }
+
+    // Set each dropdown value
+    const fields = {
+      [`${hid}_aa`]: s.affected_area, [`${hid}_pb`]: s.probability,
+      [`${hid}_fr`]: s.frequency,     [`${hid}_pr`]: s.predictability,
+      [`${hid}_vp`]: s.vp,            [`${hid}_ve`]: s.ve,
+      [`${hid}_vs`]: s.vs,            [`${hid}_vt`]: s.vt,
+      [`${hid}_vn`]: s.vn,            [`${hid}_ci`]: s.ci,
+      [`${hid}_cp`]: s.cp,            [`${hid}_cq`]: s.cq,
+      [`${hid}_cf`]: s.cf,            [`${hid}_ch`]: s.ch,
+      [`${hid}_cs`]: s.cs,            [`${hid}_pi`]: s.importance,
+      [`${hid}_pu`]: s.urgency,       [`${hid}_pg`]: s.growth,
+    };
+
+    Object.entries(fields).forEach(([key, val]) => {
+      if (val == null) return;
+      const sel = document.querySelector(`[data-key="${key}"]`);
+      if (sel) { sel.value = String(val); window.hvcScoreChanged(sel); }
+    });
+
+    // Pre-fill ward selection
+    const wardEl = document.getElementById(`wards-${hid}`);
+    if (wardEl && Array.isArray(s.affected_wards)) {
+      if (wardEl.tagName === 'SELECT') {
+        [...wardEl.options].forEach(opt => {
+          opt.selected = s.affected_wards.map(String).includes(opt.value);
+        });
+      } else {
+        wardEl.value = s.affected_wards.join(', ');
+      }
+    }
+
+    // Pre-fill role players
+    const r1 = document.getElementById(`${hid}_r1`);
+    const r2 = document.getElementById(`${hid}_r2`);
+    const r3 = document.getElementById(`${hid}_r3`);
+    const notes = document.getElementById(`${hid}_notes`);
+    if (r1 && s.primary_owner)    r1.value    = s.primary_owner;
+    if (r2 && s.secondary_owner)  r2.value    = s.secondary_owner;
+    if (r3 && s.tertiary_owner)   r3.value    = s.tertiary_owner;
+    if (notes && s.notes)         notes.value = s.notes;
+  });
+
+  bindFormEvents();
+
+  // Override save button to UPDATE instead of INSERT
+  const saveBtn = document.getElementById('save-hvc-btn');
+  if (saveBtn) {
+    saveBtn.textContent = 'Save changes';
+    saveBtn.onclick = () => saveEditedAssessment(id, assessment);
+  }
+
+  document.getElementById('hvc-edit-back')?.addEventListener('click', renderHVCPage);
+}
+
+async function saveEditedAssessment(assessmentId, assessment) {
+  const label = document.getElementById('a-label')?.value.trim();
+  if (!label) { alert('Please enter a label.'); return; }
+
+  const btn = document.getElementById('save-hvc-btn');
+  if (btn) { btn.textContent = 'Saving…'; btn.disabled = true; }
+
+  const hazardRows = [];
+
+  // Collect all ticked hazards
+  Object.entries(HAZARD_CATEGORIES).forEach(([cat, hazards]) => {
+    hazards.forEach(hazard => {
+      const hid = slug(hazard);
+      const cb  = document.querySelector(`.hvc-applicable[data-hazard="${hid}"]`);
+      if (!cb?.checked) return;
+      const s = _scores[hid];
+      if (!s || s.hScore === null) return;
+      hazardRows.push(buildRow(hid, hazard, cat, s));
+    });
+  });
+
+  _customHazards.forEach(({ name, cat }) => {
+    const hid = slug(name);
+    const cb  = document.querySelector(`.hvc-applicable[data-hazard="${hid}"]`);
+    if (!cb?.checked) return;
+    const s = _scores[hid];
+    if (!s || s.hScore === null) return;
+    hazardRows.push(buildRow(hid, name, cat, s));
+  });
+
+  // Update assessment metadata
+  const { error: aErr } = await supabase
+    .from('hvc_assessments')
+    .update({
+      label,
+      season:        document.getElementById('a-season')?.value,
+      year:          parseInt(document.getElementById('a-year')?.value),
+      lead_assessor: document.getElementById('a-lead')?.value,
+      hazard_count:  hazardRows.length,
+      updated_at:    new Date().toISOString()
+    })
+    .eq('id', assessmentId);
+
+  if (aErr) {
+    showToast('Error updating assessment: ' + aErr.message, true);
+    if (btn) { btn.textContent = 'Save changes'; btn.disabled = false; }
+    return;
+  }
+
+  // Delete old scores and insert new ones
+  await supabase.from('hvc_hazard_scores').delete().eq('assessment_id', assessmentId);
+
+  if (hazardRows.length) {
+    await supabase.from('hvc_hazard_scores').insert(
+      hazardRows.map(r => ({ ...r, assessment_id: assessmentId }))
+    );
+  }
+
+  // Update ward dominant_risk
+  try {
+    await supabase.rpc('update_ward_dominant_risk', { p_municipality_id: _muniId });
+  } catch(e) { console.warn('Ward risk update failed:', e.message); }
+
+  await writeAudit(
+    'update', 'hvc_assessment', assessmentId,
+    'Updated HVC Assessment: ' + label,
+    { label: assessment.label },
+    { label, hazard_count: hazardRows.length }
+  );
+
+  showToast('✓ Assessment updated successfully!');
+  setTimeout(() => renderHVCPage(), 1200);
 }
 
 // ── DELETE ASSESSMENT ────────────────────────────────────
