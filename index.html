@@ -438,6 +438,17 @@
 
 /* ── KEEP LEGACY CLASSES WORKING ── */
 .ni{display:none}
+
+/* ── MAP CANVAS OVERRIDE — beats dashboard.css .map-canvas{height:200px} ── */
+#map-canvas-wrap,
+#map-canvas-wrap svg,
+#ward-svg{
+  height:380px!important;
+  min-height:380px!important;
+  width:100%!important;
+  display:block!important;
+  overflow:visible;
+}
 </style>
 
 <!-- Config: Cloudflare Pages Function in production, config.local.js for local dev.
