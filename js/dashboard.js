@@ -17,8 +17,14 @@ const RISK_COLOURS = {
   'Low':            '#58a6ff',
   'Negligible':     '#6e7681'
 };
-const CHIP_CLASS   = { 'Extremely high': 'c-xh', 'High': 'c-h', 'Tolerable': 'c-t', 'Low': 'c-l', 'Negligible': 'c-n' };
-const CHIP_LABEL   = { 'Extremely high': 'EXTR HIGH', 'High': 'HIGH', 'Tolerable': 'TOLERABLE', 'Low': 'LOW', 'Negligible': 'NEGLIGIBLE' };
+const CHIP_CLASS   = {
+  'Extremely High':'c-xh','Extremely high':'c-xh',
+  'High':'c-h','Tolerable':'c-t','Low':'c-l','Negligible':'c-n'
+};
+const CHIP_LABEL   = {
+  'Extremely High':'EXTR HIGH','Extremely high':'EXTR HIGH',
+  'High':'HIGH','Tolerable':'TOLERABLE','Low':'LOW','Negligible':'NEGLIGIBLE'
+};
 
 let _assessmentData = null;
 let _wardData = [];
@@ -59,7 +65,7 @@ export async function initDashboard(user) {
     initDashboardEvents();
     initRealtimeRefresh();
   } catch(e) {
-    console.warn('Dashboard render error:', e);
+    console.error('[Dashboard] Render error:', e);
   }
 }
 
@@ -87,6 +93,24 @@ async function loadAssessmentData() {
 
   _assessmentData = { assessments: assessments || [], hazards: hazards || [] };
   _wardData = wards || [];
+
+  // Diagnostic console output — open F12 to see
+  console.log('[Dashboard] DB data loaded:');
+  console.log('  Assessments:', (assessments||[]).length);
+  console.log('  Hazard scores:', (hazards||[]).length);
+  console.log('  Ward rows:', (wards||[]).length);
+  if ((hazards||[]).length) {
+    const bands = [...new Set((hazards||[]).map(h => h.risk_band))];
+    console.log('  Unique risk_band values in DB:', bands);
+    console.log('  Sample hazards:', (hazards||[]).slice(0,3).map(h => h.hazard_name + ' → ' + h.risk_band + ' (' + h.risk_rating + ')'));
+  } else {
+    console.warn('  No hazard scores found — complete an HVC assessment first');
+  }
+  if ((wards||[]).length) {
+    const risks = [...new Set((wards||[]).map(w => w.dominant_risk))];
+    console.log('  Unique dominant_risk values:', risks);
+    if (risks.every(r => !r)) console.warn('  All dominant_risk values are NULL — run SQL 18_fix_ward_risk_fallback.sql');
+  }
 
   // Populate assessment selector
   const sel = document.getElementById('assess-sel-top');
@@ -144,7 +168,7 @@ function renderHazardTable() {
       <td class="hz-td hz-name">${h.hazard_name}</td>
       <td class="hz-td hz-score">${(h.risk_rating || 0).toFixed(1)}</td>
       <td class="hz-td hz-bar-w"><div class="hz-bar-bg"><div class="hz-bar-fg" style="width:${Math.round((h.risk_rating / 25) * 100)}%;background:${RISK_COLOURS[h.risk_band] || '#6e7681'}"></div></div></td>
-      <td class="hz-td"><span class="hz-chip ${CHIP_CLASS[h.risk_band] || 'c-n'}">${CHIP_LABEL[h.risk_band] || 'N/A'}</span></td>
+      <td class="hz-td"><span class="hz-chip ${CHIP_CLASS[h.risk_band] || CHIP_CLASS[h.risk_band?.replace(/high$/i,'High')] || 'c-n'}">${CHIP_LABEL[h.risk_band] || CHIP_LABEL[h.risk_band?.replace(/high$/i,'High')] || (h.risk_band||'N/A').toUpperCase()}</span></td>
     </tr>`).join('');
 }
 
