@@ -10,7 +10,13 @@ const WARD_POLYGONS = [
   { id: 'W6', pts: '160,110 200,62 228,108 214,148 166,142' }
 ];
 
-const RISK_COLOURS = { 'Extremely high': '#f85149', 'High': '#d29922', 'Tolerable': '#3fb950', 'Low': '#58a6ff', 'Negligible': '#6e7681' };
+const RISK_COLOURS = {
+  'Extremely High': '#f85149', 'Extremely high': '#f85149',
+  'High':           '#d29922',
+  'Tolerable':      '#3fb950',
+  'Low':            '#58a6ff',
+  'Negligible':     '#6e7681'
+};
 const CHIP_CLASS   = { 'Extremely high': 'c-xh', 'High': 'c-h', 'Tolerable': 'c-t', 'Low': 'c-l', 'Negligible': 'c-n' };
 const CHIP_LABEL   = { 'Extremely high': 'EXTR HIGH', 'High': 'HIGH', 'Tolerable': 'TOLERABLE', 'Low': 'LOW', 'Negligible': 'NEGLIGIBLE' };
 
@@ -45,7 +51,7 @@ export async function initDashboard(user) {
 
   try {
     await loadAssessmentData();
-    renderKPIs();
+    await renderKPIs();
     renderHazardTable();
     await renderWardMap();
     renderTrend(0);
@@ -91,15 +97,37 @@ async function loadAssessmentData() {
   }
 }
 
-function renderKPIs() {
+async function renderKPIs() {
   const hazards = _assessmentData?.hazards || [];
-  // Case-insensitive compare — DB stores 'Extremely High', filter was 'Extremely high'
   const norm = s => (s||'').toLowerCase().replace(/\s+/g,'');
   const xh   = hazards.filter(h => norm(h.risk_band) === 'extremelyhigh').length;
   const high  = hazards.filter(h => norm(h.risk_band) === 'high').length;
 
   setEl('kpi-xh', xh);
-  setEl('kpi-h', high);
+  setEl('kpi-h',  high);
+
+  // Active shelters count
+  if (_muniId) {
+    try {
+      const { count: shelterCount } = await supabase
+        .from('shelters')
+        .select('id', { count: 'exact', head: true })
+        .eq('municipality_id', _muniId)
+        .eq('status', 'open');
+      setEl('kpi-shelters', shelterCount || 0);
+    } catch(e) {}
+
+    // Funded mitigations count
+    try {
+      const { count: idpCount } = await supabase
+        .from('mitigations')
+        .select('id', { count: 'exact', head: true })
+        .eq('municipality_id', _muniId)
+        .eq('idp_status', 'linked-funded')
+        .eq('is_library', false);
+      setEl('kpi-idp', idpCount || 0);
+    } catch(e) {}
+  }
 }
 
 function renderHazardTable() {
@@ -197,7 +225,8 @@ async function renderWardMap() {
       const wardNo = props[_mdbWardNumField]
         ?? props['WARD_NO'] ?? props['WARD_NUM'] ?? props['WardNo']
         ?? props['ward_no'] ?? props['ward_num'] ?? '?';
-      const risk   = wardRisk[parseInt(wardNo)] || 'Negligible';
+      const rawRisk2 = wardRisk[parseInt(wardNo)] || 'Negligible';
+      const risk   = Object.keys(RISK_COLOURS).find(k => k.toLowerCase() === rawRisk2.toLowerCase()) || rawRisk2;
       const fill   = RISK_COLOURS[risk] || '#6e7681';
       const geom   = f.geometry;
       if (!geom) return;
@@ -240,7 +269,8 @@ async function renderWardMap() {
   } else {
     // Fallback placeholder polygons
     WARD_POLYGONS.forEach((wp, idx) => {
-      const risk = wardRisk[idx+1] || 'Negligible';
+      const rawRisk = wardRisk[idx+1] || 'Negligible';
+      const risk = Object.keys(RISK_COLOURS).find(k => k.toLowerCase() === rawRisk.toLowerCase()) || rawRisk;
       const fill = RISK_COLOURS[risk] || '#6e7681';
       const poly = document.createElementNS('http://www.w3.org/2000/svg','polygon');
       poly.setAttribute('points',wp.pts); poly.setAttribute('fill',fill);
@@ -552,7 +582,7 @@ function initRealtimeRefresh() {
     }, async () => {
       console.log('HVC assessment changed — refreshing dashboard');
       await loadAssessmentData();
-      renderKPIs();
+      await renderKPIs();
       renderHazardTable();
       renderWardMap();
       await renderIDPSummary();
