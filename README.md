@@ -201,7 +201,7 @@ DRMSA is provided as a tool to support — not replace — the professional judg
 
 Ward boundary data is sourced from the MDB and may not reflect the most recent demarcation changes. Always verify with the official MDB data portal for legal boundary purposes.
 
-Weather warnings are sourced from third-party weather API providers and are not official SAWS alerts. For official severe weather warnings, always consult the South African Weather Service at [saws.ac.za](https://www.saws.ac.za)or intergrate the SAWS severe weahter API.
+Weather warnings are sourced from third-party weather API providers and are not official SAWS alerts. For official severe weather warnings, always consult the South African Weather Service at [saws.ac.za](https://www.saws.ac.za) or intergrate the SAWS severe weather API.
 
 ---
 
@@ -213,4 +213,4 @@ You are free to use, modify and distribute this software for any purpose, includ
 
 ---
 
-<p align="center">Made with purpose for South African communities · Apache 2.0</p>
+<p align="center">Made with purpose for South African DMCs and disaster relief organizations · Apache 2.0</p>
