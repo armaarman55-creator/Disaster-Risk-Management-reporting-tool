@@ -237,7 +237,7 @@
         <button class="btn btn-red btn-sm hide-mobile" id="btn-new-assessment" style="white-space:nowrap;font-size:11px">+ Assessment</button>
 
         <div id="user-av" style="width:30px;height:30px;border-radius:50%;background:var(--bg4);border:1px solid var(--border2);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--text2);cursor:pointer;font-family:monospace;flex-shrink:0" title="My profile">—</div>
-        <button class="btn btn-sm hide-mobile" id="footer-signout" style="font-size:11px;padding:5px 8px">Out</button>
+        <button class="btn btn-sm hide-mobile" id="footer-signout-top" style="font-size:11px;padding:5px 8px">Out</button>
       </div>
     </div>
 
@@ -276,39 +276,86 @@
 
     <div style="flex:1;overflow-y:auto;display:flex;flex-direction:column" id="pages-wrap">
       <div class="page visible" id="page-dashboard"><div class="dash-main">
-        <div class="saws-bar" id="saws-alert-bar" style="display:none"><div class="saws-bar-line"></div><div class="saws-bar-body"><div class="saws-bar-title">Weather Warning</div><div class="saws-bar-desc" id="saws-bar-desc"></div></div><span class="saws-dismiss" id="saws-dismiss">Dismiss ×</span></div>
-        <div class="kpi-strip">
-          <div class="kpi red"><div class="kpi-eye">Extremely high risk</div><div class="kpi-num red" id="kpi-xh">—</div><div class="kpi-foot">hazard types</div></div>
-          <div class="kpi amber"><div class="kpi-eye">High risk</div><div class="kpi-num amber" id="kpi-h">—</div><div class="kpi-foot">hazard types</div></div>
-          <div class="kpi green"><div class="kpi-eye">IDP linked</div><div class="kpi-num green" id="kpi-idp">—</div><div class="kpi-foot">funded mitigations</div></div>
-          <div class="kpi blue"><div class="kpi-eye">Active shelters</div><div class="kpi-num blue" id="kpi-shelters">—</div><div class="kpi-foot">open now</div></div>
+
+  <!-- SAWS alert bar -->
+  <div class="saws-bar" id="saws-alert-bar" style="display:none">
+    <div class="saws-bar-line"></div>
+    <div class="saws-bar-body"><div class="saws-bar-title">Weather Warning</div><div class="saws-bar-desc" id="saws-bar-desc"></div></div>
+    <span class="saws-dismiss" id="saws-dismiss">Dismiss ×</span>
+  </div>
+
+  <!-- KPI strip -->
+  <div class="kpi-strip">
+    <div class="kpi red"><div class="kpi-eye">Extremely high risk</div><div class="kpi-num red" id="kpi-xh">—</div><div class="kpi-foot">hazard types</div></div>
+    <div class="kpi amber"><div class="kpi-eye">High risk</div><div class="kpi-num amber" id="kpi-h">—</div><div class="kpi-foot">hazard types</div></div>
+    <div class="kpi green"><div class="kpi-eye">IDP linked</div><div class="kpi-num green" id="kpi-idp">—</div><div class="kpi-foot">funded mitigations</div></div>
+    <div class="kpi blue"><div class="kpi-eye">Active shelters</div><div class="kpi-num blue" id="kpi-shelters">—</div><div class="kpi-foot">open now</div></div>
+  </div>
+
+  <!-- Full-width ward map -->
+  <div class="panel" style="margin-bottom:16px">
+    <div class="ph" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+      <div><div class="ph-title">Ward hazard map</div><div class="ph-sub" id="mab-code">Select an assessment to colour wards by risk</div></div>
+      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+        <select id="assess-map" style="font-size:11px;background:var(--bg3);border:1px solid var(--border);border-radius:5px;padding:4px 8px;color:var(--text);outline:none"><option>None</option></select>
+        <div class="map-layer-ctrl" style="position:static;border:1px solid var(--border);border-radius:6px;overflow:hidden;display:flex">
+          <div class="lyr on" style="padding:4px 10px;font-size:11px">Hazard</div>
+          <div class="lyr" style="padding:4px 10px;font-size:11px">Shelters</div>
         </div>
-        <div class="body-grid">
-          <div style="display:flex;flex-direction:column;gap:16px">
-            <div class="panel"><div class="ph"><div><div class="ph-title">Hazard risk profile</div><div class="ph-sub" id="hz-sub">No assessment loaded</div></div></div><div class="pb"><table class="hz-tbl" id="hz-tbl"><tr><td colspan="5" style="padding:20px;text-align:center;color:var(--text3);font-size:12px">Complete an HVC assessment to see your hazard risk profile.</td></tr></table></div></div>
-            <div class="panel"><div class="ph"><div><div class="ph-title">IDP alignment</div><div class="ph-sub">Mitigation linkage status</div></div></div><div class="pb" style="text-align:center;color:var(--text3);font-size:12px;padding:20px">No mitigations added yet.</div></div>
-          </div>
-          <div class="right-col">
-            <div class="map-panel">
-              <div class="map-head"><div class="map-title">Ward hazard map</div></div>
-              <div class="map-canvas">
-                <div class="map-layer-ctrl"><div class="lyr on">Hazard</div><div class="lyr">Shelters</div></div>
-              <div style="position:absolute;top:8px;right:8px;display:flex;flex-direction:column;gap:3px;z-index:2">
-                <button id="map-zoom-in"    style="width:26px;height:26px;background:rgba(22,27,34,.88);border:1px solid var(--border2);border-radius:4px;color:var(--text2);font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center">+</button>
-                <button id="map-zoom-out"   style="width:26px;height:26px;background:rgba(22,27,34,.88);border:1px solid var(--border2);border-radius:4px;color:var(--text2);font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center">−</button>
-                <button id="map-zoom-reset" style="width:26px;height:26px;background:rgba(22,27,34,.88);border:1px solid var(--border2);border-radius:4px;color:var(--text2);font-size:10px;cursor:pointer;display:flex;align-items:center;justify-content:center" title="Reset">⌂</button>
-              </div>
-                <svg id="ward-svg" width="100%" height="200" viewBox="0 0 310 200" style="cursor:crosshair;touch-action:none"><g id="ward-g"><text x="155" y="100" text-anchor="middle" font-size="11" fill="var(--text3)" font-family="monospace">No ward data</text></g></svg>
-                <div class="map-assess-bar"><span class="mab-lbl">Assessment</span><select class="mab-sel" id="assess-map"><option>None</option></select><span class="mab-code" id="mab-code">—</span></div>
-              </div>
-              <div class="map-legend"><div class="leg"><div class="leg-sq" style="background:#f85149"></div>Extr. high</div><div class="leg"><div class="leg-sq" style="background:#d29922"></div>High</div><div class="leg"><div class="leg-sq" style="background:#3fb950"></div>Tolerable</div><div class="leg"><div class="leg-sq" style="background:#58a6ff"></div>Low</div></div>
-              <div class="ward-info-panel"><div class="wi-empty" id="wi-empty">Select a ward to view its risk profile</div><div id="wi-content" class="hidden"></div></div>
-            </div>
-            <div class="trend-panel"><div class="trend-ph"><span class="trend-ph-title">Seasonal trend</span><select class="trend-sel" id="trend-sel"><option>No data</option></select></div><div id="trend-body" style="padding:12px 16px;font-size:12px;color:var(--text3)">Complete an assessment to see trends.</div></div>
-          </div>
+        <button id="map-zoom-in"    class="btn btn-sm" style="padding:4px 10px;font-size:15px;font-weight:700;line-height:1">+</button>
+        <button id="map-zoom-out"   class="btn btn-sm" style="padding:4px 10px;font-size:15px;font-weight:700;line-height:1">−</button>
+        <button id="map-zoom-reset" class="btn btn-sm" style="padding:4px 10px;font-size:11px">Reset</button>
+      </div>
+    </div>
+    <div style="position:relative;overflow:hidden;background:var(--bg3);border-bottom:1px solid var(--border)" id="map-canvas-wrap">
+      <svg id="ward-svg" width="100%" height="380" viewBox="0 0 900 380"
+        style="cursor:crosshair;touch-action:none;display:block">
+        <g id="ward-g">
+          <text x="450" y="190" text-anchor="middle" font-size="14"
+            fill="var(--text3)" font-family="monospace">Loading ward data…</text>
+        </g>
+      </svg>
+    </div>
+    <div style="padding:10px 16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
+      <div style="display:flex;gap:14px;flex-wrap:wrap" class="map-legend" id="map-legend-bar">
+        <div class="leg"><div class="leg-sq" style="background:#f85149;opacity:.7"></div>Extremely high</div>
+        <div class="leg"><div class="leg-sq" style="background:#d29922;opacity:.7"></div>High</div>
+        <div class="leg"><div class="leg-sq" style="background:#3fb950;opacity:.7"></div>Tolerable</div>
+        <div class="leg"><div class="leg-sq" style="background:#58a6ff;opacity:.7"></div>Low</div>
+        <div class="leg"><div class="leg-sq" style="background:#6e7681;opacity:.5"></div>Negligible/unscored</div>
+      </div>
+      <div id="wi-empty" style="font-size:11px;color:var(--text3);font-style:italic">Click a ward to view its risk profile</div>
+      <div id="wi-content" style="display:none"></div>
+    </div>
+  </div>
+
+  <!-- Hazard table + trend -->
+  <div class="body-grid">
+    <div style="display:flex;flex-direction:column;gap:16px">
+      <div class="panel">
+        <div class="ph"><div><div class="ph-title">Hazard risk profile</div><div class="ph-sub" id="hz-sub">No assessment loaded</div></div></div>
+        <div class="pb"><table class="hz-tbl" id="hz-tbl">
+          <tr><td colspan="5" style="padding:20px;text-align:center;color:var(--text3);font-size:12px">Complete an HVC assessment to see your hazard risk profile.</td></tr>
+        </table></div>
+      </div>
+      <div class="panel">
+        <div class="ph"><div><div class="ph-title">IDP alignment</div><div class="ph-sub">Mitigation linkage status</div></div></div>
+        <div id="idp-summary-body" class="pb" style="text-align:center;color:var(--text3);font-size:12px;padding:20px">No mitigations added yet.</div>
+      </div>
+    </div>
+    <div class="right-col">
+      <div class="trend-panel">
+        <div class="trend-ph">
+          <span class="trend-ph-title">Seasonal trend</span>
+          <select class="trend-sel" id="trend-sel"><option>No data</option></select>
         </div>
-      </div></div>
-      <div class="page" id="page-community"><div class="page-tabs"><div class="ptab on" data-tab="shelters">Shelters</div><div class="ptab" data-tab="relief-ops">Relief operations</div><div class="ptab" data-tab="saws">SAWS warnings</div></div><div class="page-body" id="community-body"></div></div>
+        <div id="trend-body" style="padding:12px 16px;font-size:12px;color:var(--text3)">Complete an assessment to see trends.</div>
+      </div>
+    </div>
+  </div>
+
+</div></div>
+<div class="page" id="page-community"><div class="page-tabs"><div class="ptab on" data-tab="shelters">Shelters</div><div class="ptab" data-tab="relief-ops">Relief operations</div><div class="ptab" data-tab="saws">SAWS warnings</div></div><div class="page-body" id="community-body"></div></div>
       <div class="page" id="page-routes"><div class="page-body" id="routes-body"></div></div>
       <div class="page" id="page-sitrep"></div>
       <div class="page" id="page-mopup"></div>
@@ -462,6 +509,12 @@ document.getElementById('btn-new-assessment-mob')?.addEventListener('click', () 
 
 // Mobile sign out
 document.getElementById('footer-signout-mob')?.addEventListener('click', async () => {
+  const { signOut } = await import('./js/auth.js');
+  signOut();
+});
+
+// Top nav sign out (desktop)
+document.getElementById('footer-signout-top')?.addEventListener('click', async () => {
   const { signOut } = await import('./js/auth.js');
   signOut();
 });
