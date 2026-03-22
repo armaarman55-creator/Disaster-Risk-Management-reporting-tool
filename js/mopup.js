@@ -125,7 +125,6 @@ async function openMopup(id) {
         </div>
         <div class="share-channels">
           <button class="sch pdf" onclick="generateMopupPDF()"><div class="sch-ico" style="background:var(--red-dim)"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="var(--red)" stroke-width="1.4" stroke-linecap="round"><rect x="1.5" y="1" width="7" height="8" rx="1"/><line x1="3" y1="4" x2="7" y2="4"/><line x1="3" y1="6" x2="6" y2="6"/></svg></div>PDF report</button>
-          <button class="sch pdmc"><div class="sch-ico" style="background:var(--purple-dim)"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="var(--purple)" stroke-width="1.4" stroke-linecap="round"><circle cx="5" cy="5" r="4"/><path d="M5 2v3l2 2"/></svg></div>PDMC submit</button>
           <button class="sch em"><div class="sch-ico" style="background:var(--blue-dim)"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="var(--blue)" stroke-width="1.4" stroke-linecap="round"><rect x="1" y="2.5" width="8" height="6" rx=".5"/><path d="M1 3l4 3 4-3"/></svg></div>Email distrib.</button>
           <button class="sch portal" ${!r.is_authorised ? 'disabled style="opacity:.4;cursor:not-allowed"' : ''}><div class="sch-ico" style="background:var(--green-dim)"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="var(--green)" stroke-width="1.4" stroke-linecap="round"><circle cx="5" cy="5" r="4"/><path d="M1 5h8M5 1c-1.5 1.5-2 3-2 4s.5 2.5 2 4M5 1c1.5 1.5 2 3 2 4s-.5 2.5-2 4"/></svg></div>Public portal</button>
         </div>
@@ -146,7 +145,7 @@ async function openMopup(id) {
       if (!body) return;
       switch (tab.dataset.tab) {
         case 'summary':        body.innerHTML = renderMopupSummary(r); bindMopupSummaryEvents(r); break;
-        case 'response':       body.innerHTML = renderMopupResponse(r); break;
+        case 'response':       body.innerHTML = renderMopupResponse(r); bindMopupResponseEvents(r); break;
         case 'lessons':        body.innerHTML = renderMopupLessons(r); bindMopupLessonEvents(r); break;
         case 'recommendations': body.innerHTML = renderMopupRecommendations(r); bindMopupRecommendEvents(r); break;
       }
@@ -173,7 +172,21 @@ function renderMopupSummary(r) {
       <div class="fsec-title">Incident details</div>
       <div class="fl"><span class="fl-label">Incident name</span><input class="fl-input" id="mu-name" value="${r.incident_name || ''}"/></div>
       <div class="frow">
-        <div class="fl"><span class="fl-label">Hazard type</span><input class="fl-input" id="mu-hazard" value="${r.hazard_type || ''}"/></div>
+        <div class="fl">
+          <span class="fl-label">Hazard type</span>
+          <select class="fl-sel" id="mu-hazard">
+            <option value="">— Select hazard type —</option>
+            ${[
+              'Flooding','Flash flooding','Storm surge','Drought','Extreme heat','Extreme cold','High winds','Hailstorm','Lightning','Wildfire / Veld fire',
+              'Earthquake','Landslide / Mudslide','Sinkhole','Tsunami',
+              'Disease outbreak','Animal disease','Pest infestation','Algal bloom','Human epidemic / Pandemic',
+              'Urban fire','Industrial fire','Informal settlement fire',
+              'Hazardous materials spill','Chemical leak','Gas leak','Dam failure','Bridge failure','Building collapse','Power grid failure','Water supply failure','Sewage / Wastewater failure','Transport accident','Train accident','Aviation incident',
+              'Civil unrest','Illegal land invasion','Food insecurity','Mass casualty event',
+              'Other / Custom'
+            ].map(h=>`<option value="${h}" ${r.hazard_type===h?'selected':''}>${h}</option>`).join('')}
+          </select>
+        </div>
         <div class="fl"><span class="fl-label">Duration (days)</span><input class="fl-input" type="number" id="mu-duration" value="${r.duration_days || ''}"/></div>
       </div>
       <div class="frow">
@@ -301,8 +314,7 @@ function bindMopupSummaryEvents(r) {
     };
     const { error } = await supabase.from('mopup_reports').update({
       incident_name: document.getElementById('mu-name')?.value,
-      hazard_type: document.getElementById('mu-hazard')?.value,
-      duration_days: parseInt(document.getElementById('mu-duration')?.value)||null,
+      hazard_type: document.getElementById('mu-hazard')?.value,      duration_days: parseInt(document.getElementById('mu-duration')?.value)||null,
       activation_date: document.getElementById('mu-activation')?.value||null,
       standdown_date: document.getElementById('mu-standdown')?.value||null,
       sitreps_issued: parseInt(document.getElementById('mu-sitreps')?.value)||null,
@@ -330,7 +342,55 @@ function bindMopupSummaryEvents(r) {
   });
 }
 
-function bindMopupLessonEvents(r) {
+function bindMopupResponseEvents(r) {
+  document.getElementById('add-org-btn')?.addEventListener('click', () => {
+    const existing = document.getElementById('org-inline-form');
+    if (existing) { existing.remove(); return; }
+    const btn = document.getElementById('add-org-btn');
+    const form = document.createElement('div');
+    form.id = 'org-inline-form';
+    form.style.cssText = 'background:var(--bg3);border:1px solid var(--border2);border-radius:8px;padding:12px;margin-top:8px;display:flex;flex-direction:column;gap:8px';
+    form.innerHTML = `
+      <div class="frow">
+        <div class="fl"><span class="fl-label">Organisation name</span><input class="fl-input" id="org-inline-name" placeholder="e.g. SAPS Clanwilliam"/></div>
+        <div class="fl"><span class="fl-label">Role in response</span><input class="fl-input" id="org-inline-role" placeholder="e.g. Search & rescue"/></div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-green btn-sm" id="save-org-inline-btn">Save</button>
+        <button class="btn btn-sm" id="cancel-org-inline-btn">Cancel</button>
+      </div>`;
+    btn.after(form);
+
+    document.getElementById('cancel-org-inline-btn')?.addEventListener('click', () => form.remove());
+    document.getElementById('save-org-inline-btn')?.addEventListener('click', async () => {
+      const name = document.getElementById('org-inline-name')?.value.trim();
+      const role = document.getElementById('org-inline-role')?.value.trim();
+      if (!name) { alert('Organisation name required.'); return; }
+      const orgs = [...(r.organisations_deployed||[]), { name, role }];
+      const { error } = await supabase.from('mopup_reports').update({ organisations_deployed: orgs }).eq('id', r.id);
+      if (error) { showToast(error.message, true); return; }
+      r.organisations_deployed = orgs;
+      document.getElementById('mu-body').innerHTML = renderMopupResponse(r);
+      bindMopupResponseEvents(r);
+      showToast('✓ Organisation added');
+    });
+  });
+
+  document.getElementById('save-totals-btn')?.addEventListener('click', async () => {
+    const keys = ['food_parcels','water_units','blankets','hygiene_kits','baby_packs','sassa_vouchers'];
+    const totals = {};
+    keys.forEach(k => {
+      const val = document.getElementById(`rt-${k}`)?.value;
+      if (val) totals[k] = val;
+    });
+    const { error } = await supabase.from('mopup_reports').update({ relief_totals: totals }).eq('id', r.id);
+    if (error) { showToast(error.message, true); return; }
+    r.relief_totals = totals;
+    showToast('✓ Relief totals saved');
+  });
+}
+
+
   document.getElementById('add-worked-btn')?.addEventListener('click', async () => {
     const title = document.getElementById('worked-title')?.value.trim();
     const desc = document.getElementById('worked-desc')?.value.trim();
