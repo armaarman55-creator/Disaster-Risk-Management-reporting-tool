@@ -169,6 +169,10 @@ async function loadPageModule(pageId) {
       case 'idp':          { const m = await import('./idp.js');          m.initIDP(_user);          break; }
       case 'admin':        { const m = await import('./admin.js');        m.initAdmin(_user);        break; }
       case 'profile':      { const m = await import('./profile.js');      m.initProfile(_user);      break; }
+      case 'risk-map':    renderPlaceholder('risk-map',    'Risk map',          'Complete HVC assessments to generate a full risk map.');    break;
+      case 'history':     renderPlaceholder('history',     'Assessment history','All completed HVC assessments will appear here.');           break;
+      case 'mitigations': renderPlaceholder('mitigations', 'Mitigation library','Pre-built mitigations from the hazard library.');            break;
+      case 'reports':     renderPlaceholder('reports',     'Reports',           'Export centre — SitReps, HVC reports and IDP summaries.');   break;
     }
   } catch(e) {
     console.warn('Page module load failed:', pageId, e);
@@ -252,6 +256,17 @@ function setEl(id, val) {
 }
 
 export function getUser()  { return _user; }
+
+function renderPlaceholder(pageId, title, subtitle) {
+  const page = document.getElementById('page-' + pageId);
+  if (!page) return;
+  page.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;padding:40px;text-align:center;gap:12px">
+    <div style="font-size:32px;opacity:.3">🚧</div>
+    <div style="font-size:17px;font-weight:800;color:var(--text)">${title}</div>
+    <div style="font-size:13px;color:var(--text3);max-width:320px;line-height:1.7">${subtitle}</div>
+    <div style="font-size:11px;color:var(--text3);margin-top:8px;font-family:monospace">Coming soon</div>
+  </div>`;
+}
 
 // Global navigate helper — safe to use in onclick attributes (no import() needed)
 window._drmsaNavigate = function(pageId) {
