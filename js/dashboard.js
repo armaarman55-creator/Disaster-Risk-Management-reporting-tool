@@ -63,7 +63,7 @@ export async function initDashboard(user) {
   }
 }
 
-async async function loadAssessmentData() {
+async function loadAssessmentData() {
   if (!_muniId) return;
 
   // Load latest assessment
