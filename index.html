@@ -490,23 +490,6 @@ initPWA();
 const savedTheme = localStorage.getItem('drmsa-theme') || 'dark';
 document.documentElement.setAttribute('data-theme', savedTheme);
 
-async function loadMunis() {
-  const sel = document.getElementById('reg-muni');
-  if (!sel) return;
-  const { data } = await supabase.from('municipalities').select('id,name,code,district').order('name');
-  if (data) {
-    const g = {};
-    data.forEach(m => { if (!g[m.district]) g[m.district]=[]; g[m.district].push(m); });
-    sel.innerHTML = '<option value="">— Select municipality —</option>' +
-      Object.entries(g).map(([d,ms])=>`<optgroup label="${d}">${ms.map(m=>`<option value="${m.id}">${m.name} — ${m.code}</option>`).join('')}</optgroup>`).join('');
-  }
-}
-
-document.getElementById('switch-to-register')?.addEventListener('click', () => {
-  document.getElementById('login-panel').classList.add('hidden');
-  document.getElementById('register-panel').classList.remove('hidden');
-  loadMunis();
-});
 
 // Hamburger menu toggle
 document.getElementById('mob-menu-btn')?.addEventListener('click', () => {
@@ -540,14 +523,7 @@ document.getElementById('footer-signout-top')?.addEventListener('click', async (
   signOut();
 });
 
-document.querySelectorAll('.auth-tab').forEach(tab => {
-  tab.addEventListener('click', () => {
-    const isLogin = tab.dataset.tab === 'login';
-    document.getElementById('login-panel').classList.toggle('hidden', !isLogin);
-    document.getElementById('register-panel').classList.toggle('hidden', isLogin);
-    if (!isLogin) loadMunis();
-  });
-});
+// Auth tab switching is handled by auth.js bindTabSwitching() → showPanel()
 
 document.querySelector('.rail-brand')?.addEventListener('click', toggleRail);
 document.getElementById('rail-expand-btn')?.addEventListener('click', toggleRail);
