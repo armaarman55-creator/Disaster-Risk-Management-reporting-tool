@@ -1,3 +1,6 @@
+/* ── UTILITY ── */
+.hidden{display:none!important}
+
 /* ── AUTH SCREEN ── */
 .auth-screen{position:fixed;inset:0;background:var(--bg);display:flex;align-items:stretch;z-index:1000}
 
