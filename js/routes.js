@@ -86,8 +86,10 @@ function renderClosureCard(c) {
         </div>`}
 
       <div class="rec-foot">
-        <button class="btn btn-sm btn-green closure-save" data-id="${c.id}">Save</button>
+        <button class="btn btn-sm btn-green closure-save" data-id="${c.id}">Save changes</button>
         <button class="btn btn-sm closure-share" data-id="${c.id}">Share</button>
+        <button class="btn btn-sm closure-edit" data-id="${c.id}" style="margin-left:auto">Edit</button>
+        <button class="btn btn-sm btn-red closure-delete" data-id="${c.id}">Delete</button>
       </div>
     </div>`;
 }
@@ -139,8 +141,8 @@ function showAddAltRouteForm(closureId, containerId) {
       is_published:        false
     });
 
-    if (!error) { showToast('Alternative route saved'); await renderRoutes(); }
-    else showToast(error.message, true);
+    if (!error) { showToast('✓ Alternative route saved successfully!'); await renderRoutes(); }
+    else showToast('Error: ' + error.message, true);
   });
 
   // Re-bind add-alt buttons after any DOM change
@@ -203,8 +205,67 @@ function showAddClosureForm() {
       is_published:    false
     });
 
-    if (!error) { area.innerHTML = ''; showToast('Closure saved'); await renderRoutes(); }
-    else showToast(error.message, true);
+    if (!error) { area.innerHTML = ''; showToast('✓ Road closure saved successfully!'); await renderRoutes(); }
+    else showToast('Error saving closure: ' + error.message, true);
+  });
+}
+
+function showEditClosureForm(closure) {
+  const area = document.getElementById('add-closure-area');
+  if (!area) return;
+  area.innerHTML = `
+    <div class="rec-card" style="margin-bottom:16px;border:1px solid var(--amber)">
+      <div class="rec-head"><div class="rec-name">Edit closure — ${closure.road_name}</div></div>
+      <div style="padding:16px">
+        <div class="frow">
+          <div class="fl"><span class="fl-label">Road name</span><input class="fl-input" id="edit-road-name" value="${closure.road_name||''}"/></div>
+          <div class="fl"><span class="fl-label">Status</span>
+            <select class="fl-sel" id="edit-road-status">
+              <option value="closed"   ${closure.status==='closed'  ?'selected':''}>Fully closed</option>
+              <option value="partial"  ${closure.status==='partial' ?'selected':''}>Partial / Caution</option>
+              <option value="open"     ${closure.status==='open'    ?'selected':''}>Reopened</option>
+            </select>
+          </div>
+        </div>
+        <div class="fl"><span class="fl-label">Reason</span><input class="fl-input" id="edit-road-reason" value="${closure.reason||''}"/></div>
+        <div class="frow">
+          <div class="fl"><span class="fl-label">Authority</span>
+            <select class="fl-sel" id="edit-road-auth">
+              <option ${closure.authority==='SANRAL'   ?'selected':''}>SANRAL</option>
+              <option ${closure.authority==='DRPW'     ?'selected':''}>DRPW</option>
+              <option ${closure.authority==='Municipal'?'selected':''}>Municipal</option>
+              <option ${closure.authority==='SAPS'     ?'selected':''}>SAPS</option>
+              <option ${closure.authority==='Traffic'  ?'selected':''}>Traffic</option>
+            </select>
+          </div>
+          <div class="fl"><span class="fl-label">Expected reopening</span><input class="fl-input" id="edit-road-reopen" value="${closure.expected_reopen||''}"/></div>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <button class="btn btn-green btn-sm" id="save-edit-closure-btn" data-id="${closure.id}">Save changes</button>
+          <button class="btn btn-sm" onclick="document.getElementById('add-closure-area').innerHTML=''">Cancel</button>
+        </div>
+      </div>
+    </div>`;
+
+  requestAnimationFrame(() => {
+    document.getElementById('save-edit-closure-btn')?.addEventListener('click', async () => {
+      const id = document.getElementById('save-edit-closure-btn').dataset.id;
+      const { error } = await supabase.from('road_closures').update({
+        road_name:       document.getElementById('edit-road-name')?.value,
+        status:          document.getElementById('edit-road-status')?.value,
+        reason:          document.getElementById('edit-road-reason')?.value,
+        authority:       document.getElementById('edit-road-auth')?.value,
+        expected_reopen: document.getElementById('edit-road-reopen')?.value,
+        updated_at:      new Date().toISOString()
+      }).eq('id', id);
+      if (!error) {
+        document.getElementById('add-closure-area').innerHTML = '';
+        showToast('✓ Closure updated successfully!');
+        await renderRoutes();
+      } else {
+        showToast('Error: ' + error.message, true);
+      }
+    });
   });
 }
 
@@ -223,8 +284,8 @@ function bindClosureEvents() {
         expected_reopen: document.getElementById(`reopen-${id}`)?.value,
         updated_at:      new Date().toISOString()
       }).eq('id', id);
-      if (!error) showToast('Closure updated');
-      else showToast(error.message, true);
+      if (!error) showToast('✓ Closure updated successfully!');
+      else showToast('Error: ' + error.message, true);
     });
   });
 
@@ -239,6 +300,25 @@ function bindClosureEvents() {
         url: `${window.location.origin}/public/routes/${c.id}`,
         text: `ROAD CLOSED — ${c.road_name}\nReason: ${c.reason||'N/A'}\nClosed: ${c.closed_since?new Date(c.closed_since).toLocaleString('en-ZA'):'N/A'}\nExpected reopening: ${c.expected_reopen||'Unknown'}${alt?`\n\nALTERNATIVE: ${alt.description}`:''}`,
       });
+    });
+  });
+
+  // Edit closure
+  document.querySelectorAll('.closure-edit').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const closure = _closures.find(x => x.id === btn.dataset.id);
+      if (closure) showEditClosureForm(closure);
+    });
+  });
+
+  // Delete closure
+  document.querySelectorAll('.closure-delete').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      if (!confirm('Delete this road closure and all its alternative routes?')) return;
+      await supabase.from('alternative_routes').delete().eq('closure_id', btn.dataset.id);
+      await supabase.from('road_closures').delete().eq('id', btn.dataset.id);
+      showToast('✓ Closure deleted');
+      await renderRoutes();
     });
   });
 
