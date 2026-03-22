@@ -71,7 +71,7 @@ async function renderIDP() {
   const proposed = mits?.filter(m=>m.idp_status==='proposed').length||0;
 
   page.innerHTML = `
-    <div style="display:flex;flex-direction:column;height:100%;overflow:hidden">
+    <div style="display:flex;flex-direction:column;min-height:100%;overflow:visible">
       <div style="padding:12px 20px;background:var(--bg2);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;flex-wrap:wrap;gap:8px">
         <div>
           <div style="font-size:15px;font-weight:800;color:var(--text)">IDP Linkage & Mitigation Register</div>
@@ -110,7 +110,7 @@ async function renderIDP() {
 
       <div id="idp-form-area" style="flex-shrink:0"></div>
       <div id="idp-library-area" style="flex-shrink:0"></div>
-      <div style="flex:1;overflow-y:auto;padding:16px 20px" id="idp-mit-list">
+      <div style="padding:16px 20px" id="idp-mit-list">
         ${renderMitList(mits||[])}
       </div>
     </div>`;
