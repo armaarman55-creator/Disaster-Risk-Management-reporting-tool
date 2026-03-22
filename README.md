@@ -73,7 +73,7 @@ Manage your municipality's users, settings and API keys. Approve new users, assi
 ### Roles and access
 | Role | Access |
 |------|--------|
-| **Admin** | Platform-wide system access only for only for demo |
+| **Admin** | Platform-wide system access only for demo |
 | **Disaster Officer** | Full access to all features, user management for own municipality |
 | **IDP Planner** | Mitigations, IDP linkage, assessments |
 | **Viewer** | Read-only access |
