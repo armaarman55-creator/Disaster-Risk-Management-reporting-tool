@@ -107,8 +107,12 @@ function renderOrgCard(org) {
       </div>
 
       <div class="pb">
-        ${org.description?`<div style="font-size:12px;color:var(--text3);margin-bottom:10px">${org.description}</div>`:''}
-
+        ${org.notes?`<div style="font-size:12px;color:var(--text3);margin-bottom:10px">${org.notes}</div>`:''}
+        ${(org.general_tel||org.general_email)?`
+          <div style="display:flex;gap:12px;margin-bottom:10px;flex-wrap:wrap">
+            ${org.general_tel?`<span style="font-size:11px;color:var(--text2)">☎ ${org.general_tel}</span>`:''}
+            ${org.general_email?`<span style="font-size:11px;color:var(--text2)">✉ ${org.general_email}</span>`:''}
+          </div>`:''}
         ${contacts.length ? `
           <div style="font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--text3);margin-bottom:8px">Contacts</div>
           ${contacts.map(contact => `
@@ -118,11 +122,12 @@ function renderOrgCard(org) {
                   ${contact.full_name}
                   ${contact.is_primary?'<span class="badge b-blue" style="font-size:9px">PRIMARY</span>':''}
                 </div>
-                <div style="font-size:11px;color:var(--text3);margin-top:3px">${contact.role_title||''}</div>
+                <div style="font-size:11px;color:var(--text3);margin-top:3px">${contact.position||''}</div>
                 <div style="display:flex;gap:12px;margin-top:5px;flex-wrap:wrap">
                   ${contact.cell?`<span style="font-size:11px;color:var(--text2)">📱 ${contact.cell}</span>`:''}
+                  ${contact.direct_tel?`<span style="font-size:11px;color:var(--text2)">☎ ${contact.direct_tel}</span>`:''}
                   ${contact.email?`<span style="font-size:11px;color:var(--text2)">✉ ${contact.email}</span>`:''}
-                  ${contact.landline?`<span style="font-size:11px;color:var(--text2)">☎ ${contact.landline}</span>`:''}
+                  ${contact.after_hours?`<span style="font-size:11px;color:var(--amber)">🌙 ${contact.after_hours}</span>`:''}
                 </div>
               </div>
               <div style="display:flex;gap:4px;flex-shrink:0">
@@ -160,13 +165,14 @@ function showOrgForm(existing) {
         </div>
       </div>
       <div class="fl">
-        <span class="fl-label">Description</span>
-        <textarea class="fl-textarea" id="org-desc" rows="2" style="min-height:52px">${org.description||''}</textarea>
+        <span class="fl-label">Notes</span>
+        <textarea class="fl-textarea" id="org-desc" rows="2" style="min-height:52px">${org.notes||''}</textarea>
       </div>
       <div class="frow">
-        <div class="fl"><span class="fl-label">Website</span><input class="fl-input" id="org-website" value="${org.website||''}" placeholder="https://..."/></div>
-        <div class="fl"><span class="fl-label">Physical address</span><input class="fl-input" id="org-address" value="${org.address||''}"/></div>
+        <div class="fl"><span class="fl-label">General telephone</span><input class="fl-input" id="org-tel" value="${org.general_tel||''}" placeholder="e.g. 021 000 0000"/></div>
+        <div class="fl"><span class="fl-label">General email</span><input class="fl-input" id="org-email" value="${org.general_email||''}" placeholder="info@org.co.za"/></div>
       </div>
+      <div class="fl"><span class="fl-label">Physical address</span><input class="fl-input" id="org-address" value="${org.address||''}"/></div>
       <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--text2);margin-bottom:12px">
         <input type="checkbox" id="org-active" ${org.is_active!==false?'checked':''} style="width:15px;height:15px"/>
         Active organisation
@@ -186,11 +192,12 @@ function showOrgForm(existing) {
       const payload = {
         municipality_id: _muniId,
         name,
-        sector:      document.getElementById('org-sector')?.value,
-        description: document.getElementById('org-desc')?.value,
-        website:     document.getElementById('org-website')?.value,
-        address:     document.getElementById('org-address')?.value,
-        is_active:   document.getElementById('org-active')?.checked
+        sector:       document.getElementById('org-sector')?.value,
+        notes:        document.getElementById('org-desc')?.value,
+        general_tel:  document.getElementById('org-tel')?.value,
+        general_email:document.getElementById('org-email')?.value,
+        address:      document.getElementById('org-address')?.value,
+        is_active:    document.getElementById('org-active')?.checked
       };
 
       const { error } = id
@@ -211,19 +218,25 @@ function showContactForm(orgId, existing) {
   if (!area) return;
   if (area.innerHTML && !existing) { area.innerHTML = ''; return; }
 
-  const ct = existing || {};
+  const nameParts = (ct.full_name||'').split(' ');
+  const ctFirst = nameParts[0]||'';
+  const ctLast  = nameParts.slice(1).join(' ')||'';
   area.innerHTML = `
     <div style="background:var(--bg3);border:1px solid var(--border2);border-radius:8px;padding:14px;margin-top:10px">
       <div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:10px">${existing?'Edit contact':'Add contact'}</div>
       <div class="frow">
-        <div class="fl"><span class="fl-label">Full name</span><input class="fl-input" id="ct-name-${orgId}" value="${ct.full_name||''}"/></div>
-        <div class="fl"><span class="fl-label">Role / title</span><input class="fl-input" id="ct-role-${orgId}" value="${ct.role_title||''}"/></div>
+        <div class="fl"><span class="fl-label">First name</span><input class="fl-input" id="ct-first-${orgId}" value="${ctFirst}" placeholder="First name"/></div>
+        <div class="fl"><span class="fl-label">Surname</span><input class="fl-input" id="ct-last-${orgId}" value="${ctLast}" placeholder="Surname"/></div>
       </div>
+      <div class="fl"><span class="fl-label">Position</span><input class="fl-input" id="ct-role-${orgId}" value="${ct.position||''}"/></div>
       <div class="frow">
         <div class="fl"><span class="fl-label">Cell number</span><input class="fl-input" id="ct-cell-${orgId}" value="${ct.cell||''}" placeholder="082 000 0000"/></div>
-        <div class="fl"><span class="fl-label">Landline</span><input class="fl-input" id="ct-land-${orgId}" value="${ct.landline||''}"/></div>
+        <div class="fl"><span class="fl-label">Direct telephone</span><input class="fl-input" id="ct-land-${orgId}" value="${ct.direct_tel||''}"/></div>
       </div>
-      <div class="fl"><span class="fl-label">Email</span><input class="fl-input" id="ct-email-${orgId}" value="${ct.email||''}"/></div>
+      <div class="frow">
+        <div class="fl"><span class="fl-label">Email</span><input class="fl-input" id="ct-email-${orgId}" value="${ct.email||''}"/></div>
+        <div class="fl"><span class="fl-label">After hours</span><input class="fl-input" id="ct-after-${orgId}" value="${ct.after_hours||''}" placeholder="Emergency contact"/></div>
+      </div>
       <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;color:var(--text2);margin-bottom:10px">
         <input type="checkbox" id="ct-primary-${orgId}" ${ct.is_primary?'checked':''} style="width:14px;height:14px"/>
         Primary contact for this organisation
@@ -238,17 +251,20 @@ function showContactForm(orgId, existing) {
     document.getElementById(`save-ct-${orgId}`)?.addEventListener('click', async () => {
       const ctId  = document.getElementById(`save-ct-${orgId}`).dataset.id;
       const oId   = document.getElementById(`save-ct-${orgId}`).dataset.org;
-      const name  = document.getElementById(`ct-name-${orgId}`)?.value.trim();
+      const first = document.getElementById(`ct-first-${orgId}`)?.value.trim();
+      const last  = document.getElementById(`ct-last-${orgId}`)?.value.trim();
+      const name  = `${first} ${last}`.trim();
       if (!name) { alert('Contact name required.'); return; }
 
       const payload = {
         org_id:          oId,
         municipality_id: _muniId,
         full_name:       name,
-        role_title:      document.getElementById(`ct-role-${orgId}`)?.value,
+        position:        document.getElementById(`ct-role-${orgId}`)?.value,
         cell:            document.getElementById(`ct-cell-${orgId}`)?.value,
-        landline:        document.getElementById(`ct-land-${orgId}`)?.value,
+        direct_tel:      document.getElementById(`ct-land-${orgId}`)?.value,
         email:           document.getElementById(`ct-email-${orgId}`)?.value,
+        after_hours:     document.getElementById(`ct-after-${orgId}`)?.value,
         is_primary:      document.getElementById(`ct-primary-${orgId}`)?.checked,
         is_active:       true
       };
@@ -307,17 +323,17 @@ function bindOrgEvents() {
 
 // ── EXPORT ────────────────────────────────────────────────
 function exportCSV() {
-  const rows = [['Organisation','Sector','Contact Name','Role','Cell','Email','Landline','Primary']];
+  const rows = [['Organisation','Sector','Contact Name','Position','Cell','Direct Tel','Email','After Hours','Primary']];
   _orgs.forEach(org => {
     const contacts = org.stakeholder_contacts || [];
     if (!contacts.length) {
-      rows.push([org.name, org.sector||'', '', '', '', '', '', '']);
+      rows.push([org.name, org.sector||'', '', '', '', '', '', '', '']);
     } else {
       contacts.forEach(c => {
         rows.push([
           org.name, org.sector||'',
-          c.full_name||'', c.role_title||'',
-          c.cell||'', c.email||'', c.landline||'',
+          c.full_name||'', c.position||'',
+          c.cell||'', c.direct_tel||'', c.email||'', c.after_hours||'',
           c.is_primary?'Yes':'No'
         ]);
       });
@@ -358,9 +374,9 @@ function exportPDF() {
     const contacts = org.stakeholder_contacts || [];
     html += `<h2>${org.name} <span style="font-size:11px;font-weight:400;color:#666">${org.sector||''}</span></h2>`;
     if (contacts.length) {
-      html += `<table><thead><tr><th>Name</th><th>Role</th><th>Cell</th><th>Email</th><th>Landline</th></tr></thead><tbody>`;
+      html += `<table><thead><tr><th>Name</th><th>Position</th><th>Cell</th><th>Direct Tel</th><th>Email</th><th>After Hours</th></tr></thead><tbody>`;
       contacts.forEach(c => {
-        html += `<tr><td>${c.full_name||'—'}${c.is_primary?' <span class="badge">PRIMARY</span>':''}</td><td>${c.role_title||'—'}</td><td>${c.cell||'—'}</td><td>${c.email||'—'}</td><td>${c.landline||'—'}</td></tr>`;
+        html += `<tr><td>${c.full_name||'—'}${c.is_primary?' <span class="badge">PRIMARY</span>':''}</td><td>${c.position||'—'}</td><td>${c.cell||'—'}</td><td>${c.direct_tel||'—'}</td><td>${c.email||'—'}</td><td>${c.after_hours||'—'}</td></tr>`;
       });
       html += `</tbody></table>`;
     } else {
