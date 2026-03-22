@@ -128,7 +128,6 @@ async function openSitrep(id, allSitreps) {
         </div>
         <div class="share-channels">
           <button class="sch pdf" onclick="generateSitrepPDF()"><div class="sch-ico" style="background:var(--red-dim)"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="var(--red)" stroke-width="1.4" stroke-linecap="round"><rect x="1.5" y="1" width="7" height="8" rx="1"/><line x1="3" y1="4" x2="7" y2="4"/><line x1="3" y1="6" x2="6" y2="6"/></svg></div>PDF report</button>
-          <button class="sch pdmc" onclick="copySitrepPDMC()"><div class="sch-ico" style="background:var(--purple-dim)"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="var(--purple)" stroke-width="1.4" stroke-linecap="round"><circle cx="5" cy="5" r="4"/><path d="M5 2v3l2 2"/></svg></div>PDMC submit</button>
           <button class="sch em" id="sr-email-btn"><div class="sch-ico" style="background:var(--blue-dim)"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="var(--blue)" stroke-width="1.4" stroke-linecap="round"><rect x="1" y="2.5" width="8" height="6" rx=".5"/><path d="M1 3l4 3 4-3"/></svg></div>Email distrib.</button>
           <button class="sch portal" id="sr-portal-btn"><div class="sch-ico" style="background:var(--green-dim)"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="var(--green)" stroke-width="1.4" stroke-linecap="round"><circle cx="5" cy="5" r="4"/><path d="M1 5h8M5 1c-1.5 1.5-2 3-2 4s.5 2.5 2 4M5 1c1.5 1.5 2 3 2 4s-.5 2.5-2 4"/></svg></div>Public portal</button>
         </div>
@@ -152,7 +151,7 @@ async function openSitrep(id, allSitreps) {
         case 'form':     body.innerHTML = renderSitrepForm(s, shelters, closures); bindFormEvents(s); break;
         case 'timeline': body.innerHTML = renderTimeline(s); bindTimelineEvents(s); break;
         case 'actions':  body.innerHTML = renderActions(s); bindActionEvents(s); break;
-        case 'public':   body.innerHTML = renderPublicSummary(s, shelters.data || [], closures.data || []); break;
+        case 'public':   body.innerHTML = renderPublicSummary(s, shelters, closures); bindPublicSummaryEvents(s, shelters, closures); break;
       }
     });
   });
@@ -178,7 +177,7 @@ function renderSitrepForm(s, shelters, closures) {
       </div>
       <div class="frow">
         <div class="fl"><span class="fl-label">Incident name</span><input class="fl-input" id="sr-name" value="${s.incident_name || ''}"/></div>
-        <div class="fl"><span class="fl-label">Hazard type</span><input class="fl-input" id="sr-hazard" value="${s.hazard_type || ''}"/></div>
+        <div class="fl"><span class="fl-label">Hazard type</span><select class="fl-sel" id="sr-hazard"><option value="${s.hazard_type||''}">${s.hazard_type||'Loading…'}</option></select></div>
       </div>
       <div class="frow">
         <div class="fl"><span class="fl-label">Wards affected</span><input class="fl-input" id="sr-wards" value="${Array.isArray(s.affected_wards) ? s.affected_wards.join(', ') : (s.affected_wards || '')}"/></div>
@@ -303,15 +302,15 @@ function renderActions(s) {
 
 function renderPublicSummary(s, shelters, closures) {
   const num = String(s.sitrep_number).padStart(2,'0');
-  // Only include records that were ticked as linked to this SitRep
-  const linkedShelterIds = [...document.querySelectorAll('.sr-link-shelter:checked')].map(cb => cb.value);
-  const linkedClosureIds = [...document.querySelectorAll('.sr-link-closure:checked')].map(cb => cb.value);
+  const linkedShelterIds = Array.isArray(s.linked_shelters) ? s.linked_shelters : [];
+  const linkedClosureIds = Array.isArray(s.linked_closures) ? s.linked_closures : [];
   const linkedShelters   = shelters.filter(sh => linkedShelterIds.includes(sh.id));
   const linkedClosures   = closures.filter(rc => linkedClosureIds.includes(rc.id));
   const shelterText = linkedShelters.map(sh=>`${sh.name}: ${sh.current_occupancy||0}/${sh.capacity} (${(sh.status||'').toUpperCase()})`).join('\n');
   const closureText = linkedClosures.map(c=>`${c.road_name}: ${(c.status||'').toUpperCase()}`).join('\n');
+  const muniName = _user?.municipalities?.name || '';
   const text = `SITUATION UPDATE — SITREP-${num}
-${_user?.municipalities?.name||''} · ${new Date().toLocaleString('en-ZA')}
+${muniName} · ${new Date().toLocaleString('en-ZA')}
 
 Incident: ${s.incident_name||'—'}
 Status: ${(s.status||'').toUpperCase()}
@@ -326,16 +325,49 @@ ${closureText ? '\nROAD CLOSURES:\n'+closureText : ''}
 
 ${s.narrative||''}
 
-Next SitRep due: ${s.next_due ? new Date(s.next_due).toLocaleString('en-ZA') : 'TBC'}`;
+Next SitRep due: ${s.next_due ? new Date(s.next_due).toLocaleString('en-ZA') : 'TBC'}
+
+Issued by: ${muniName} Disaster Management Center`;
+
+  const links = window._drmsaSocialLinks || {};
+  const url   = `${window.location.origin}/incidents/${s.id}/sitrep-${num}`;
+  const fbUrl = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}`;
+  const twUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(`SITREP-${num} — ${s.incident_name||''} ${links.social_twitter?'via @'+links.social_twitter:''}`)}&url=${encodeURIComponent(url)}`;
+  const mailUrl = `mailto:?subject=${encodeURIComponent(`SITREP-${num} — ${s.incident_name||''}`)}&body=${encodeURIComponent(text)}`;
 
   return `
     <div class="fsec">
       <div class="fsec-title">Public summary — auto-generated</div>
-      <div style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--r-md);padding:12px;font-size:11px;color:var(--text2);font-family:var(--font-mono);line-height:1.6;white-space:pre-wrap">${text}</div>
-      <div style="margin-top:10px;display:flex;gap:6px">
-        <button class="btn btn-sm" onclick="navigator.clipboard?.writeText(document.querySelector('.sr-body pre, .sr-body div[style*=pre-wrap]')?.textContent||'')">Copy text</button>
+      <div id="pub-summary-text" style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--r-md);padding:12px;font-size:11px;color:var(--text2);font-family:var(--font-mono);line-height:1.6;white-space:pre-wrap">${text}</div>
+      <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <span style="font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--text3);font-family:var(--font-mono)">Share via</span>
+        <a class="sch fb" href="${fbUrl}" target="_blank" style="text-decoration:none">
+          <div class="sch-ico" style="background:#1877F2">
+            <svg width="10" height="10" viewBox="0 0 10 10" fill="white"><path d="M7 1H5.5C4.7 1 4 1.7 4 2.5V4H2.5v1.5H4V9h1.5V5.5H7L7.5 4H5.5V2.5c0-.3.2-.5.5-.5H7V1z"/></svg>
+          </div>Facebook
+        </a>
+        <a class="sch xp" href="${twUrl}" target="_blank" style="text-decoration:none">
+          <div class="sch-ico" style="background:#000">
+            <svg width="10" height="10" viewBox="0 0 10 10" fill="white"><path d="M1 1.5l3.2 4.3L1 9h1l2.7-3 2.2 3H9L5.7 4.6 8.8 1.5h-1L5.2 4.3 3 1.5H1z"/></svg>
+          </div>Post on X
+        </a>
+        <a class="sch em" href="${mailUrl}" style="text-decoration:none">
+          <div class="sch-ico" style="background:var(--blue-dim)">
+            <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="var(--blue)" stroke-width="1.4" stroke-linecap="round"><rect x="1" y="2.5" width="8" height="6" rx=".5"/><path d="M1 3l4 3 4-3"/></svg>
+          </div>Email
+        </a>
+        <button class="btn btn-sm" id="pub-copy-btn">Copy text</button>
       </div>
     </div>`;
+}
+
+function bindPublicSummaryEvents(s, shelters, closures) {
+  document.getElementById('pub-copy-btn')?.addEventListener('click', () => {
+    const text = document.getElementById('pub-summary-text')?.textContent || '';
+    navigator.clipboard?.writeText(text);
+    const btn = document.getElementById('pub-copy-btn');
+    if (btn) { btn.textContent = 'Copied!'; setTimeout(() => btn.textContent = 'Copy text', 1500); }
+  });
 }
 
 window.srUpdateLinkedCounts = function() {
@@ -351,6 +383,37 @@ window.srUpdateLinkedCounts = function() {
 };
 
 function bindFormEvents(s) {
+  // Populate hazard type dropdown from live query
+  (async () => {
+    const sel = document.getElementById('sr-hazard');
+    if (!sel) return;
+    const { data: hazards } = await supabase
+      .from('hazard_types')
+      .select('name, category')
+      .order('category')
+      .order('name');
+
+    if (hazards?.length) {
+      const grouped = {};
+      hazards.forEach(h => {
+        if (!grouped[h.category]) grouped[h.category] = [];
+        grouped[h.category].push(h.name);
+      });
+      sel.innerHTML = '<option value="">— Select hazard type —</option>' +
+        Object.entries(grouped).map(([cat, names]) =>
+          `<optgroup label="${cat}">${names.map(n =>
+            `<option value="${n}" ${s.hazard_type === n ? 'selected' : ''}>${n}</option>`
+          ).join('')}</optgroup>`
+        ).join('') +
+        `<option value="Other / Custom" ${s.hazard_type === 'Other / Custom' ? 'selected' : ''}>Other / Custom</option>`;
+    } else {
+      // Fallback hardcoded list if table empty
+      sel.innerHTML = ['Flooding','Flash flooding','Wildfire / Veld fire','Drought','Extreme heat',
+        'Earthquake','Landslide / Mudslide','Disease outbreak','Urban fire','Hazardous materials spill',
+        'Dam failure','Building collapse','Power grid failure','Civil unrest','Other / Custom'
+      ].map(h => `<option value="${h}" ${s.hazard_type===h?'selected':''}>${h}</option>`).join('');
+    }
+  })();
   // Update linked record counts when checkboxes change
   function updateLinkedCounts() {
     const shelterCount  = document.querySelectorAll('.sr-link-shelter:checked').length;
