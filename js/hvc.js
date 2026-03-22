@@ -1044,7 +1044,8 @@ async function exportAssessmentCSV(id, label) {
 
   const allRows = [...meta, ...rows];
   const csv = allRows.map(r =>
-    r.map(v => `"${String(v||'').replace(/"/g,'""')}"`).join(',')
+  const escQ = function(v) { return '"' + String(v||'').split('"').join('""') + '"'; };
+  const csv = allRows.map(function(r) { return r.map(escQ).join(','); }).join('\n');
   ).join('
 ');
 
@@ -1052,7 +1053,7 @@ async function exportAssessmentCSV(id, label) {
   const url  = URL.createObjectURL(blob);
   const a    = Object.assign(document.createElement('a'), {
     href:     url,
-    download: `DRMSA-HVC-${label.replace(/\s+/g,'-')}-${new Date().toISOString().slice(0,10)}.csv`
+    download: 'DRMSA-HVC-' + label.replace(/\s+/g,'-') + '-' + new Date().toISOString().slice(0,10) + '.csv'
   });
   a.click();
   URL.revokeObjectURL(url);
