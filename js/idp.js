@@ -27,7 +27,14 @@ const IDP_KPAS = [
 const DRR      = ['Treat/Mitigate','Tolerate/Accept','Transfer/Share','Terminate/Prevent'];
 const TIMEFRAMES= ['Short term (< 1 year)','Medium term (1–3 years)','Long term (3–5 years)'];
 const MIT_TYPES = ['Structural','Non-structural','Policy/Plan','Awareness/Training'];
-const STATUSES  = ['Proposed','Linked — awaiting funding','Linked — funded','Under review','In progress','Completed'];
+const STATUSES  = [
+  { label: 'Proposed',              value: 'proposed' },
+  { label: 'Linked — awaiting funding', value: 'linked-awaiting' },
+  { label: 'Linked — funded',       value: 'linked-funded' },
+  { label: 'Under review',          value: 'under-review' },
+  { label: 'In progress',           value: 'in-progress' },
+  { label: 'Completed',             value: 'completed' }
+];
 
 export async function initIDP(user) {
   _user   = user;
@@ -102,7 +109,7 @@ async function renderIDP() {
         </select>
         <select class="fl-sel" id="idp-filter-status" style="font-size:12px;max-width:170px">
           <option value="">All statuses</option>
-          ${STATUSES.map(s=>`<option>${s}</option>`).join('')}
+          ${STATUSES.map(s=>`<option value="${s.value}">${s.label}</option>`).join('')}
         </select>
         <button class="btn btn-sm" id="idp-filter-btn">Filter</button>
         <button class="btn btn-sm" id="idp-clear-btn">Clear</button>
@@ -234,7 +241,7 @@ function showMitForm(existing) {
         <div class="fl"><span class="fl-label">Vote / project number</span><input class="fl-input" id="mf-vote" value="${m.idp_vote_number||''}" placeholder="e.g. 3/4/5/2"/></div>
         <div class="fl"><span class="fl-label">Status</span>
           <select class="fl-sel" id="mf-status">
-            ${STATUSES.map(s=>{const v=s.toLowerCase().replace(/\s|—/g,'-').replace(/--+/g,'-');return `<option value="${v}" ${m.idp_status===v?'selected':''}>${s}</option>`}).join('')}
+            ${STATUSES.map(s=>`<option value="${s.value}" ${m.idp_status===s.value?'selected':''}>${s.label}</option>`).join('')}
           </select>
         </div>
       </div>
@@ -284,7 +291,7 @@ async function saveMit() {
     hazard_name:       hazard,
     hazard_category:   hData?.hazard_category||null,
     risk_band:         hData?.risk_band||null,
-    mitigation_type:   document.getElementById('mf-type')?.value,
+    mitigation_type:   {'Structural':'structural','Non-structural':'non-structural','Policy/Plan':'Policy/Plan','Awareness/Training':'Awareness/Training'}[document.getElementById('mf-type')?.value] || document.getElementById('mf-type')?.value || 'structural',
     description:       desc,
     specific_location: document.getElementById('mf-location')?.value.trim(),
     affected_wards:    wards,
