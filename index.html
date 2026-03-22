@@ -293,43 +293,53 @@
   </div>
 
   <!-- Full-width ward map -->
-  <div class="panel" style="margin-bottom:16px">
-    <div class="ph" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
-      <div><div class="ph-title">Ward hazard map</div><div class="ph-sub" id="mab-code">Select an assessment to colour wards by risk</div></div>
+  <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--r-lg);margin-bottom:16px;flex-shrink:0">
+
+    <!-- Map header -->
+    <div style="padding:10px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+      <div>
+        <div style="font-size:13px;font-weight:700;color:var(--text)">Ward hazard map</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:1px" id="mab-code">Select an assessment to colour wards by risk</div>
+      </div>
       <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
         <select id="assess-map" style="font-size:11px;background:var(--bg3);border:1px solid var(--border);border-radius:5px;padding:4px 8px;color:var(--text);outline:none"><option>None</option></select>
-        <div class="map-layer-ctrl" style="position:static;border:1px solid var(--border);border-radius:6px;overflow:hidden;display:flex">
-          <div class="lyr on" style="padding:4px 10px;font-size:11px">Hazard</div>
-          <div class="lyr" style="padding:4px 10px;font-size:11px">Shelters</div>
+        <div style="border:1px solid var(--border);border-radius:6px;overflow:hidden;display:flex">
+          <div class="lyr on" style="padding:4px 10px;font-size:11px;cursor:pointer">Hazard</div>
+          <div class="lyr" style="padding:4px 10px;font-size:11px;cursor:pointer">Shelters</div>
         </div>
-        <button id="map-zoom-in"    class="btn btn-sm" style="padding:4px 10px;font-size:15px;font-weight:700;line-height:1">+</button>
-        <button id="map-zoom-out"   class="btn btn-sm" style="padding:4px 10px;font-size:15px;font-weight:700;line-height:1">−</button>
+        <button id="map-zoom-in"  class="btn btn-sm" style="padding:4px 10px;font-size:15px;font-weight:700;line-height:1">+</button>
+        <button id="map-zoom-out" class="btn btn-sm" style="padding:4px 10px;font-size:15px;font-weight:700;line-height:1">−</button>
         <button id="map-zoom-reset" class="btn btn-sm" style="padding:4px 10px;font-size:11px">Reset</button>
       </div>
     </div>
-    <div style="position:relative;overflow:hidden;background:var(--bg3);border-bottom:1px solid var(--border);min-height:380px;height:380px" id="map-canvas-wrap">
-      <svg id="ward-svg" width="100%" height="380" viewBox="0 0 900 380" preserveAspectRatio="xMidYMid meet"
-        style="cursor:crosshair;touch-action:none;display:block;width:100%;height:380px">
+
+    <!-- SVG canvas — explicit height, no overflow:hidden on parent -->
+    <div id="map-canvas-wrap" style="width:100%;height:380px;background:var(--bg3);overflow:hidden;position:relative">
+      <svg id="ward-svg"
+        viewBox="0 0 900 380"
+        preserveAspectRatio="xMidYMid meet"
+        style="width:100%;height:380px;display:block;cursor:crosshair;touch-action:none">
         <g id="ward-g">
-          <text x="450" y="190" text-anchor="middle" font-size="14"
-            fill="var(--text3)" font-family="monospace">Loading ward data…</text>
+          <text x="450" y="190" text-anchor="middle" font-size="14" fill="#6e7681" font-family="monospace">Loading ward data…</text>
         </g>
       </svg>
     </div>
-    <div style="padding:10px 16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
-      <div style="display:flex;gap:14px;flex-wrap:wrap" class="map-legend" id="map-legend-bar">
-        <div class="leg"><div class="leg-sq" style="background:#f85149;opacity:.7"></div>Extremely high</div>
-        <div class="leg"><div class="leg-sq" style="background:#d29922;opacity:.7"></div>High</div>
-        <div class="leg"><div class="leg-sq" style="background:#3fb950;opacity:.7"></div>Tolerable</div>
-        <div class="leg"><div class="leg-sq" style="background:#58a6ff;opacity:.7"></div>Low</div>
-        <div class="leg"><div class="leg-sq" style="background:#6e7681;opacity:.5"></div>Negligible/unscored</div>
+
+    <!-- Legend + ward info -->
+    <div style="padding:10px 16px;border-top:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
+      <div style="display:flex;gap:14px;flex-wrap:wrap">
+        <div style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text3)"><div style="width:10px;height:10px;border-radius:2px;background:#f85149;opacity:.8"></div>Extremely high</div>
+        <div style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text3)"><div style="width:10px;height:10px;border-radius:2px;background:#d29922;opacity:.8"></div>High</div>
+        <div style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text3)"><div style="width:10px;height:10px;border-radius:2px;background:#3fb950;opacity:.8"></div>Tolerable</div>
+        <div style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text3)"><div style="width:10px;height:10px;border-radius:2px;background:#58a6ff;opacity:.8"></div>Low</div>
+        <div style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text3)"><div style="width:10px;height:10px;border-radius:2px;background:#6e7681;opacity:.6"></div>Unscored</div>
       </div>
       <div id="wi-empty" style="font-size:11px;color:var(--text3);font-style:italic">Click a ward to view its risk profile</div>
       <div id="wi-content" style="display:none"></div>
     </div>
   </div>
 
-  <!-- Hazard table + trend -->
+<!-- Hazard table + trend -->
   <div class="body-grid">
     <div style="display:flex;flex-direction:column;gap:16px">
       <div class="panel">
