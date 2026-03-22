@@ -383,7 +383,15 @@ function bindFormEvents(s) {
       linked_closures: [...document.querySelectorAll('.sr-link-closure:checked')].map(cb=>cb.value),
       updated_at:      new Date().toISOString()
     }).eq('id', s.id);
-    if (!error) showToast('SitRep saved');
+    if (!error) {
+      showToast('✓ SitRep saved successfully!');
+      // Collapse form back to list after short delay
+      setTimeout(async () => {
+        await initSitrep({ municipality_id: _muniId });
+      }, 1200);
+    } else {
+      showToast('Error saving SitRep: ' + error.message, true);
+    }
   });
 }
 
