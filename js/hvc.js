@@ -82,6 +82,19 @@ export async function initHVC(user) {
   _user   = user;
   _muniId = user?.municipality_id;
 
+  // Load stakeholder orgs for role player dropdowns
+  let _stakeholderOrgs = [];
+  if (_muniId) {
+    const { data: orgsData } = await supabase
+      .from('stakeholder_orgs')
+      .select('id,name,sector')
+      .eq('municipality_id', _muniId)
+      .eq('is_active', true)
+      .order('name');
+    _stakeholderOrgs = orgsData || [];
+    window._hvcStakeholderOrgs = _stakeholderOrgs;
+  }
+
   // Load wards for affected areas selector
   if (_muniId) {
     const { data } = await supabase
@@ -404,11 +417,24 @@ function renderHazardRow(hazard, cat, isCustom=false) {
         <!-- E. Role Players -->
         <div style="padding:10px 14px">
           <div style="font-size:9px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--text3);margin-bottom:8px">E. ROLE PLAYERS</div>
+          <div style="font-size:10px;color:var(--text3);margin-bottom:8px">Select from your stakeholder directory or type a custom organisation name.</div>
           <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
-            <div class="fl"><span class="fl-label">Primary owner</span><input class="fl-input" id="${id}_r1" placeholder="Organisation"/></div>
-            <div class="fl"><span class="fl-label">Secondary owner</span><input class="fl-input" id="${id}_r2" placeholder="Organisation"/></div>
-            <div class="fl"><span class="fl-label">Tertiary owner</span><input class="fl-input" id="${id}_r3" placeholder="Organisation"/></div>
+            <div class="fl">
+              <span class="fl-label">Primary owner</span>
+              <input class="fl-input" id="${id}_r1" list="stakeholder-opts" placeholder="Select or type organisation"/>
+            </div>
+            <div class="fl">
+              <span class="fl-label">Secondary owner</span>
+              <input class="fl-input" id="${id}_r2" list="stakeholder-opts" placeholder="Select or type organisation"/>
+            </div>
+            <div class="fl">
+              <span class="fl-label">Tertiary owner</span>
+              <input class="fl-input" id="${id}_r3" list="stakeholder-opts" placeholder="Select or type organisation"/>
+            </div>
           </div>
+          <datalist id="stakeholder-opts">
+            ${(window._hvcStakeholderOrgs||[]).map(o=>`<option value="${o.name}"/>`).join('')}
+          </datalist>
           <div class="fl" style="margin-top:6px"><span class="fl-label">Notes</span><textarea class="fl-textarea" id="${id}_notes" rows="2" style="min-height:48px"></textarea></div>
         </div>
       </div>
