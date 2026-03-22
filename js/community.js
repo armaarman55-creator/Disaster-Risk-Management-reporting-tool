@@ -51,9 +51,16 @@ async function renderShelters(body) {
       ${shelters?.length ? shelters.map(s => renderShelterCard(s)).join('') : emptyState('No shelters registered yet.')}
     </div>`;
 
-  // Bind AFTER innerHTML
-  document.getElementById('add-shelter-btn')?.addEventListener('click', () => showShelterForm(null));
-  bindShelterEvents(shelters || []);
+  // Use requestAnimationFrame to ensure DOM is fully painted before binding
+  requestAnimationFrame(() => {
+    const btn = document.getElementById('add-shelter-btn');
+    if (btn) {
+      btn.onclick = () => showShelterForm(null);
+    } else {
+      console.warn('add-shelter-btn not found in DOM');
+    }
+    bindShelterEvents(shelters || []);
+  });
 }
 
 function showShelterForm(existing) {
@@ -269,9 +276,15 @@ async function renderReliefOps(body) {
       ${ops?.length ? ops.map(op => renderReliefCard(op)).join('') : emptyState('No relief operations yet.')}
     </div>`;
 
-  // Bind AFTER innerHTML
-  document.getElementById('add-relief-btn')?.addEventListener('click', () => showReliefForm(null));
-  bindReliefEvents(ops || []);
+  requestAnimationFrame(() => {
+    const btn = document.getElementById('add-relief-btn');
+    if (btn) {
+      btn.onclick = () => showReliefForm(null);
+    } else {
+      console.warn('add-relief-btn not found in DOM');
+    }
+    bindReliefEvents(ops || []);
+  });
 }
 
 function showReliefForm(existing) {
