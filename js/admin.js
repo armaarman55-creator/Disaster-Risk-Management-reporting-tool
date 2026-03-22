@@ -1,5 +1,6 @@
 // js/admin.js
 import { supabase } from './supabase.js';
+import { writeAudit } from './audit.js';
 
 let _user = null;
 
@@ -44,10 +45,35 @@ async function renderAdmin(page) {
           </div>
         </div>
       </div>
+
+      <!-- Audit trail section -->
+      <div class="panel" style="margin-top:20px">
+        <div class="ph" style="cursor:pointer;user-select:none" id="audit-toggle-header">
+          <div>
+            <div class="ph-title">Audit trail</div>
+            <div class="ph-sub">All user actions — who changed what and when</div>
+          </div>
+          <span id="audit-toggle-icon" style="font-size:18px;color:var(--text3)">▸</span>
+        </div>
+        <div id="audit-trail-body" style="display:none;padding:16px"></div>
+      </div>
     </div>`;
 
   await loadUsers();
   await loadMuniSettings();
+
+  // Wire audit trail toggle
+  document.getElementById('audit-toggle-header')?.addEventListener('click', async () => {
+    const body = document.getElementById('audit-trail-body');
+    const icon = document.getElementById('audit-toggle-icon');
+    if (!body) return;
+    const isOpen = body.style.display !== 'none';
+    body.style.display = isOpen ? 'none' : 'block';
+    if (icon) icon.textContent = isOpen ? '▸' : '▾';
+    if (!isOpen && body.innerHTML.trim() === '') {
+      await loadAuditTrail(body);
+    }
+  });
   loadApiSettings();
   document.getElementById('invite-btn')?.addEventListener('click', showInviteForm);
 }
@@ -182,8 +208,10 @@ async function loadMuniSettings() {
       social_whatsapp:  document.getElementById('ms-whatsapp')?.value.trim()||null,
       social_website:   document.getElementById('ms-website')?.value.trim()||null,
     }).eq('id', _user.municipality_id);
-    if (!error) showToast('Municipality settings saved');
-    else showToast(error.message, true);
+    if (!error) {
+      await writeAudit('update','municipality_settings',_user.municipality_id,'Municipality settings updated');
+      showToast('✓ Municipality settings saved successfully!');
+    } else showToast(error.message, true);
   });
 }
 
@@ -294,20 +322,31 @@ window.toggleApiKey = function() {
   if (inp) inp.type = inp.type === 'password' ? 'text' : 'password';
 };
 
-window.approveUser = async function(id) {
-  await supabase.from('user_profiles').update({ status: 'active' }).eq('id', id);
-  showToast('User approved'); loadUsers();
+window.approveUser = async function(id, name) {
+  const { error } = await supabase.from('user_profiles').update({ status: 'active' }).eq('id', id);
+  if (!error) {
+    await writeAudit('approve', 'user', id, `Approved user: ${name||id}`, { status:'pending' }, { status:'active' });
+    showToast('✓ User approved successfully!');
+  } else showToast(error.message, true);
+  loadUsers();
 };
 
-window.suspendUser = async function(id) {
+window.suspendUser = async function(id, name) {
   if (!confirm('Suspend this user?')) return;
-  await supabase.from('user_profiles').update({ status: 'suspended' }).eq('id', id);
-  showToast('User suspended'); loadUsers();
+  const { error } = await supabase.from('user_profiles').update({ status: 'suspended' }).eq('id', id);
+  if (!error) {
+    await writeAudit('suspend', 'user', id, `Suspended user: ${name||id}`, { status:'active' }, { status:'suspended' });
+    showToast('✓ User suspended');
+  } else showToast(error.message, true);
+  loadUsers();
 };
 
-window.changeRole = async function(id, role) {
-  await supabase.from('user_profiles').update({ role }).eq('id', id);
-  showToast('Role updated');
+window.changeRole = async function(id, role, name) {
+  const { error } = await supabase.from('user_profiles').update({ role }).eq('id', id);
+  if (!error) {
+    await writeAudit('role_change', 'user', id, `Changed role to ${role} for: ${name||id}`, {}, { role });
+    showToast('✓ Role updated');
+  } else showToast(error.message, true);
 };
 
 function initials(name) {
@@ -324,4 +363,169 @@ function showToast(msg, isError=false) {
   t.textContent = msg;
   document.body.appendChild(t);
   setTimeout(()=>{t.style.opacity='0';setTimeout(()=>t.remove(),300);},2500);
+}
+
+// ── AUDIT TRAIL ──────────────────────────────────────────
+async function loadAuditTrail(body) {
+  body.innerHTML = '<div style="padding:20px;color:var(--text3);font-size:12px">Loading audit trail…</div>';
+
+  const { data: entries, error } = await supabase
+    .from('audit_trail')
+    .select('*')
+    .eq('municipality_id', _user.municipality_id)
+    .order('created_at', { ascending: false })
+    .limit(200);
+
+  if (error) {
+    body.innerHTML = `<div style="padding:20px;color:var(--red);font-size:12px">Error loading audit trail: ${error.message}</div>`;
+    return;
+  }
+
+  const ACTION_COLOUR = {
+    create:      'var(--green)',
+    update:      'var(--blue)',
+    delete:      'var(--red)',
+    approve:     'var(--green)',
+    suspend:     'var(--amber)',
+    role_change: 'var(--purple)'
+  };
+
+  const ACTION_ICON = {
+    create:      '+',
+    update:      '✎',
+    delete:      '✕',
+    approve:     '✓',
+    suspend:     '⊘',
+    role_change: '⇄'
+  };
+
+  const groups = {};
+  (entries||[]).forEach(e => {
+    const day = new Date(e.created_at).toLocaleDateString('en-ZA', { weekday:'long', year:'numeric', month:'long', day:'numeric' });
+    if (!groups[day]) groups[day] = [];
+    groups[day].push(e);
+  });
+
+  body.innerHTML = `
+    <div style="margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+      <div>
+        <div style="font-size:15px;font-weight:700;color:var(--text)">Audit trail</div>
+        <div style="font-size:12px;color:var(--text3);margin-top:2px">All changes made by users in your municipality — last 200 entries</div>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <select class="fl-sel" id="audit-filter-action" style="font-size:12px;max-width:150px">
+          <option value="">All actions</option>
+          <option value="create">Create</option>
+          <option value="update">Update</option>
+          <option value="delete">Delete</option>
+          <option value="approve">Approve</option>
+          <option value="suspend">Suspend</option>
+          <option value="role_change">Role change</option>
+        </select>
+        <select class="fl-sel" id="audit-filter-type" style="font-size:12px;max-width:150px">
+          <option value="">All record types</option>
+          <option value="user">User</option>
+          <option value="hvc_assessment">HVC Assessment</option>
+          <option value="shelter">Shelter</option>
+          <option value="sitrep">SitRep</option>
+          <option value="mitigation">Mitigation</option>
+          <option value="road_closure">Road closure</option>
+          <option value="relief_op">Relief op</option>
+          <option value="stakeholder">Stakeholder</option>
+        </select>
+        <button class="btn btn-sm" id="audit-apply-filter">Filter</button>
+        <button class="btn btn-sm" id="audit-export-btn">↓ Export CSV</button>
+      </div>
+    </div>
+    <div id="audit-entries">
+      ${renderAuditGroups(groups, entries||[])}
+    </div>`;
+
+  document.getElementById('audit-apply-filter')?.addEventListener('click', () => {
+    const action = document.getElementById('audit-filter-action')?.value;
+    const type   = document.getElementById('audit-filter-type')?.value;
+    let filtered = entries || [];
+    if (action) filtered = filtered.filter(e => e.action === action);
+    if (type)   filtered = filtered.filter(e => e.target_type === type);
+
+    const filtGroups = {};
+    filtered.forEach(e => {
+      const day = new Date(e.created_at).toLocaleDateString('en-ZA', { weekday:'long', year:'numeric', month:'long', day:'numeric' });
+      if (!filtGroups[day]) filtGroups[day] = [];
+      filtGroups[day].push(e);
+    });
+
+    const el = document.getElementById('audit-entries');
+    if (el) el.innerHTML = filtered.length
+      ? renderAuditGroups(filtGroups, filtered)
+      : '<div style="padding:32px;text-align:center;color:var(--text3);font-size:12px">No entries match this filter.</div>';
+  });
+
+  document.getElementById('audit-export-btn')?.addEventListener('click', () => exportAuditCSV(entries||[]));
+}
+
+function renderAuditGroups(groups, all) {
+  if (!all.length) return '<div style="padding:32px;text-align:center;color:var(--text3);font-size:12px">No audit entries yet. Actions will appear here as users make changes.</div>';
+
+  const ACTION_COLOUR = {
+    create:'var(--green)',update:'var(--blue)',delete:'var(--red)',
+    approve:'var(--green)',suspend:'var(--amber)',role_change:'var(--purple)'
+  };
+  const ACTION_ICON = { create:'+',update:'✎',delete:'✕',approve:'✓',suspend:'⊘',role_change:'⇄' };
+
+  return Object.entries(groups).map(([day, entries]) => `
+    <div style="margin-bottom:20px">
+      <div style="font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--text3);padding:6px 0;border-bottom:1px solid var(--border);margin-bottom:10px">${day}</div>
+      ${entries.map(e => {
+        const col  = ACTION_COLOUR[e.action] || 'var(--text3)';
+        const icon = ACTION_ICON[e.action]   || '·';
+        const time = new Date(e.created_at).toLocaleTimeString('en-ZA', { hour:'2-digit', minute:'2-digit' });
+        return `
+          <div style="display:flex;gap:12px;align-items:flex-start;padding:9px 0;border-bottom:1px solid rgba(48,54,61,.3)">
+            <div style="width:24px;height:24px;border-radius:50%;background:${col}22;border:1px solid ${col}55;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:${col};flex-shrink:0;margin-top:1px">${icon}</div>
+            <div style="flex:1;min-width:0">
+              <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                <span style="font-size:12px;font-weight:600;color:var(--text)">${e.actor_name||'Unknown'}</span>
+                <span class="badge" style="font-size:9px;background:${col}15;color:${col};border:1px solid ${col}30">${(e.action||'').toUpperCase()}</span>
+                <span class="badge b-gray" style="font-size:9px">${(e.target_type||'').replace(/_/g,' ').toUpperCase()}</span>
+              </div>
+              <div style="font-size:12px;color:var(--text2);margin-top:3px">${e.target_label||'—'}</div>
+              ${e.old_value || e.new_value ? `
+                <div style="font-size:10px;color:var(--text3);margin-top:4px;display:flex;gap:12px;flex-wrap:wrap">
+                  ${e.old_value ? `<span>Before: <code style="font-family:monospace;background:var(--bg3);padding:1px 4px;border-radius:3px;font-size:10px">${JSON.stringify(e.old_value).slice(0,80)}${JSON.stringify(e.old_value).length>80?'…':''}</code></span>` : ''}
+                  ${e.new_value ? `<span>After: <code style="font-family:monospace;background:var(--bg3);padding:1px 4px;border-radius:3px;font-size:10px">${JSON.stringify(e.new_value).slice(0,80)}${JSON.stringify(e.new_value).length>80?'…':''}</code></span>` : ''}
+                </div>` : ''}
+            </div>
+            <div style="font-size:11px;color:var(--text3);white-space:nowrap;flex-shrink:0;font-family:monospace">${time}</div>
+            <div style="font-size:10px;color:var(--text3);white-space:nowrap;flex-shrink:0">${e.actor_role||''}</div>
+          </div>`;
+      }).join('')}
+    </div>`).join('');
+}
+
+function exportAuditCSV(entries) {
+  const rows = [['Date','Time','User','Role','Action','Record type','Label','Before','After']];
+  entries.forEach(e => {
+    const d = new Date(e.created_at);
+    rows.push([
+      d.toLocaleDateString('en-ZA'),
+      d.toLocaleTimeString('en-ZA'),
+      e.actor_name||'',
+      e.actor_role||'',
+      e.action||'',
+      e.target_type||'',
+      e.target_label||'',
+      e.old_value ? JSON.stringify(e.old_value) : '',
+      e.new_value ? JSON.stringify(e.new_value) : ''
+    ]);
+  });
+  const csv  = rows.map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url  = URL.createObjectURL(blob);
+  const a    = Object.assign(document.createElement('a'), {
+    href: url,
+    download: `DRMSA-audit-trail-${new Date().toISOString().slice(0,10)}.csv`
+  });
+  a.click();
+  URL.revokeObjectURL(url);
 }
