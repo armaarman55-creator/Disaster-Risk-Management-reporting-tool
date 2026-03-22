@@ -35,8 +35,11 @@ async function renderRoutes() {
       ${_closures.length ? _closures.map(c => renderClosureCard(c)).join('') : emptyState('No road closures recorded.')}
     </div>`;
 
-  document.getElementById('add-closure-btn')?.addEventListener('click', () => showAddClosureForm());
-  bindClosureEvents();
+  requestAnimationFrame(() => {
+    const btn = document.getElementById('add-closure-btn');
+    if (btn) btn.onclick = () => showAddClosureForm();
+    bindClosureEvents();
+  });
 }
 
 function renderClosureCard(c) {
