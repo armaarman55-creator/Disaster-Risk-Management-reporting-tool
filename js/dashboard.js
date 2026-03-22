@@ -49,8 +49,9 @@ export async function initDashboard(user) {
     renderHazardTable();
     await renderWardMap();
     renderTrend(0);
-    renderIDPSummary();
+    await renderIDPSummary();
     initDashboardEvents();
+    initRealtimeRefresh();
   } catch(e) {
     console.warn('Dashboard render error:', e);
   }
@@ -92,8 +93,10 @@ async function loadAssessmentData() {
 
 function renderKPIs() {
   const hazards = _assessmentData?.hazards || [];
-  const xh = hazards.filter(h => h.risk_band === 'Extremely high').length;
-  const high = hazards.filter(h => h.risk_band === 'High').length;
+  // Case-insensitive compare — DB stores 'Extremely High', filter was 'Extremely high'
+  const norm = s => (s||'').toLowerCase().replace(/\s+/g,'');
+  const xh   = hazards.filter(h => norm(h.risk_band) === 'extremelyhigh').length;
+  const high  = hazards.filter(h => norm(h.risk_band) === 'high').length;
 
   setEl('kpi-xh', xh);
   setEl('kpi-h', high);
@@ -393,8 +396,47 @@ function renderTrend(hazardIdx) {
   }).join('');
 }
 
-function renderIDPSummary() {
-  // IDP stats will come from DB in production; showing empty state
+async function renderIDPSummary() {
+  if (!_muniId) return;
+  try {
+    const { data: mits } = await supabase
+      .from('mitigations')
+      .select('idp_status')
+      .eq('municipality_id', _muniId)
+      .eq('is_library', false);
+
+    const funded   = (mits||[]).filter(m => m.idp_status === 'linked-funded').length;
+    const total    = (mits||[]).length;
+    const awaiting = (mits||[]).filter(m => m.idp_status === 'linked-awaiting').length;
+
+    setEl('kpi-idp', funded);
+
+    const body = document.getElementById('idp-summary-body');
+    if (!body) return;
+
+    if (!total) {
+      body.innerHTML = '<div style="padding:16px;text-align:center;color:var(--text3);font-size:12px">No mitigations registered yet. Go to IDP Linkage to add spatial mitigations.</div>';
+      return;
+    }
+
+    body.innerHTML = `
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:12px">
+        <div class="stat-box"><div class="stat-lbl">Total</div><div class="stat-num blue" style="font-size:22px">${total}</div></div>
+        <div class="stat-box"><div class="stat-lbl">Funded</div><div class="stat-num green" style="font-size:22px">${funded}</div></div>
+        <div class="stat-box"><div class="stat-lbl">Awaiting</div><div class="stat-num amber" style="font-size:22px">${awaiting}</div></div>
+      </div>
+      <div style="font-size:12px;color:var(--text3);display:flex;align-items:center;gap:8px">
+        <div style="flex:1;height:6px;background:var(--bg4);border-radius:3px;overflow:hidden">
+          <div style="width:${total?Math.round((funded/total)*100):0}%;height:6px;background:var(--green);border-radius:3px"></div>
+        </div>
+        <span>${total ? Math.round((funded/total)*100) : 0}% funded</span>
+      </div>
+      <div style="margin-top:10px;text-align:right">
+        <button class="btn btn-sm" onclick="window._drmsaNavigate('idp')">View register →</button>
+      </div>`;
+  } catch(e) {
+    console.warn('IDP summary error:', e);
+  }
 }
 
 function initMapZoom() {
@@ -491,6 +533,40 @@ function initMapZoom() {
       applyTransform();
     }
   }, { passive: false });
+}
+
+function initRealtimeRefresh() {
+  if (!_muniId) return;
+  // Unsubscribe any existing channel first
+  if (window._dashboardChannel) {
+    supabase.removeChannel(window._dashboardChannel);
+  }
+  // Subscribe to new HVC assessments for this municipality
+  window._dashboardChannel = supabase
+    .channel('dashboard-refresh-' + _muniId)
+    .on('postgres_changes', {
+      event: '*',
+      schema: 'public',
+      table: 'hvc_assessments',
+      filter: `municipality_id=eq.${_muniId}`
+    }, async () => {
+      console.log('HVC assessment changed — refreshing dashboard');
+      await loadAssessmentData();
+      renderKPIs();
+      renderHazardTable();
+      renderWardMap();
+      await renderIDPSummary();
+    })
+    .on('postgres_changes', {
+      event: '*',
+      schema: 'public',
+      table: 'mitigations',
+      filter: `municipality_id=eq.${_muniId}`
+    }, async () => {
+      console.log('Mitigation changed — refreshing IDP summary');
+      await renderIDPSummary();
+    })
+    .subscribe();
 }
 
 function initDashboardEvents() {
