@@ -211,7 +211,11 @@ async function renderWardMap() {
         poly.style.cursor = 'pointer';
         poly.addEventListener('mouseenter', function(){ this.setAttribute('fill-opacity','0.75'); });
         poly.addEventListener('mouseleave', function(){ this.setAttribute('fill-opacity','0.45'); });
-        poly.addEventListener('click', () => showWardInfo(wardNo, risk, wardNo));
+        poly.addEventListener('click', (e) => {
+          const wrap = document.getElementById('map-canvas-wrap');
+          const rect = wrap ? wrap.getBoundingClientRect() : {left:0,top:0};
+          showWardInfo(wardNo, risk, wardNo, e.clientX - rect.left, e.clientY - rect.top);
+        });
         g.appendChild(poly);
       });
 
@@ -225,6 +229,7 @@ async function renderWardMap() {
       t.setAttribute('font-size','9'); t.setAttribute('fill','rgba(230,237,243,0.9)');
       t.setAttribute('font-weight','700'); t.setAttribute('font-family','monospace');
       t.setAttribute('pointer-events','none');
+      t.setAttribute('class','ward-label');
       t.textContent = `W${wardNo}`;
       g.appendChild(t);
     });
@@ -240,7 +245,11 @@ async function renderWardMap() {
       poly.style.cursor='pointer';
       poly.addEventListener('mouseenter',function(){this.setAttribute('fill-opacity','0.68');});
       poly.addEventListener('mouseleave',function(){this.setAttribute('fill-opacity','0.42');});
-      poly.addEventListener('click',()=>showWardInfo(wp.id,risk,idx+1));
+      poly.addEventListener('click',(e)=>{
+        const wrap = document.getElementById('map-canvas-wrap');
+        const rect = wrap ? wrap.getBoundingClientRect() : {left:0,top:0};
+        showWardInfo(wp.id,risk,idx+1,e.clientX-rect.left,e.clientY-rect.top);
+      });
       g.appendChild(poly);
       const pts=wp.pts.split(' ').map(p=>p.split(',').map(Number));
       const cx=pts.reduce((s,p)=>s+p[0],0)/pts.length;
@@ -251,6 +260,7 @@ async function renderWardMap() {
       t.setAttribute('font-size','8'); t.setAttribute('fill','rgba(230,237,243,0.9)');
       t.setAttribute('font-weight','700'); t.setAttribute('font-family','monospace');
       t.setAttribute('pointer-events','none');
+      t.setAttribute('class','ward-label');
       t.textContent = wp.id;
       g.appendChild(t);
     });
@@ -270,23 +280,91 @@ async function renderWardMap() {
 let _mdbWardNumField = 'WARD_NO';
 
 
-function showWardInfo(wid, risk, wardNum) {
-  document.getElementById('wi-empty')?.classList.add('hidden');
-  const el = document.getElementById('wi-content');
-  if (!el) return;
-  el.classList.remove('hidden');
-  const wardData = _wardData.find(w => w.ward_number == wardNum) || {};
-  el.innerHTML = `
-    <div class="wi-ward">Ward ${wardNum}${wardData.area_name ? ` — ${wardData.area_name}` : ''}</div>
-    <div class="wi-grid">
-      <div class="wi-field"><span class="wi-key">Dominant risk</span><span class="wi-val"><span class="hz-chip ${CHIP_CLASS[risk] || 'c-n'}">${CHIP_LABEL[risk] || 'N/A'}</span></span></div>
-      <div class="wi-field"><span class="wi-key">Population</span><span class="wi-val">${wardData.population ? wardData.population.toLocaleString() : 'Not set'}</span></div>
-    </div>
-    <div class="wi-btns">
-      <button class="btn btn-sm" onclick="window._drmsaNavigate('mitigations')">Mitigations</button>
-      <button class="btn btn-sm" onclick="window._drmsaNavigate('community')">Shelters</button>
-    </div>`;
+function showWardInfo(wid, risk, wardNum, clickX, clickY) {
+  const BAND_COL = {
+    'Extremely High':'#f85149','High':'#d29922',
+    'Tolerable':'#3fb950','Low':'#58a6ff','Negligible':'#6e7681'
+  };
+  const bandCol   = BAND_COL[risk] || '#6e7681';
+  const hazards   = _assessmentData?.hazards || [];
+  const wardHazards = hazards.filter(h =>
+    Array.isArray(h.affected_wards) && h.affected_wards.map(String).includes(String(wardNum))
+  );
+
+  // Remove existing tooltip
+  document.getElementById('ward-tooltip')?.remove();
+
+  const wrap = document.getElementById('map-canvas-wrap');
+  if (!wrap) return;
+
+  const tooltip = document.createElement('div');
+  tooltip.id = 'ward-tooltip';
+  tooltip.style.cssText = [
+    'position:absolute',
+    'background:var(--bg2)',
+    'border:1px solid var(--border2)',
+    'border-left:3px solid ' + bandCol,
+    'border-radius:8px',
+    'padding:12px 14px',
+    'min-width:200px',
+    'max-width:260px',
+    'box-shadow:0 4px 20px rgba(0,0,0,.45)',
+    'z-index:100',
+    'font-family:Inter,system-ui,sans-serif',
+    'pointer-events:auto'
+  ].join(';');
+
+  // Keep tooltip inside the map canvas
+  const wW = wrap.offsetWidth  || 900;
+  const wH = wrap.offsetHeight || 380;
+  const tipX = clickX !== undefined ? Math.min(Math.max(clickX + 12, 8), wW - 270) : 12;
+  const tipY = clickY !== undefined ? Math.min(Math.max(clickY - 10, 8), wH - 220) : 12;
+  tooltip.style.left = tipX + 'px';
+  tooltip.style.top  = tipY + 'px';
+
+  const hazardRows = wardHazards.slice(0,6).map(h =>
+    '<div style="display:flex;justify-content:space-between;align-items:center;padding:3px 0;border-bottom:1px solid rgba(48,54,61,.3)">' +
+    '<span style="font-size:11px;color:var(--text2)">' + h.hazard_name + '</span>' +
+    '<span style="font-size:10px;font-weight:700;color:' + (BAND_COL[h.risk_band]||'#6e7681') + '">' + (h.risk_band||'?') + '</span>' +
+    '</div>'
+  ).join('');
+
+  const extra = wardHazards.length > 6
+    ? '<div style="font-size:10px;color:var(--text3);margin-top:4px">+' + (wardHazards.length-6) + ' more hazards</div>'
+    : '';
+
+  const noHazards = wardHazards.length === 0
+    ? '<div style="font-size:11px;color:var(--text3);line-height:1.6">No hazards scored for this ward yet.<br><span style="font-size:10px">Complete an HVC assessment and select this ward.</span></div>'
+    : '';
+
+  tooltip.innerHTML =
+    '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">' +
+      '<div style="font-size:13px;font-weight:700;color:var(--text)">Ward ' + wardNum + '</div>' +
+      '<button id="wtt-close" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:18px;line-height:1;padding:0 2px">×</button>' +
+    '</div>' +
+    '<div style="display:inline-block;background:' + bandCol + '22;border:1px solid ' + bandCol + '55;border-radius:4px;padding:2px 8px;font-size:10px;font-weight:700;color:' + bandCol + ';margin-bottom:8px;letter-spacing:.04em">' +
+      risk.toUpperCase() +
+    '</div>' +
+    (wardHazards.length ? '<div style="font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--text3);margin-bottom:5px">Hazards in ward</div>' + hazardRows + extra : noHazards);
+
+  wrap.appendChild(tooltip);
+
+  document.getElementById('wtt-close')?.addEventListener('click', e => {
+    e.stopPropagation();
+    tooltip.remove();
+  });
+
+  // Click outside closes
+  setTimeout(() => {
+    document.addEventListener('click', function handler(e) {
+      if (!tooltip.contains(e.target)) {
+        tooltip.remove();
+        document.removeEventListener('click', handler);
+      }
+    });
+  }, 80);
 }
+
 
 function renderTrend(hazardIdx) {
   const body = document.getElementById('trend-body');
@@ -329,6 +407,11 @@ function initMapZoom() {
 
   function applyTransform() {
     g.setAttribute('transform', `translate(${tx},${ty}) scale(${scale})`);
+    // Inverse-scale all ward labels so they stay constant visual size
+    const baseSize = 9;
+    g.querySelectorAll('text.ward-label').forEach(t => {
+      t.setAttribute('font-size', (baseSize / scale).toFixed(2));
+    });
   }
 
   // Zoom buttons
