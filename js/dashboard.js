@@ -181,9 +181,11 @@ async function renderWardMap() {
     const lngs = allCoords.map(c => c[0]), lats = allCoords.map(c => c[1]);
     const minLng=Math.min(...lngs), maxLng=Math.max(...lngs);
     const minLat=Math.min(...lats), maxLat=Math.max(...lats);
+    // Project to 900x380 viewBox with 20px padding each side
+    const W = 860, H = 340, padX = 20, padY = 20;
     const project = ([lng,lat]) => [
-      ((lng-minLng)/(maxLng-minLng))*290+10,
-      ((maxLat-lat)/(maxLat-minLat))*180+10
+      ((lng-minLng)/(maxLng-minLng))*W + padX,
+      ((maxLat-lat)/(maxLat-minLat))*H + padY
     ];
 
     mdbWards.forEach(f => {
@@ -220,7 +222,7 @@ async function renderWardMap() {
       const t  = document.createElementNS('http://www.w3.org/2000/svg','text');
       t.setAttribute('x', cx.toFixed(1)); t.setAttribute('y', cy.toFixed(1));
       t.setAttribute('text-anchor','middle'); t.setAttribute('dominant-baseline','central');
-      t.setAttribute('font-size','7'); t.setAttribute('fill','rgba(230,237,243,0.9)');
+      t.setAttribute('font-size','9'); t.setAttribute('fill','rgba(230,237,243,0.9)');
       t.setAttribute('font-weight','700'); t.setAttribute('font-family','monospace');
       t.setAttribute('pointer-events','none');
       t.textContent = `W${wardNo}`;
