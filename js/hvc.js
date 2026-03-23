@@ -88,6 +88,101 @@ const slug       = (s) => s.toLowerCase().replace(/[^a-z0-9]/g,'-');
 const _scores = {};
 // Custom hazards added by user
 let _customHazards = [];
+// Per-hazard ward selections for searchable picker
+let _hvcWardSelections = {};
+
+// ── HVC WARD PICKER ───────────────────────────────────────
+function initHvcWardPicker(hazardId, existingWards = []) {
+  _hvcWardSelections[hazardId] = [...existingWards];
+  renderHvcWardTags(hazardId);
+
+  const search   = document.getElementById(`hvc-ward-search-${hazardId}`);
+  const dropdown = document.getElementById(`hvc-ward-dd-${hazardId}`);
+  if (!search || !dropdown) return;
+
+  search.addEventListener('input', () => {
+    const q = search.value.trim().toLowerCase();
+    if (!q) { dropdown.style.display = 'none'; return; }
+
+    const matches = _wards.filter(w => {
+      const num  = String(w.ward_number);
+      const name = (w.area_name||'').toLowerCase();
+      return (num.includes(q) || name.includes(q)) &&
+             !_hvcWardSelections[hazardId].includes(w.ward_number);
+    }).slice(0, 10);
+
+    if (!matches.length) { dropdown.style.display = 'none'; return; }
+
+    dropdown.innerHTML = matches.map(w =>
+      `<div data-ward="${w.ward_number}"
+        style="padding:6px 10px;cursor:pointer;border-bottom:1px solid var(--border);font-size:11px;transition:background .1s"
+        onmouseenter="this.style.background='var(--bg3)'"
+        onmouseleave="this.style.background=''"
+        >Ward ${w.ward_number}${w.area_name?' — '+w.area_name:''}</div>`
+    ).join('');
+    dropdown.style.display = 'block';
+
+    dropdown.querySelectorAll('[data-ward]').forEach(item => {
+      item.addEventListener('click', () => {
+        _hvcWardSelections[hazardId].push(parseInt(item.dataset.ward));
+        search.value = '';
+        dropdown.style.display = 'none';
+        renderHvcWardTags(hazardId);
+        recalcHazardWards(hazardId);
+      });
+    });
+  });
+
+  // Select all wards button
+  document.getElementById(`hvc-ward-all-${hazardId}`)?.addEventListener('click', () => {
+    _hvcWardSelections[hazardId] = _wards.map(w => w.ward_number);
+    search.value = '';
+    dropdown.style.display = 'none';
+    renderHvcWardTags(hazardId);
+    recalcHazardWards(hazardId);
+  });
+
+  // Close on outside click
+  document.addEventListener('click', function closeDD(e) {
+    if (!search.contains(e.target) && !dropdown.contains(e.target)) {
+      dropdown.style.display = 'none';
+      document.removeEventListener('click', closeDD);
+    }
+  }, { once: true });
+}
+
+function renderHvcWardTags(hazardId) {
+  const container = document.getElementById(`hvc-ward-tags-${hazardId}`);
+  if (!container) return;
+  const selected = _hvcWardSelections[hazardId] || [];
+
+  container.innerHTML = selected.length
+    ? selected.map(w => {
+        const wd = _wards.find(x => x.ward_number === w);
+        return `<span style="display:inline-flex;align-items:center;gap:4px;background:var(--blue-dim);border:1px solid rgba(88,166,255,.25);color:var(--blue);border-radius:10px;padding:2px 7px;font-size:10px;font-weight:600">
+          Ward ${w}${wd?.area_name?' · '+wd.area_name:''}
+          <span style="cursor:pointer;opacity:.7;font-size:12px;line-height:1" data-remove="${w}">×</span>
+        </span>`;
+      }).join('')
+    : '<span style="font-size:10px;color:var(--text3);font-style:italic">No wards selected</span>';
+
+  container.querySelectorAll('[data-remove]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      _hvcWardSelections[hazardId] = (_hvcWardSelections[hazardId]||[]).filter(w => w !== parseInt(btn.dataset.remove));
+      renderHvcWardTags(hazardId);
+      recalcHazardWards(hazardId);
+    });
+  });
+
+  // Sync to _scores
+  recalcHazardWards(hazardId);
+}
+
+function recalcHazardWards(hazardId) {
+  if (_scores[hazardId]) {
+    _scores[hazardId].wards = _hvcWardSelections[hazardId] || [];
+  }
+}
 
 export async function initHVC(user) {
   _user   = user;
@@ -167,6 +262,10 @@ async function renderHVCPage() {
 
   document.getElementById('hvc-new-btn')?.addEventListener('click', () => {
     _customHazards = [];
+    // Clear stale scores from previous session
+    Object.keys(_scores).forEach(k => delete _scores[k]);
+    // Reset ward selections
+    _hvcWardSelections = {};
     document.getElementById('hvc-content').innerHTML = renderNewForm();
     bindFormEvents();
   });
@@ -381,19 +480,19 @@ function renderHazardRow(hazard, cat, isCustom=false) {
             </div>
             <div class="fl">
               <span class="fl-label">Wards/areas affected</span>
-              ${wardOpts !== null ? `
-                <select class="fl-sel" id="wards-${id}" multiple
-                  style="font-size:11px;padding:4px 6px;min-height:72px">
-                  ${wardOpts}
-                </select>
-                <div style="font-size:10px;color:var(--text3);margin-top:2px">Hold Ctrl/Cmd to select multiple</div>
-              ` : `
-                <input class="fl-input" id="wards-${id}" placeholder="e.g. Ward 1, Ward 3, Schoemanshoek"
-                  style="font-size:12px"/>
-                <div style="font-size:10px;color:var(--text3);margin-top:2px">
-                  Type ward numbers or area names. Set ward count in Disaster Admin Panel to enable a selector.
+              <div style="position:relative">
+                <input id="hvc-ward-search-${id}" class="fl-input"
+                  placeholder="Search ward number or area…"
+                  autocomplete="off" style="font-size:11px"/>
+                <div id="hvc-ward-dd-${id}"
+                  style="display:none;position:absolute;top:100%;left:0;right:0;background:var(--bg2);border:1px solid var(--border2);border-radius:0 0 6px 6px;max-height:140px;overflow-y:auto;z-index:50">
                 </div>
-              `}
+              </div>
+              <div id="hvc-ward-tags-${id}" style="display:flex;flex-wrap:wrap;gap:3px;margin-top:5px;min-height:20px"></div>
+              <button type="button" id="hvc-ward-all-${id}"
+                style="margin-top:4px;font-size:10px;color:var(--text3);background:none;border:none;cursor:pointer;padding:0;text-decoration:underline;text-align:left">
+                Select all wards
+              </button>
             </div>
           </div>
 
@@ -488,10 +587,18 @@ window.toggleHazardApplicable = function(id, checked) {
   const chip  = document.getElementById(`risk-chip-${id}`);
   if (!body) return;
   body.style.display = checked ? 'block' : 'none';
-  if (!checked) {
+  if (checked) {
+    // Init ward picker if not already done
+    if (!document.getElementById(`hvc-ward-search-${id}`)?._pickerInited) {
+      initHvcWardPicker(id, _hvcWardSelections[id] || []);
+      const searchEl = document.getElementById(`hvc-ward-search-${id}`);
+      if (searchEl) searchEl._pickerInited = true;
+    }
+  } else {
     if (chip) { chip.textContent = 'NOT APPLICABLE'; chip.className = 'badge b-gray'; }
     document.getElementById(`risk-val-${id}`).textContent = '—';
     delete _scores[id];
+    _hvcWardSelections[id] = [];
   }
 };
 
@@ -544,17 +651,8 @@ window.recalcHazard = function(id) {
   const pVals = [pi,pu,pg].filter(v=>v!==null);
   const pIdx  = pVals.length ? pVals.reduce((a,b)=>a+b,0)/pVals.length : null;
 
-  // Get selected wards — handles both multi-select and text input fallback
-  const wardEl = document.getElementById(`wards-${id}`);
-  let wards = [];
-  if (wardEl) {
-    if (wardEl.tagName === 'SELECT') {
-      wards = [...wardEl.selectedOptions].map(o => o.value);
-    } else {
-      // Text input — split by comma
-      wards = wardEl.value.split(',').map(w => w.trim()).filter(Boolean);
-    }
-  }
+  // Get selected wards from picker
+  const wards = _hvcWardSelections[id] || [];
 
   _scores[id] = { hScore, vScore, cScore, resilience, riskRating, pIdx,
     aa,pb,fr,pr, vp,ve,vs,vt,vn, ci,cp,cq,cf,ch,cs, pi,pu,pg, wards };
@@ -688,7 +786,11 @@ function bindFormEvents() {
     if (_customHazards.find(h=>h.name===name)) { alert('A hazard with this name already exists.'); return; }
     _customHazards.push({ name, cat });
     const list = document.getElementById('custom-hazard-list');
-    if (list) list.insertAdjacentHTML('beforeend', renderHazardRow(name, cat, true));
+    if (list) {
+      list.insertAdjacentHTML('beforeend', renderHazardRow(name, cat, true));
+      const hid = slug(name);
+      initHvcWardPicker(hid, []);
+    }
     document.getElementById('custom-h-name').value = '';
   });
 
@@ -719,7 +821,7 @@ async function saveAssessment() {
       const cb = document.querySelector(`.hvc-applicable[data-hazard="${id}"]`);
       if (!cb?.checked) return;
       const s = _scores[id];
-      if (!s || s.hScore === null) return;
+      if (!s || s.riskRating === null || s.riskRating === undefined) return;
       rows.push(buildRow(id, hazard, cat, s));
     });
   });
@@ -730,7 +832,7 @@ async function saveAssessment() {
     const cb = document.querySelector(`.hvc-applicable[data-hazard="${id}"]`);
     if (!cb?.checked) return;
     const s = _scores[id];
-    if (!s || s.hScore === null) return;
+    if (!s || s.riskRating === null || s.riskRating === undefined) return;
     rows.push(buildRow(id, name, cat, s));
   });
 
@@ -747,7 +849,11 @@ async function saveAssessment() {
   if (error) { alert('Error: ' + error.message); if(btn){btn.textContent='Save assessment';btn.disabled=false;} return; }
 
   if (rows.length) {
-    await supabase.from('hvc_hazard_scores').insert(rows.map(r=>({...r, assessment_id: assessment.id})));
+    const { error: scErr } = await supabase.from('hvc_hazard_scores').insert(rows.map(r=>({...r, assessment_id: assessment.id})));
+    if (scErr) {
+      showToast('Warning: assessment saved but hazard scores failed — ' + scErr.message, true);
+      console.error('hvc_hazard_scores insert error:', scErr);
+    }
   }
 
   // Update ward dominant_risk based on new hazard scores
@@ -784,12 +890,15 @@ function buildRow(id, hazard, cat, s) {
     hazard_category:     cat,
     affected_area:       s.aa, probability: s.pb, frequency: s.fr, predictability: s.pr,
     hazard_score:        s.hScore,
+    vp: s.vp, ve: s.ve, vs: s.vs, vt: s.vt, vn: s.vn,
     vulnerability_score: s.vScore,
+    ci: s.ci, cp: s.cp, cq: s.cq, cf: s.cf, ch: s.ch, cs: s.cs,
     capacity_score:      s.cScore,
     resilience_index:    s.resilience,
     risk_rating:         s.riskRating,
     risk_band:           s.riskRating!==null ? RISK_BAND(s.riskRating) : null,
     importance:          s.pi, urgency: s.pu, growth: s.pg,
+    pi_val: s.pi, pu_val: s.pu, pg_val: s.pg,
     priority_index:      s.pIdx,
     priority_level:      s.pIdx!==null ? PRIO_LEVEL(s.pIdx) : null,
     affected_wards:      s.wards || []
@@ -906,6 +1015,7 @@ async function editAssessment(id) {
 
   // Render the new form with pre-filled values
   _customHazards = [];
+  _hvcWardSelections = {};
   const content = document.getElementById('hvc-content');
   if (!content) return;
 
@@ -962,17 +1072,12 @@ async function editAssessment(id) {
       if (sel) { sel.value = String(val); window.hvcScoreChanged(sel); }
     });
 
-    // Pre-fill ward selection
-    const wardEl = document.getElementById(`wards-${hid}`);
-    if (wardEl && Array.isArray(s.affected_wards)) {
-      if (wardEl.tagName === 'SELECT') {
-        [...wardEl.options].forEach(opt => {
-          opt.selected = s.affected_wards.map(String).includes(opt.value);
-        });
-      } else {
-        wardEl.value = s.affected_wards.join(', ');
-      }
-    }
+    // Pre-fill ward selection via picker
+    const existingWards = Array.isArray(s.affected_wards)
+      ? s.affected_wards.map(Number).filter(Boolean)
+      : [];
+    _hvcWardSelections[hid] = existingWards;
+    initHvcWardPicker(hid, existingWards);
 
     // Pre-fill role players
     const r1 = document.getElementById(`${hid}_r1`);
@@ -1013,7 +1118,7 @@ async function saveEditedAssessment(assessmentId, assessment) {
       const cb  = document.querySelector(`.hvc-applicable[data-hazard="${hid}"]`);
       if (!cb?.checked) return;
       const s = _scores[hid];
-      if (!s || s.hScore === null) return;
+      if (!s || s.riskRating === null || s.riskRating === undefined) return;
       hazardRows.push(buildRow(hid, hazard, cat, s));
     });
   });
@@ -1023,7 +1128,7 @@ async function saveEditedAssessment(assessmentId, assessment) {
     const cb  = document.querySelector(`.hvc-applicable[data-hazard="${hid}"]`);
     if (!cb?.checked) return;
     const s = _scores[hid];
-    if (!s || s.hScore === null) return;
+    if (!s || s.riskRating === null || s.riskRating === undefined) return;
     hazardRows.push(buildRow(hid, name, cat, s));
   });
 
