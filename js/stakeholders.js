@@ -218,6 +218,7 @@ function showContactForm(orgId, existing) {
   if (!area) return;
   if (area.innerHTML && !existing) { area.innerHTML = ''; return; }
 
+  const ct = existing || {};
   const nameParts = (ct.full_name||'').split(' ');
   const ctFirst = nameParts[0]||'';
   const ctLast  = nameParts.slice(1).join(' ')||'';
