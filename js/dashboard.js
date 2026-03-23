@@ -331,6 +331,8 @@ async function renderWardMap(neutralMode = false) {
       const allPts = rings.flat().map(project);
       const cx = allPts.reduce((s,p)=>s+p[0],0)/allPts.length;
       const cy = allPts.reduce((s,p)=>s+p[1],0)/allPts.length;
+      // Store centroid for ward search zoom
+      _wardCentroids[parseInt(wardNo)] = { cx, cy };
       const t  = document.createElementNS('http://www.w3.org/2000/svg','text');
       t.setAttribute('x', cx.toFixed(1)); t.setAttribute('y', cy.toFixed(1));
       t.setAttribute('text-anchor','middle'); t.setAttribute('dominant-baseline','central');
@@ -363,6 +365,7 @@ async function renderWardMap(neutralMode = false) {
       const pts=wp.pts.split(' ').map(p=>p.split(',').map(Number));
       const cx=pts.reduce((s,p)=>s+p[0],0)/pts.length;
       const cy=pts.reduce((s,p)=>s+p[1],0)/pts.length;
+      _wardCentroids[idx+1] = { cx, cy };
       const t=document.createElementNS('http://www.w3.org/2000/svg','text');
       t.setAttribute('x',cx.toFixed(1)); t.setAttribute('y',cy.toFixed(1));
       t.setAttribute('text-anchor','middle'); t.setAttribute('dominant-baseline','central');
@@ -381,12 +384,35 @@ async function renderWardMap(neutralMode = false) {
     g.appendChild(note);
   }
 
+  // Expose centroids globally for map ward search
+  window._drmsaWardCentroids = _wardCentroids;
   // Init zoom after rendering
   initMapZoom();
+  // Expose zoom function globally for ward search input
+  window._drmsaZoomToWard = zoomToWard;
 }
 
 // Track MDB ward number field globally
 let _mdbWardNumField = 'WARD_NO';
+let _wardCentroids = {}; // wardNum → {cx, cy}
+
+function zoomToWard(wardNum) {
+  const c = _wardCentroids[parseInt(wardNum)];
+  if (!c) { showToast('Ward ' + wardNum + ' not found on map', true); return; }
+  const svg = document.getElementById('ward-svg');
+  const g   = document.getElementById('ward-g');
+  if (!svg || !g) return;
+  const W = svg.viewBox?.baseVal?.width  || 900;
+  const H = svg.viewBox?.baseVal?.height || 380;
+  const scale = 4;
+  const tx = (W / 2) - c.cx * scale;
+  const ty = (H / 2) - c.cy * scale;
+  g.setAttribute('transform', `translate(${tx},${ty}) scale(${scale})`);
+  const baseSize = 9;
+  g.querySelectorAll('text.ward-label').forEach(t => {
+    t.setAttribute('font-size', (baseSize / scale).toFixed(2));
+  });
+}
 
 
 function showWardInfo(wid, risk, wardNum, clickX, clickY) {
