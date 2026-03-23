@@ -1,4 +1,4 @@
-// js/stakeholders.js — Stakeholder directory with edit, delete, CSV/PDF export
+// js/stakeholders.js — Stakeholder directory with hazard assignment, grouped exports
 import { supabase } from './supabase.js';
 
 let _muniId = null;
@@ -30,6 +30,74 @@ const SECTORS = [
   'Other Government',
   'Other / Custom'
 ];
+
+const HAZARD_CATEGORIES = {
+  'Hydro-meteorological': [
+    'Flooding','Flash flooding','Storm surge','Drought','Extreme heat',
+    'Extreme cold','High winds','Hailstorm','Lightning','Tornado / Whirlwind'
+  ],
+  'Geological': ['Earthquake','Landslide / Mudslide','Sinkhole','Tsunami'],
+  'Biological': [
+    'Disease outbreak','Animal disease','Pest infestation',
+    'Algal bloom','Human epidemic / Pandemic'
+  ],
+  'Fire': ['Wildfire / Veld fire','Urban fire','Industrial fire','Informal settlement fire'],
+  'Technological': [
+    'Hazardous materials spill','Chemical leak','Gas leak','Dam failure',
+    'Bridge failure','Building collapse','Power grid failure',
+    'Water supply failure','Sewage / Wastewater failure',
+    'Transport accident','Train accident'
+  ],
+  'Socio-economic': [
+    'Civil unrest','Illegal land invasion','Food insecurity',
+    'Mass casualty event','Gender-based violence'
+  ]
+};
+
+const CAT_COLOURS = {
+  'Hydro-meteorological': '#58a6ff',
+  'Geological':           '#d29922',
+  'Biological':           '#3fb950',
+  'Fire':                 '#f85149',
+  'Technological':        '#bc8cff',
+  'Socio-economic':       '#f0883e'
+};
+
+function getHazardCategory(name) {
+  for (const [cat, hazards] of Object.entries(HAZARD_CATEGORIES)) {
+    if (hazards.includes(name)) return cat;
+  }
+  return null;
+}
+
+function hazardDot(name) {
+  const cat = getHazardCategory(name);
+  const col = cat ? CAT_COLOURS[cat] : '#6e7681';
+  return `<span style="display:inline-flex;align-items:center;gap:4px;background:${col}18;border:1px solid ${col}44;border-radius:10px;padding:2px 7px;font-size:9px;font-weight:600;color:${col};font-family:monospace;white-space:nowrap"><span style="width:5px;height:5px;border-radius:50%;background:${col};flex-shrink:0"></span>${name}</span>`;
+}
+
+function renderHazardCheckboxes(prefix, selected = []) {
+  const sel = Array.isArray(selected) ? selected : [];
+  return Object.entries(HAZARD_CATEGORIES).map(([cat, hazards]) => `
+    <div style="margin-bottom:8px">
+      <div style="font-size:10px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:${CAT_COLOURS[cat]};margin-bottom:5px;display:flex;align-items:center;gap:6px">
+        <span style="width:6px;height:6px;border-radius:50%;background:${CAT_COLOURS[cat]};display:inline-block"></span>${cat}
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:4px">
+        ${hazards.map(h => `
+          <label style="display:inline-flex;align-items:center;gap:5px;background:var(--bg3);border:1px solid ${sel.includes(h)?CAT_COLOURS[cat]:'var(--border)'};border-radius:5px;padding:3px 8px;cursor:pointer;font-size:11px;color:${sel.includes(h)?CAT_COLOURS[cat]:'var(--text2)'};transition:all .12s">
+            <input type="checkbox" class="${prefix}-hz-cb" value="${h}" ${sel.includes(h)?'checked':''}
+              style="width:11px;height:11px;accent-color:${CAT_COLOURS[cat]};cursor:pointer"
+              onchange="this.closest('label').style.borderColor=this.checked?'${CAT_COLOURS[cat]}':'var(--border)';this.closest('label').style.color=this.checked?'${CAT_COLOURS[cat]}':'var(--text2)'"/>
+            ${h}
+          </label>`).join('')}
+      </div>
+    </div>`).join('');
+}
+
+function collectHazards(prefix) {
+  return [...document.querySelectorAll(`.${prefix}-hz-cb:checked`)].map(cb => cb.value);
+}
 
 export async function initStakeholders(user) {
   _muniId = user?.municipality_id;
@@ -92,12 +160,14 @@ function filterBySector() {
 
 function renderOrgCard(org) {
   const contacts = org.stakeholder_contacts || [];
+  const orgHazards = Array.isArray(org.hazard_types) ? org.hazard_types : [];
   return `
     <div class="panel" style="margin-bottom:12px" id="org-${org.id}">
       <div class="ph">
         <div>
           <div style="font-size:13px;font-weight:700;color:var(--text)">${org.name}</div>
           <div style="font-size:11px;color:var(--text3);margin-top:2px">${org.sector||'—'} · ${contacts.length} contact${contacts.length!==1?'s':''}</div>
+          ${orgHazards.length ? `<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px">${orgHazards.map(h=>hazardDot(h)).join('')}</div>` : ''}
         </div>
         <div style="display:flex;gap:6px;align-items:center">
           <span class="badge ${org.is_active?'b-green':'b-gray'}">${org.is_active?'ACTIVE':'INACTIVE'}</span>
@@ -105,7 +175,6 @@ function renderOrgCard(org) {
           <button class="btn btn-sm btn-red org-delete" data-id="${org.id}">Delete</button>
         </div>
       </div>
-
       <div class="pb">
         ${org.notes?`<div style="font-size:12px;color:var(--text3);margin-bottom:10px">${org.notes}</div>`:''}
         ${(org.general_tel||org.general_email)?`
@@ -115,7 +184,9 @@ function renderOrgCard(org) {
           </div>`:''}
         ${contacts.length ? `
           <div style="font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--text3);margin-bottom:8px">Contacts</div>
-          ${contacts.map(contact => `
+          ${contacts.map(contact => {
+            const ctHazards = Array.isArray(contact.hazard_types) ? contact.hazard_types : [];
+            return `
             <div style="background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:10px 12px;margin-bottom:6px;display:flex;align-items:flex-start;justify-content:space-between;gap:10px" id="contact-${contact.id}">
               <div style="flex:1">
                 <div style="font-size:12px;font-weight:600;color:var(--text);display:flex;align-items:center;gap:6px">
@@ -129,14 +200,15 @@ function renderOrgCard(org) {
                   ${contact.email?`<span style="font-size:11px;color:var(--text2)">✉ ${contact.email}</span>`:''}
                   ${contact.after_hours?`<span style="font-size:11px;color:var(--amber)">🌙 ${contact.after_hours}</span>`:''}
                 </div>
+                ${ctHazards.length ? `<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px">${ctHazards.map(h=>hazardDot(h)).join('')}</div>` : ''}
               </div>
               <div style="display:flex;gap:4px;flex-shrink:0">
                 <button class="btn btn-sm contact-edit" data-id="${contact.id}" data-org="${org.id}">Edit</button>
                 <button class="btn btn-sm btn-red contact-delete" data-id="${contact.id}">✕</button>
               </div>
-            </div>`).join('')}
+            </div>`;
+          }).join('')}
         ` : '<div style="font-size:12px;color:var(--text3);padding:4px 0">No contacts yet.</div>'}
-
         <div id="contact-form-${org.id}"></div>
         <button class="btn btn-sm btn-green add-contact-btn" data-org="${org.id}" style="margin-top:8px">+ Add contact</button>
       </div>
@@ -150,6 +222,8 @@ function showOrgForm(existing) {
   if (area.innerHTML && !existing) { area.innerHTML = ''; return; }
 
   const org = existing || {};
+  const orgHazards = Array.isArray(org.hazard_types) ? org.hazard_types : [];
+
   area.innerHTML = `
     <div style="background:var(--bg2);border:1px solid var(--red-mid);border-radius:8px;padding:16px;margin-bottom:16px">
       <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:12px">${existing?'Edit organisation':'Add organisation'}</div>
@@ -173,7 +247,13 @@ function showOrgForm(existing) {
         <div class="fl"><span class="fl-label">General email</span><input class="fl-input" id="org-email" value="${org.general_email||''}" placeholder="info@org.co.za"/></div>
       </div>
       <div class="fl"><span class="fl-label">Physical address</span><input class="fl-input" id="org-address" value="${org.address||''}"/></div>
-      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--text2);margin-bottom:12px">
+      <div class="fl" style="margin-top:4px">
+        <span class="fl-label">Hazard types this organisation responds to</span>
+        <div style="background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:12px;margin-top:4px">
+          ${renderHazardCheckboxes('org', orgHazards)}
+        </div>
+      </div>
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--text2);margin-top:10px;margin-bottom:12px">
         <input type="checkbox" id="org-active" ${org.is_active!==false?'checked':''} style="width:15px;height:15px"/>
         Active organisation
       </label>
@@ -192,12 +272,13 @@ function showOrgForm(existing) {
       const payload = {
         municipality_id: _muniId,
         name,
-        sector:       document.getElementById('org-sector')?.value,
-        notes:        document.getElementById('org-desc')?.value,
-        general_tel:  document.getElementById('org-tel')?.value,
-        general_email:document.getElementById('org-email')?.value,
-        address:      document.getElementById('org-address')?.value,
-        is_active:    document.getElementById('org-active')?.checked
+        sector:        document.getElementById('org-sector')?.value,
+        notes:         document.getElementById('org-desc')?.value,
+        general_tel:   document.getElementById('org-tel')?.value,
+        general_email: document.getElementById('org-email')?.value,
+        address:       document.getElementById('org-address')?.value,
+        hazard_types:  collectHazards('org'),
+        is_active:     document.getElementById('org-active')?.checked
       };
 
       const { error } = id
@@ -222,6 +303,8 @@ function showContactForm(orgId, existing) {
   const nameParts = (ct.full_name||'').split(' ');
   const ctFirst = nameParts[0]||'';
   const ctLast  = nameParts.slice(1).join(' ')||'';
+  const ctHazards = Array.isArray(ct.hazard_types) ? ct.hazard_types : [];
+
   area.innerHTML = `
     <div style="background:var(--bg3);border:1px solid var(--border2);border-radius:8px;padding:14px;margin-top:10px">
       <div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:10px">${existing?'Edit contact':'Add contact'}</div>
@@ -238,7 +321,13 @@ function showContactForm(orgId, existing) {
         <div class="fl"><span class="fl-label">Email</span><input class="fl-input" id="ct-email-${orgId}" value="${ct.email||''}"/></div>
         <div class="fl"><span class="fl-label">After hours</span><input class="fl-input" id="ct-after-${orgId}" value="${ct.after_hours||''}" placeholder="Emergency contact"/></div>
       </div>
-      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;color:var(--text2);margin-bottom:10px">
+      <div class="fl" style="margin-top:4px">
+        <span class="fl-label">Specific hazards this contact handles <span style="color:var(--text3);font-size:10px">(optional — leave blank to inherit from org)</span></span>
+        <div style="background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:10px;margin-top:4px">
+          ${renderHazardCheckboxes('ct-' + orgId, ctHazards)}
+        </div>
+      </div>
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;color:var(--text2);margin-top:8px;margin-bottom:10px">
         <input type="checkbox" id="ct-primary-${orgId}" ${ct.is_primary?'checked':''} style="width:14px;height:14px"/>
         Primary contact for this organisation
       </label>
@@ -266,6 +355,7 @@ function showContactForm(orgId, existing) {
         direct_tel:      document.getElementById(`ct-land-${orgId}`)?.value,
         email:           document.getElementById(`ct-email-${orgId}`)?.value,
         after_hours:     document.getElementById(`ct-after-${orgId}`)?.value,
+        hazard_types:    collectHazards('ct-' + orgId),
         is_primary:      document.getElementById(`ct-primary-${orgId}`)?.checked,
         is_active:       true
       };
@@ -322,21 +412,64 @@ function bindOrgEvents() {
   });
 }
 
-// ── EXPORT ────────────────────────────────────────────────
-function exportCSV() {
-  const rows = [['Organisation','Sector','Contact Name','Position','Cell','Direct Tel','Email','After Hours','Primary']];
+// ── HAZARD GROUPING LOGIC ─────────────────────────────────
+function buildHazardGroups() {
+  const groups    = {};
+  const unassigned = [];
+
   _orgs.forEach(org => {
+    const orgHazards = Array.isArray(org.hazard_types) ? org.hazard_types : [];
+    const contacts   = org.stakeholder_contacts || [];
+
+    const allHazards = new Set(orgHazards);
+    contacts.forEach(c => {
+      (Array.isArray(c.hazard_types) ? c.hazard_types : []).forEach(h => allHazards.add(h));
+    });
+
+    if (allHazards.size === 0) {
+      unassigned.push(org);
+      return;
+    }
+
+    allHazards.forEach(hazard => {
+      if (!groups[hazard]) groups[hazard] = [];
+      const orgOwns = orgHazards.includes(hazard);
+      const relevantContacts = orgOwns
+        ? contacts
+        : contacts.filter(c => Array.isArray(c.hazard_types) && c.hazard_types.includes(hazard));
+      const via = orgOwns ? 'ORG' : 'CONTACT';
+      groups[hazard].push({ org, contacts: relevantContacts, via });
+    });
+  });
+
+  return { groups, unassigned };
+}
+
+// ── CSV EXPORT ────────────────────────────────────────────
+function exportCSV() {
+  const { groups, unassigned } = buildHazardGroups();
+  const rows = [['Hazard Type','Category','Assigned Via','Organisation','Sector','Contact Name','Position','Cell','Direct Tel','Email','After Hours','Primary']];
+
+  Object.entries(groups).forEach(([hazard, entries]) => {
+    const cat = getHazardCategory(hazard) || '';
+    entries.forEach(({ org, contacts, via }) => {
+      if (!contacts.length) {
+        rows.push([hazard, cat, via, org.name, org.sector||'', 'No contacts', '', '', '', '', '', '']);
+      } else {
+        contacts.forEach(c => {
+          rows.push([hazard, cat, via, org.name, org.sector||'', c.full_name||'', c.position||'', c.cell||'', c.direct_tel||'', c.email||'', c.after_hours||'', c.is_primary?'Yes':'No']);
+        });
+      }
+    });
+  });
+
+  unassigned.forEach(org => {
     const contacts = org.stakeholder_contacts || [];
     if (!contacts.length) {
-      rows.push([org.name, org.sector||'', '', '', '', '', '', '', '']);
+      rows.push(['Unassigned','','', org.name, org.sector||'', 'No contacts', '', '', '', '', '', '']);
     } else {
       contacts.forEach(c => {
-        rows.push([
-          org.name, org.sector||'',
-          c.full_name||'', c.position||'',
-          c.cell||'', c.direct_tel||'', c.email||'', c.after_hours||'',
-          c.is_primary?'Yes':'No'
-        ]);
+        rows.push(['Unassigned','','', org.name, org.sector||'', c.full_name||'', c.position||'', c.cell||'', c.direct_tel||'', c.email||'', c.after_hours||'', c.is_primary?'Yes':'No']);
       });
     }
   });
@@ -344,48 +477,98 @@ function exportCSV() {
   const csv  = rows.map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
   const url  = URL.createObjectURL(blob);
-  const a    = Object.assign(document.createElement('a'), {
-    href: url,
-    download: `DRMSA-stakeholders-${new Date().toISOString().slice(0,10)}.csv`
-  });
-  a.click();
+  Object.assign(document.createElement('a'), { href: url, download: `DRMSA-stakeholders-by-hazard-${new Date().toISOString().slice(0,10)}.csv` }).click();
   URL.revokeObjectURL(url);
-  showToast('✓ CSV downloaded — opens in Excel');
+  showToast('✓ CSV downloaded — sort by Hazard Type in Excel');
 }
 
+// ── PDF EXPORT ────────────────────────────────────────────
 function exportPDF() {
+  const { groups, unassigned } = buildHazardGroups();
   const muniName = window._drmsaUser?.municipalities?.name || 'Municipality';
-  let html = `
-    <html><head><title>Stakeholder Directory — ${muniName}</title>
-    <style>
-      body{font-family:Arial,sans-serif;font-size:12px;color:#000;padding:20px}
-      h1{font-size:18px;margin-bottom:4px}
-      h2{font-size:14px;margin:14px 0 4px;color:#1a3a6b;border-bottom:1px solid #ccc;padding-bottom:4px}
-      .org-meta{font-size:11px;color:#666;margin-bottom:8px}
-      table{width:100%;border-collapse:collapse;margin-bottom:12px}
-      th{background:#1a3a6b;color:#fff;padding:6px 8px;text-align:left;font-size:11px}
-      td{padding:5px 8px;border-bottom:1px solid #eee;font-size:11px}
-      tr:nth-child(even) td{background:#f9f9f9}
-      .badge{background:#e8f0fe;color:#1a3a6b;padding:1px 6px;border-radius:3px;font-size:10px;font-weight:700}
-    </style></head><body>
-    <h1>Stakeholder Directory</h1>
-    <div class="org-meta">${muniName} · Generated ${new Date().toLocaleString('en-ZA')}</div>`;
+  const date = new Date().toLocaleString('en-ZA');
+  const dot = col => `display:inline-block;width:8px;height:8px;border-radius:50%;background:${col};margin-right:8px;vertical-align:middle`;
 
-  _orgs.forEach(org => {
-    const contacts = org.stakeholder_contacts || [];
-    html += `<h2>${org.name} <span style="font-size:11px;font-weight:400;color:#666">${org.sector||''}</span></h2>`;
-    if (contacts.length) {
-      html += `<table><thead><tr><th>Name</th><th>Position</th><th>Cell</th><th>Direct Tel</th><th>Email</th><th>After Hours</th></tr></thead><tbody>`;
-      contacts.forEach(c => {
-        html += `<tr><td>${c.full_name||'—'}${c.is_primary?' <span class="badge">PRIMARY</span>':''}</td><td>${c.position||'—'}</td><td>${c.cell||'—'}</td><td>${c.direct_tel||'—'}</td><td>${c.email||'—'}</td><td>${c.after_hours||'—'}</td></tr>`;
-      });
-      html += `</tbody></table>`;
-    } else {
-      html += `<p style="color:#999;font-size:11px">No contacts registered.</p>`;
-    }
+  let sectionsHtml = '';
+
+  Object.entries(groups).forEach(([hazard, entries]) => {
+    const cat = getHazardCategory(hazard) || 'Other';
+    const col = CAT_COLOURS[cat] || '#888';
+    const totalContacts = entries.reduce((t, e) => t + e.contacts.length, 0);
+    let rows = '';
+    entries.forEach(({ org, contacts, via }) => {
+      if (!contacts.length) {
+        rows += `<tr><td class="pdf-org">${org.name}</td><td style="color:#aaa;font-style:italic">No contacts assigned</td><td>—</td><td>—</td><td>—</td><td>—</td><td><span class="pdf-via pdf-via-org">${via}</span></td></tr>`;
+      } else {
+        contacts.forEach((c, i) => {
+          rows += `<tr><td class="pdf-org">${i===0?org.name:''}</td><td>${c.full_name||'—'}${c.is_primary?' <span class="pdf-primary">PRIMARY</span>':''}</td><td>${c.position||'—'}</td><td>${c.cell||'—'}</td><td>${c.direct_tel||'—'}</td><td>${c.email||'—'}</td><td>${i===0?`<span class="pdf-via ${via==='ORG'?'pdf-via-org':'pdf-via-ct'}">${via}</span>`:''}</td></tr>`;
+        });
+      }
+    });
+    sectionsHtml += `
+      <div class="pdf-hazard-head" style="border-left:4px solid ${col}">
+        <span style="${dot(col)}"></span>${hazard}
+        <span style="margin-left:auto;font-size:9px;opacity:.7;font-weight:400">${cat.toUpperCase()} · ${entries.length} org${entries.length!==1?'s':''} · ${totalContacts} contact${totalContacts!==1?'s':''}</span>
+      </div>
+      <table class="pdf-table"><thead><tr><th>Organisation</th><th>Contact</th><th>Position</th><th>Cell</th><th>Direct Tel</th><th>Email</th><th>Via</th></tr></thead><tbody>${rows}</tbody></table>`;
   });
 
-  html += `</body></html>`;
+  if (unassigned.length) {
+    let rows = '';
+    unassigned.forEach(org => {
+      const contacts = org.stakeholder_contacts || [];
+      if (!contacts.length) {
+        rows += `<tr><td class="pdf-org">${org.name}</td><td style="color:#aaa;font-style:italic">No contacts assigned</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>`;
+      } else {
+        contacts.forEach((c, i) => {
+          rows += `<tr><td class="pdf-org">${i===0?org.name:''}</td><td>${c.full_name||'—'}${c.is_primary?' <span class="pdf-primary">PRIMARY</span>':''}</td><td>${c.position||'—'}</td><td>${c.cell||'—'}</td><td>${c.direct_tel||'—'}</td><td>${c.email||'—'}</td><td>—</td></tr>`;
+        });
+      }
+    });
+    sectionsHtml += `
+      <div class="pdf-hazard-head" style="background:#666;border-left:4px solid #aaa">
+        <span style="${dot('#aaa')}"></span>UNASSIGNED
+        <span style="margin-left:auto;font-size:9px;opacity:.7;font-weight:400">NO HAZARD LINKED · ${unassigned.length} org${unassigned.length!==1?'s':''}</span>
+      </div>
+      <table class="pdf-table"><thead><tr><th>Organisation</th><th>Contact</th><th>Position</th><th>Cell</th><th>Direct Tel</th><th>Email</th><th>Via</th></tr></thead><tbody>${rows}</tbody></table>`;
+  }
+
+  const html = `<html><head><title>Stakeholder Directory — ${muniName}</title>
+  <style>
+    body{font-family:Arial,sans-serif;font-size:11px;color:#111;padding:24px;max-width:960px;margin:0 auto}
+    .pdf-header{border-bottom:2px solid #1a3a6b;padding-bottom:14px;margin-bottom:20px;display:flex;align-items:flex-start;justify-content:space-between}
+    .pdf-brand{font-size:20px;font-weight:800;color:#1a3a6b}
+    .pdf-doc-type{font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#666;margin-top:2px}
+    .pdf-muni{font-size:14px;font-weight:700;color:#111;margin-top:6px}
+    .pdf-meta{font-size:10px;color:#888;margin-top:2px}
+    .pdf-hazard-head{background:#1a3a6b;color:#fff;padding:8px 14px;font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;margin:18px 0 0;border-radius:4px 4px 0 0;display:flex;align-items:center}
+    .pdf-table{width:100%;border-collapse:collapse;margin-bottom:4px}
+    .pdf-table th{background:#f0f4f8;padding:6px 9px;text-align:left;font-size:9px;font-weight:700;color:#444;letter-spacing:.04em;text-transform:uppercase;border-bottom:1px solid #ddd}
+    .pdf-table td{padding:6px 9px;border-bottom:1px solid #eee;color:#333;vertical-align:top}
+    .pdf-table tr:nth-child(even) td{background:#fafbfc}
+    .pdf-org{font-weight:600;color:#1a3a6b}
+    .pdf-primary{font-size:8px;background:#e8f0fe;color:#1a3a6b;padding:1px 4px;border-radius:3px;font-weight:700;margin-left:4px}
+    .pdf-via{font-size:8px;padding:1px 5px;border-radius:3px;font-weight:700}
+    .pdf-via-org{background:#dbeafe;color:#1d4ed8}
+    .pdf-via-ct{background:#dcfce7;color:#15803d}
+    .pdf-footer{margin-top:28px;padding-top:10px;border-top:1px solid #eee;font-size:9px;color:#aaa;display:flex;justify-content:space-between}
+  </style></head><body>
+  <div class="pdf-header">
+    <div>
+      <div class="pdf-brand">DRMSA</div>
+      <div class="pdf-doc-type">Stakeholder Directory — Hazard Response Reference</div>
+      <div class="pdf-muni">${muniName}</div>
+      <div class="pdf-meta">Generated: ${date} · Disaster Management Centre · CONFIDENTIAL — FOR OFFICIAL USE</div>
+    </div>
+    <svg viewBox="0 0 40 40" fill="none" width="40" height="40"><polygon points="20,34 4,10 36,10" fill="#1a3a6b"/></svg>
+  </div>
+  ${sectionsHtml}
+  <div class="pdf-footer">
+    <span>DRMSA Disaster Risk Management Platform · ${muniName} Disaster Management Centre</span>
+    <span>Apache 2.0 · Created by Diswayne Maarman</span>
+  </div>
+  </body></html>`;
+
   const w = window.open('', '_blank');
   if (w) { w.document.write(html); w.document.close(); w.print(); }
   showToast('✓ PDF print dialog opened');
