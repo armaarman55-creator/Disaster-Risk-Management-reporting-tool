@@ -156,6 +156,7 @@ async function renderIDP() {
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           <button class="btn btn-sm" id="idp-library-btn">Library suggestions</button>
           <button class="btn btn-sm" id="idp-email-btn">Email report</button>
+          <button class="btn btn-sm" id="idp-pdf-all-btn">↓ Export all PDF</button>
           <button class="btn btn-red btn-sm" id="idp-add-btn">+ Add mitigation</button>
         </div>
       </div>
@@ -194,12 +195,17 @@ async function renderIDP() {
   document.getElementById('idp-add-btn')?.addEventListener('click', () => showMitForm(null));
   document.getElementById('idp-library-btn')?.addEventListener('click', () => showLibrary(mits||[]));
   document.getElementById('idp-email-btn')?.addEventListener('click', () => emailReport(mits||[]));
+  document.getElementById('idp-pdf-all-btn')?.addEventListener('click', () => exportAllMitsPDF(mits||[]));
   document.getElementById('idp-filter-btn')?.addEventListener('click', () => applyFilters(mits||[]));
   document.getElementById('idp-clear-btn')?.addEventListener('click', async () => { await renderIDP(); });
   bindMitEvents(mits||[]);
 }
 
 function renderMitList(mits) {
+  // Cache records globally for PDF download
+  window._drmsaMitCache = window._drmsaMitCache || {};
+  mits.forEach(m => { window._drmsaMitCache[m.id] = m; });
+
   if (!mits.length) return `<div style="text-align:center;padding:48px;color:var(--text3);font-size:13px">
     No mitigations yet. Click <strong style="color:var(--text)">+ Add mitigation</strong> or use <strong style="color:var(--text)">Library suggestions</strong>.</div>`;
 
@@ -239,7 +245,7 @@ function renderMitList(mits) {
           </div>
           <div style="display:flex;gap:5px;flex-shrink:0;flex-wrap:wrap">
             <button class="btn btn-sm mit-edit" data-id="${m.id}">Edit</button>
-            <button class="btn btn-sm" onclick="window._downloadMit('${m.id}')">↓</button>
+            <button class="btn btn-sm" onclick="window._downloadMitPDF('${m.id}')">↓ PDF</button>
             <button class="btn btn-sm btn-red mit-delete" data-id="${m.id}">✕</button>
           </div>
         </div>
@@ -272,8 +278,7 @@ function renderMitList(mits) {
 // ── WARD PICKER HELPERS ───────────────────────────────────
 let _selectedWards = [];
 
-function initWardPicker(existingWards = []) {
-  _selectedWards = [...existingWards];
+function initWardPicker() {
   renderWardTags();
 
   const search = document.getElementById('mf-ward-search');
@@ -311,13 +316,14 @@ function initWardPicker(existingWards = []) {
     });
   });
 
-  // Close dropdown on outside click
-  document.addEventListener('click', function closeDD(e) {
-    if (!search.contains(e.target) && !dropdown.contains(e.target)) {
-      dropdown.style.display = 'none';
-      document.removeEventListener('click', closeDD);
-    }
-  });
+  // Close dropdown on outside click — use { once: true } to prevent leak
+  setTimeout(() => {
+    document.addEventListener('click', function closeDD(e) {
+      if (!search.contains(e.target) && !dropdown.contains(e.target)) {
+        dropdown.style.display = 'none';
+      }
+    }, { once: false });
+  }, 100);
 }
 
 function renderWardTags() {
@@ -408,7 +414,9 @@ function showMitForm(existing) {
   if (area.innerHTML && !existing) { area.innerHTML=''; return; }
 
   const m = existing || {};
-  const existingWards    = Array.isArray(m.affected_wards) ? m.affected_wards : [];
+  // Reset ward selections — preserve existing for edit, clear for new
+  _selectedWards = Array.isArray(m.affected_wards) ? [...m.affected_wards] : [];
+
   const existingAreas    = Array.isArray(m.impact_areas)   ? m.impact_areas   : [];
   const existingRating   = m.impact_rating || '';
   const existingCostBasis= m.cost_basis    || '';
@@ -435,13 +443,15 @@ function showMitForm(existing) {
         <div class="fl">
           <span class="fl-label">Ward(s) affected</span>
           <div style="position:relative">
-            <input class="fl-input" id="mf-ward-search" placeholder="Search ward number or area…"
-              autocomplete="off" style="font-size:12px"/>
-            <div id="mf-ward-dropdown"
-              style="display:none;position:absolute;top:100%;left:0;right:0;background:var(--bg2);border:1px solid var(--border2);border-radius:0 0 6px 6px;max-height:160px;overflow-y:auto;z-index:50;font-size:12px">
-            </div>
+            <input class="fl-input" id="mf-ward-search" placeholder="Search ward number or area…" autocomplete="off"
+              style="font-size:12px"/>
+            <div id="mf-ward-dropdown" style="display:none;position:absolute;top:100%;left:0;right:0;background:var(--bg2);border:1px solid var(--border2);border-radius:0 0 6px 6px;max-height:160px;overflow-y:auto;z-index:50;font-size:12px"></div>
           </div>
           <div id="mf-ward-tags" style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px;min-height:24px"></div>
+          <button type="button" id="mf-ward-all-btn"
+            style="margin-top:4px;font-size:10px;color:var(--text3);background:none;border:none;cursor:pointer;padding:0;text-decoration:underline;text-align:left">
+            Select all wards
+          </button>
           <input type="hidden" id="mf-wards-hidden"/>
         </div>
         <div class="fl">
@@ -580,8 +590,16 @@ function showMitForm(existing) {
       </div>
     </div>`;
 
-  // Init ward picker with existing wards
-  initWardPicker(existingWards);
+  // Init ward picker with _selectedWards (already set above)
+  initWardPicker(_selectedWards);
+
+  // Select all wards button
+  document.getElementById('mf-ward-all-btn')?.addEventListener('click', () => {
+    _selectedWards = _wards.map(w => w.ward_number);
+    renderWardTags();
+    updateRiskReduction();
+    regenerateJustification();
+  });
 
   // Expose update functions globally for inline onchange handlers
   window._drmsaUpdateRR = () => { updateRiskReduction(); regenerateJustification(); };
@@ -789,11 +807,144 @@ function bindMitEvents(mits) {
   });
 }
 
-window._downloadMit = function(id) {
-  const el = document.getElementById(`mit-card-${id}`);
-  const text = el ? el.innerText : 'Mitigation record';
-  const blob = new Blob([text], { type:'text/plain' });
-  const url  = URL.createObjectURL(blob);
-  const a    = Object.assign(document.createElement('a'), { href:url, download:`DRMSA-mitigation-${id}.txt` });
-  a.click(); URL.revokeObjectURL(url);
+function mitPDFHtml(m, muniName, wardLabels) {
+  const impactAreas = Array.isArray(m.impact_areas) ? m.impact_areas : [];
+  const ratingCol = m.impact_rating==='High'?'#f85149':m.impact_rating==='Medium'?'#d29922':m.impact_rating==='Low'?'#3fb950':'#888';
+  return `
+    <div style="border:1px solid #ddd;border-radius:6px;margin-bottom:20px;overflow:hidden;page-break-inside:avoid">
+      <div style="background:#1a3a6b;color:#fff;padding:10px 14px;display:flex;align-items:center;justify-content:space-between">
+        <div>
+          <div style="font-size:13px;font-weight:700">${m.hazard_name||'—'}</div>
+          <div style="font-size:10px;opacity:.8;margin-top:2px">${m.mitigation_type||''} · ${m.idp_kpa?.split(' — ')[0]||'No KPA'}</div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-size:10px;background:rgba(255,255,255,.15);padding:2px 8px;border-radius:3px">${(m.idp_status||'proposed').toUpperCase()}</div>
+          ${m.impact_rating?`<div style="font-size:10px;margin-top:3px;color:${ratingCol};font-weight:700">${m.impact_rating} impact</div>`:''}
+        </div>
+      </div>
+      <div style="padding:12px 14px">
+        <div style="font-size:12px;color:#333;line-height:1.6;margin-bottom:10px">${m.description||''}</div>
+        ${m.specific_location?`<div style="font-size:11px;color:#666;margin-bottom:8px">📍 ${m.specific_location} · ${wardLabels}</div>`:`<div style="font-size:11px;color:#666;margin-bottom:8px">Wards: ${wardLabels}</div>`}
+        <table style="width:100%;border-collapse:collapse;font-size:11px;margin-bottom:10px">
+          <tr>
+            <td style="padding:4px 8px;border:1px solid #eee;background:#f9f9f9;font-weight:700;color:#555;width:25%">DRR Strategy</td>
+            <td style="padding:4px 8px;border:1px solid #eee">${m.drr_strategy||'—'}</td>
+            <td style="padding:4px 8px;border:1px solid #eee;background:#f9f9f9;font-weight:700;color:#555;width:25%">Timeframe</td>
+            <td style="padding:4px 8px;border:1px solid #eee">${m.timeframe||'—'}</td>
+          </tr>
+          <tr>
+            <td style="padding:4px 8px;border:1px solid #eee;background:#f9f9f9;font-weight:700;color:#555">Cost estimate</td>
+            <td style="padding:4px 8px;border:1px solid #eee">${m.cost_estimate||'—'}</td>
+            <td style="padding:4px 8px;border:1px solid #eee;background:#f9f9f9;font-weight:700;color:#555">Cost basis</td>
+            <td style="padding:4px 8px;border:1px solid #eee">${m.cost_basis||'—'}</td>
+          </tr>
+          <tr>
+            <td style="padding:4px 8px;border:1px solid #eee;background:#f9f9f9;font-weight:700;color:#555">Responsible</td>
+            <td style="padding:4px 8px;border:1px solid #eee">${m.responsible_owner||'—'}</td>
+            <td style="padding:4px 8px;border:1px solid #eee;background:#f9f9f9;font-weight:700;color:#555">Risk reduction</td>
+            <td style="padding:4px 8px;border:1px solid #eee">${m.risk_reduction_pct?'~'+m.risk_reduction_pct+'%':'—'}</td>
+          </tr>
+          ${m.idp_vote_number?`<tr><td style="padding:4px 8px;border:1px solid #eee;background:#f9f9f9;font-weight:700;color:#555">Vote number</td><td style="padding:4px 8px;border:1px solid #eee" colspan="3">${m.idp_vote_number}</td></tr>`:''}
+          ${m.legislation_ref?`<tr><td style="padding:4px 8px;border:1px solid #eee;background:#f9f9f9;font-weight:700;color:#555">Legislation</td><td style="padding:4px 8px;border:1px solid #eee" colspan="3">${m.legislation_ref}</td></tr>`:''}
+        </table>
+        ${impactAreas.length?`<div style="margin-bottom:8px">${impactAreas.map(a=>`<span style="display:inline-block;background:#dbeafe;color:#1d4ed8;border-radius:10px;padding:2px 8px;font-size:10px;font-weight:600;margin:2px">${a}</span>`).join('')}</div>`:''}
+        ${m.drr_justification?`<div style="background:#f8f9fa;border-left:3px solid #1a3a6b;padding:8px 12px;border-radius:0 4px 4px 0;font-size:11px;color:#444;line-height:1.7;font-style:italic">${m.drr_justification}</div>`:''}
+      </div>
+    </div>`;
+}
+
+window._downloadMitPDF = function(id) {
+  const m = [...document.querySelectorAll('[id^="mit-card-"]')]
+    .find(el => el.id === `mit-card-${id}`);
+  // Find mitigation from DOM — just open print with the card content
+  const muniName = window._drmsaUser?.municipalities?.name || 'Municipality';
+  const date = new Date().toLocaleString('en-ZA');
+  // We need to find the record — use a global cache approach
+  const rec = window._drmsaMitCache?.[id];
+  if (!rec) { alert('Please close and reopen the IDP page, then try again.'); return; }
+  const wardLabels = Array.isArray(rec.affected_wards) && rec.affected_wards.length
+    ? rec.affected_wards.map(w => { const wd=_wards.find(x=>x.ward_number==w); return `Ward ${w}${wd?.area_name?' ('+wd.area_name+')':''}`; }).join(', ')
+    : 'No wards specified';
+  const html = `<html><head><title>Mitigation — ${rec.hazard_name}</title>
+  <style>body{font-family:Arial,sans-serif;padding:32px;max-width:800px;margin:0 auto}
+  .hdr{border-bottom:2px solid #1a3a6b;padding-bottom:12px;margin-bottom:20px;display:flex;justify-content:space-between;align-items:flex-end}
+  .brand{font-size:20px;font-weight:800;color:#1a3a6b} .meta{font-size:10px;color:#888}
+  footer{margin-top:28px;padding-top:10px;border-top:1px solid #eee;font-size:9px;color:#aaa;display:flex;justify-content:space-between}
+  </style></head><body>
+  <div class="hdr"><div><div class="brand">DRMSA</div><div style="font-size:11px;color:#666">IDP Mitigation Record</div><div style="font-size:13px;font-weight:700;margin-top:4px">${muniName}</div></div>
+  <div class="meta">Generated: ${date}</div></div>
+  ${mitPDFHtml(rec, muniName, wardLabels)}
+  <footer><span>DRMSA · ${muniName} Disaster Management Centre</span><span>Apache 2.0 · Diswayne Maarman</span></footer>
+  </body></html>`;
+  const w = window.open('','_blank');
+  if (w) { w.document.write(html); w.document.close(); w.print(); }
 };
+
+function exportAllMitsPDF(mits) {
+  if (!mits.length) { showToast('No mitigations to export', true); return; }
+  const muniName = window._drmsaUser?.municipalities?.name || 'Municipality';
+  const date = new Date().toLocaleString('en-ZA');
+
+  // Group by hazard
+  const groups = {};
+  mits.forEach(m => {
+    const h = m.hazard_name || 'Unspecified';
+    if (!groups[h]) groups[h] = [];
+    groups[h].push(m);
+  });
+
+  let body = '';
+  Object.entries(groups).forEach(([hazard, items]) => {
+    body += `<div style="margin-bottom:8px;padding:8px 12px;background:#1a3a6b;color:#fff;border-radius:4px;font-size:12px;font-weight:700;letter-spacing:.04em">${hazard.toUpperCase()} <span style="font-size:10px;opacity:.7;font-weight:400">${items.length} mitigation${items.length!==1?'s':''}</span></div>`;
+    items.forEach(m => {
+      const wardLabels = Array.isArray(m.affected_wards) && m.affected_wards.length
+        ? m.affected_wards.map(w => { const wd=_wards.find(x=>x.ward_number==w); return `Ward ${w}${wd?.area_name?' ('+wd.area_name+')':''}`; }).join(', ')
+        : 'No wards specified';
+      body += mitPDFHtml(m, muniName, wardLabels);
+    });
+  });
+
+  const funded   = mits.filter(m=>m.idp_status==='linked-funded').length;
+  const awaiting = mits.filter(m=>m.idp_status==='linked-awaiting').length;
+  const proposed = mits.filter(m=>m.idp_status==='proposed').length;
+
+  const html = `<html><head><title>IDP Mitigation Register — ${muniName}</title>
+  <style>
+    body{font-family:Arial,sans-serif;padding:32px;max-width:860px;margin:0 auto;font-size:12px}
+    .hdr{border-bottom:2px solid #1a3a6b;padding-bottom:14px;margin-bottom:20px;display:flex;justify-content:space-between;align-items:flex-end}
+    .brand{font-size:22px;font-weight:800;color:#1a3a6b}
+    .stats{display:flex;gap:20px;margin-bottom:20px}
+    .stat{text-align:center;background:#f0f4f8;padding:10px 16px;border-radius:6px;min-width:80px}
+    .stat-n{font-size:22px;font-weight:800;color:#1a3a6b}
+    .stat-l{font-size:10px;color:#666;margin-top:2px}
+    footer{margin-top:28px;padding-top:10px;border-top:1px solid #eee;font-size:9px;color:#aaa;display:flex;justify-content:space-between}
+    @media print{body{padding:16px}.stat{padding:6px 10px}}
+  </style></head><body>
+  <div class="hdr">
+    <div>
+      <div class="brand">DRMSA</div>
+      <div style="font-size:11px;color:#666;margin-top:2px">IDP Linkage & Mitigation Register</div>
+      <div style="font-size:14px;font-weight:700;color:#111;margin-top:6px">${muniName}</div>
+      <div style="font-size:10px;color:#888">Generated: ${date} · Disaster Management Centre</div>
+    </div>
+    <svg viewBox="0 0 40 40" fill="none" width="40" height="40"><polygon points="20,34 4,10 36,10" fill="#1a3a6b"/></svg>
+  </div>
+  <div class="stats">
+    <div class="stat"><div class="stat-n">${mits.length}</div><div class="stat-l">Total</div></div>
+    <div class="stat"><div class="stat-n" style="color:#3fb950">${funded}</div><div class="stat-l">Funded</div></div>
+    <div class="stat"><div class="stat-n" style="color:#d29922">${awaiting}</div><div class="stat-l">Awaiting</div></div>
+    <div class="stat"><div class="stat-n" style="color:#888">${proposed}</div><div class="stat-l">Proposed</div></div>
+  </div>
+  ${body}
+  <footer>
+    <span>DRMSA Disaster Risk Management Platform · ${muniName} Disaster Management Centre</span>
+    <span>Apache 2.0 · Created by Diswayne Maarman</span>
+  </footer>
+  </body></html>`;
+
+  const w = window.open('','_blank');
+  if (w) { w.document.write(html); w.document.close(); w.print(); }
+  showToast('✓ PDF print dialog opened');
+}
+
+window._downloadMit = window._downloadMitPDF;
