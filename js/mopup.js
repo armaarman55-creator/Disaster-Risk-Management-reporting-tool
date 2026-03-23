@@ -184,7 +184,7 @@ function renderMopupSummary(r) {
               'Hazardous materials spill','Chemical leak','Gas leak','Dam failure','Bridge failure','Building collapse','Power grid failure','Water supply failure','Sewage / Wastewater failure','Transport accident','Train accident','Aviation incident',
               'Civil unrest','Illegal land invasion','Food insecurity','Mass casualty event',
               'Other / Custom'
-            ].map(h=>`<option value="${h}" ${r.hazard_type===h?'selected':''}>${h}</option>`).join('')}
+            ].map(h=>'<option value="'+h+'" '+(r.hazard_type===h?'selected':'')+'>'+h+'</option>').join('')}
           </select>
         </div>
         <div class="fl"><span class="fl-label">Duration (days)</span><input class="fl-input" type="number" id="mu-duration" value="${r.duration_days || ''}"/></div>
@@ -314,7 +314,8 @@ function bindMopupSummaryEvents(r) {
     };
     const { error } = await supabase.from('mopup_reports').update({
       incident_name: document.getElementById('mu-name')?.value,
-      hazard_type: document.getElementById('mu-hazard')?.value,      duration_days: parseInt(document.getElementById('mu-duration')?.value)||null,
+      hazard_type: document.getElementById('mu-hazard')?.value,
+      duration_days: parseInt(document.getElementById('mu-duration')?.value)||null,
       activation_date: document.getElementById('mu-activation')?.value||null,
       standdown_date: document.getElementById('mu-standdown')?.value||null,
       sitreps_issued: parseInt(document.getElementById('mu-sitreps')?.value)||null,
@@ -390,7 +391,7 @@ function bindMopupResponseEvents(r) {
   });
 }
 
-
+function bindMopupLessonEvents(r) {
   document.getElementById('add-worked-btn')?.addEventListener('click', async () => {
     const title = document.getElementById('worked-title')?.value.trim();
     const desc = document.getElementById('worked-desc')?.value.trim();
