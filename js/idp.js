@@ -24,17 +24,86 @@ const IDP_KPAS = [
   'KPA 4 — Municipal financial viability and management',
   'KPA 5 — Good governance and public participation'
 ];
-const DRR      = ['Treat/Mitigate','Tolerate/Accept','Transfer/Share','Terminate/Prevent'];
-const TIMEFRAMES= ['Short term (< 1 year)','Medium term (1–3 years)','Long term (3–5 years)'];
-const MIT_TYPES = ['Structural','Non-structural','Policy/Plan','Awareness/Training'];
-const STATUSES  = [
-  { label: 'Proposed',              value: 'proposed' },
+const DRR       = ['Treat/Mitigate','Tolerate/Accept','Transfer/Share','Terminate/Prevent'];
+const TIMEFRAMES = ['Short term (< 1 year)','Medium term (1–3 years)','Long term (3–5 years)'];
+const MIT_TYPES  = ['Structural','Non-structural','Policy/Plan','Awareness/Training'];
+const STATUSES   = [
+  { label: 'Proposed',                  value: 'proposed' },
   { label: 'Linked — awaiting funding', value: 'linked-awaiting' },
-  { label: 'Linked — funded',       value: 'linked-funded' },
-  { label: 'Under review',          value: 'under-review' },
-  { label: 'In progress',           value: 'in-progress' },
-  { label: 'Completed',             value: 'completed' }
+  { label: 'Linked — funded',           value: 'linked-funded' },
+  { label: 'Under review',              value: 'under-review' },
+  { label: 'In progress',               value: 'in-progress' },
+  { label: 'Completed',                 value: 'completed' }
 ];
+
+// ── SMART DRR MODELING CONSTANTS ─────────────────────────
+const IMPACT_AREAS = [
+  'Reduce frequency',
+  'Reduce severity',
+  'Reduce response time',
+  'Reduce economic loss',
+  'Protect infrastructure',
+  'Environmental protection'
+];
+
+const IMPACT_RATINGS = [
+  { value: 'Low',    label: 'Low',    sub: 'Minimal improvement',    col: 'var(--green)',  range: [5,  15] },
+  { value: 'Medium', label: 'Medium', sub: 'Noticeable reduction',   col: 'var(--amber)',  range: [20, 40] },
+  { value: 'High',   label: 'High',   sub: 'Significant reduction',  col: 'var(--red)',    range: [45, 70] }
+];
+
+const COST_BASES = [
+  'Historical data',
+  'Similar project',
+  'Expert judgement',
+  'Assumed',
+  'Mixed sources'
+];
+
+// Calculate risk reduction range from rating + impact area count
+function calcRiskReduction(rating, impactAreas) {
+  const r = IMPACT_RATINGS.find(x => x.value === rating);
+  if (!r) return null;
+  const [min, max] = r.range;
+  const bonus = Math.min(Math.max(0, (impactAreas.length - 2) * 3), 15);
+  return { min, max: Math.min(max + bonus, 75), label: rating };
+}
+
+// Auto-generate justification paragraph
+function generateJustification(fields) {
+  const {
+    hazard, wards, description, impactAreas,
+    costBasis, riskRange, muniName, mitigationType, impactRating
+  } = fields;
+
+  if (!hazard && !description) return '';
+
+  const wardText = wards.length
+    ? (wards.length === 1 ? `Ward ${wards[0]}` : `Wards ${wards.slice(0,-1).join(', ')} and ${wards[wards.length-1]}`)
+    : 'the affected area';
+
+  const impactText = impactAreas.length
+    ? impactAreas.map((a,i) => {
+        if (i === 0) return a.toLowerCase();
+        if (i === impactAreas.length - 1) return ' and ' + a.toLowerCase();
+        return ', ' + a.toLowerCase();
+      }).join('')
+    : 'reduce disaster impact';
+
+  const interventionText = description
+    ? description.charAt(0).toLowerCase() + description.slice(1)
+    : 'the proposed intervention';
+
+  const basisText = costBasis || 'available data';
+
+  const reductionText = riskRange
+    ? `approximately ${riskRange.min}–${riskRange.max}%`
+    : 'a measurable percentage';
+
+  const ratingText = impactRating ? ` (${impactRating.toLowerCase()} impact level)` : '';
+
+  return `This project addresses ${hazard || 'the identified hazard'} risk in ${wardText}. The proposed ${mitigationType ? mitigationType.toLowerCase() : 'intervention'} — ${interventionText} — is expected to ${impactText}${ratingText}. Based on ${basisText}, the project may reduce disaster risk by ${reductionText}. This will contribute to reduced damage, improved safety and better resilience for communities in ${muniName || 'the municipality'}.`;
+}
 
 export async function initIDP(user) {
   _user   = user;
@@ -55,7 +124,7 @@ export async function initIDP(user) {
   const seen = new Set();
   _hazards = (hr.data||[]).filter(h => { if(seen.has(h.hazard_name)) return false; seen.add(h.hazard_name); return true; });
 
-  // Fallback ward generation
+  // Fallback ward generation from ward_count
   if (!_wards.length && user?.municipalities?.ward_count > 0) {
     _wards = Array.from({length:user.municipalities.ward_count},(_,i)=>({ward_number:i+1,area_name:null}));
   }
@@ -149,6 +218,10 @@ function renderMitList(mits) {
       : 'No wards specified';
     const riskCls = m.risk_band==='Extremely High'?'b-red':m.risk_band==='High'?'b-amber':m.risk_band==='Tolerable'?'b-green':'b-gray';
 
+    // Impact rating colour
+    const ratingCol = m.impact_rating==='High'?'var(--red)':m.impact_rating==='Medium'?'var(--amber)':m.impact_rating==='Low'?'var(--green)':null;
+    const impactAreas = Array.isArray(m.impact_areas) ? m.impact_areas : [];
+
     return `
       <div class="rec-card" style="margin-bottom:12px" id="mit-card-${m.id}">
         <div class="rec-head" style="flex-wrap:wrap;gap:8px">
@@ -157,9 +230,12 @@ function renderMitList(mits) {
               <span class="badge ${riskCls}" style="font-size:9px">${m.hazard_name||'—'}</span>
               <span class="badge ${statusCls[m.idp_status]||'b-gray'}" style="font-size:9px">${statusLabel[m.idp_status]||m.idp_status||'Proposed'}</span>
               ${m.idp_kpa?`<span class="badge b-blue" style="font-size:9px">${m.idp_kpa.split(' — ')[0]}</span>`:''}
+              ${ratingCol?`<span style="font-size:9px;font-weight:700;color:${ratingCol};font-family:monospace">${m.impact_rating} impact</span>`:''}
+              ${m.risk_reduction_pct?`<span style="font-size:9px;font-weight:700;color:var(--purple);font-family:monospace">~${m.risk_reduction_pct}% risk reduction</span>`:''}
               <span style="font-size:10px;color:var(--text3)">${m.mitigation_type||''}</span>
             </div>
             <div style="font-size:13px;font-weight:600;color:var(--text);line-height:1.4">${m.description}</div>
+            ${impactAreas.length?`<div style="display:flex;flex-wrap:wrap;gap:3px;margin-top:5px">${impactAreas.map(a=>`<span style="font-size:9px;background:var(--blue-dim);border:1px solid rgba(88,166,255,.2);color:var(--blue);border-radius:8px;padding:1px 6px;font-weight:600">${a}</span>`).join('')}</div>`:''}
           </div>
           <div style="display:flex;gap:5px;flex-shrink:0;flex-wrap:wrap">
             <button class="btn btn-sm mit-edit" data-id="${m.id}">Edit</button>
@@ -179,27 +255,171 @@ function renderMitList(mits) {
           <div class="rf"><span class="rf-key">DRR strategy</span><span class="rf-val">${m.drr_strategy||'—'}</span></div>
           <div class="rf"><span class="rf-key">Timeframe</span><span class="rf-val">${m.timeframe||'—'}</span></div>
           <div class="rf"><span class="rf-key">Cost estimate</span><span class="rf-val">${m.cost_estimate||'—'}</span></div>
+          <div class="rf"><span class="rf-key">Cost basis</span><span class="rf-val">${m.cost_basis||'—'}</span></div>
           <div class="rf"><span class="rf-key">Responsible</span><span class="rf-val">${m.responsible_owner||'—'}</span></div>
           ${m.idp_vote_number?`<div class="rf"><span class="rf-key">Vote number</span><span class="rf-val" style="font-family:monospace">${m.idp_vote_number}</span></div>`:''}
           ${m.legislation_ref?`<div class="rf" style="grid-column:span 2"><span class="rf-key">Legislation</span><span class="rf-val">${m.legislation_ref}</span></div>`:''}
         </div>
+        ${m.drr_justification?`
+          <div style="padding:10px 16px;border-top:1px solid var(--border);background:var(--bg3)">
+            <div style="font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--text3);margin-bottom:5px">DRR Justification</div>
+            <div style="font-size:12px;color:var(--text2);line-height:1.7;font-style:italic">${m.drr_justification}</div>
+          </div>`:''}
       </div>`;
   }).join('');
 }
 
+// ── WARD PICKER HELPERS ───────────────────────────────────
+let _selectedWards = [];
+
+function initWardPicker(existingWards = []) {
+  _selectedWards = [...existingWards];
+  renderWardTags();
+
+  const search = document.getElementById('mf-ward-search');
+  const dropdown = document.getElementById('mf-ward-dropdown');
+  if (!search || !dropdown) return;
+
+  search.addEventListener('input', () => {
+    const q = search.value.trim().toLowerCase();
+    if (!q) { dropdown.style.display = 'none'; return; }
+
+    const matches = _wards.filter(w => {
+      const num = String(w.ward_number);
+      const name = (w.area_name||'').toLowerCase();
+      return (num.includes(q) || name.includes(q)) && !_selectedWards.includes(w.ward_number);
+    }).slice(0, 12);
+
+    if (!matches.length) { dropdown.style.display = 'none'; return; }
+
+    dropdown.innerHTML = matches.map(w =>
+      `<div data-ward="${w.ward_number}" style="padding:7px 12px;cursor:pointer;border-bottom:1px solid var(--border);transition:background .1s"
+        onmouseenter="this.style.background='var(--bg3)'" onmouseleave="this.style.background=''"
+        >Ward ${w.ward_number}${w.area_name?' — '+w.area_name:''}</div>`
+    ).join('');
+    dropdown.style.display = 'block';
+
+    dropdown.querySelectorAll('[data-ward]').forEach(item => {
+      item.addEventListener('click', () => {
+        _selectedWards.push(parseInt(item.dataset.ward));
+        search.value = '';
+        dropdown.style.display = 'none';
+        renderWardTags();
+        updateRiskReduction();
+        regenerateJustification();
+      });
+    });
+  });
+
+  // Close dropdown on outside click
+  document.addEventListener('click', function closeDD(e) {
+    if (!search.contains(e.target) && !dropdown.contains(e.target)) {
+      dropdown.style.display = 'none';
+      document.removeEventListener('click', closeDD);
+    }
+  });
+}
+
+function renderWardTags() {
+  const container = document.getElementById('mf-ward-tags');
+  const hidden    = document.getElementById('mf-wards-hidden');
+  if (!container) return;
+
+  container.innerHTML = _selectedWards.length
+    ? _selectedWards.map(w => {
+        const wd = _wards.find(x => x.ward_number === w);
+        return `<span style="display:inline-flex;align-items:center;gap:5px;background:var(--blue-dim);border:1px solid rgba(88,166,255,.25);color:var(--blue);border-radius:12px;padding:3px 8px;font-size:11px;font-weight:600">
+          Ward ${w}${wd?.area_name?' · '+wd.area_name:''}
+          <span style="cursor:pointer;opacity:.7;font-size:13px;line-height:1" data-remove="${w}">×</span>
+        </span>`;
+      }).join('')
+    : '<span style="font-size:11px;color:var(--text3);font-style:italic">No wards selected</span>';
+
+  container.querySelectorAll('[data-remove]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      _selectedWards = _selectedWards.filter(w => w !== parseInt(btn.dataset.remove));
+      renderWardTags();
+      updateRiskReduction();
+      regenerateJustification();
+    });
+  });
+
+  if (hidden) hidden.value = JSON.stringify(_selectedWards);
+}
+
+// ── SMART DRR MODELING HELPERS ────────────────────────────
+function getSelectedImpactAreas() {
+  return [...document.querySelectorAll('.mf-impact-cb:checked')].map(cb => cb.value);
+}
+
+function getSelectedRating() {
+  return document.querySelector('.mf-rating-card.selected')?.dataset.rating || '';
+}
+
+function updateRiskReduction() {
+  const rating = getSelectedRating();
+  const areas  = getSelectedImpactAreas();
+  const rr     = calcRiskReduction(rating, areas);
+  const el     = document.getElementById('mf-risk-range');
+  const inp    = document.getElementById('mf-risk-pct');
+  if (!el) return;
+  if (rr) {
+    el.textContent = `Estimated ${rr.min}–${rr.max}% risk reduction`;
+    el.style.color = rr.label==='High'?'var(--red)':rr.label==='Medium'?'var(--amber)':'var(--green)';
+    if (inp && !inp.dataset.manual) inp.value = Math.round((rr.min + rr.max) / 2);
+  } else {
+    el.textContent = 'Select impact rating to estimate risk reduction';
+    el.style.color = 'var(--text3)';
+  }
+}
+
+function regenerateJustification() {
+  const hazardSel = document.getElementById('mf-hazard')?.value;
+  const hazard    = hazardSel === '__custom__'
+    ? document.getElementById('mf-hazard-custom')?.value.trim()
+    : hazardSel;
+  const desc      = document.getElementById('mf-desc')?.value.trim();
+  const mitType   = document.getElementById('mf-type')?.value;
+  const costBasis = document.getElementById('mf-cost-basis')?.value;
+  const rating    = getSelectedRating();
+  const areas     = getSelectedImpactAreas();
+  const rr        = calcRiskReduction(rating, areas);
+
+  const text = generateJustification({
+    hazard,
+    wards:        _selectedWards,
+    description:  desc,
+    impactAreas:  areas,
+    costBasis,
+    riskRange:    rr,
+    muniName:     _user?.municipalities?.name || '',
+    mitigationType: mitType,
+    impactRating: rating
+  });
+
+  const el = document.getElementById('mf-justification');
+  if (el && text) el.value = text;
+}
+
+// ── FORM ─────────────────────────────────────────────────
 function showMitForm(existing) {
   const area = document.getElementById('idp-form-area');
   if (!area) return;
   if (area.innerHTML && !existing) { area.innerHTML=''; return; }
 
   const m = existing || {};
-  const wardOpts = _wards.map(w =>
-    `<option value="${w.ward_number}" ${(m.affected_wards||[]).includes(w.ward_number)?'selected':''}>Ward ${w.ward_number}${w.area_name?' — '+w.area_name:''}</option>`
-  ).join('');
+  const existingWards    = Array.isArray(m.affected_wards) ? m.affected_wards : [];
+  const existingAreas    = Array.isArray(m.impact_areas)   ? m.impact_areas   : [];
+  const existingRating   = m.impact_rating || '';
+  const existingCostBasis= m.cost_basis    || '';
+  const existingRiskPct  = m.risk_reduction_pct || '';
+  const existingJust     = m.drr_justification  || '';
 
   area.innerHTML = `
     <div style="background:var(--bg2);border-bottom:2px solid var(--red);padding:20px;border-top:1px solid var(--border)">
       <div style="font-size:14px;font-weight:700;color:var(--text);margin-bottom:16px">${existing?'Edit mitigation':'Add mitigation'}</div>
+
+      <!-- Row 1: Hazard · Ward picker · Type -->
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px">
         <div class="fl">
           <span class="fl-label">Hazard</span>
@@ -214,14 +434,25 @@ function showMitForm(existing) {
         </div>
         <div class="fl">
           <span class="fl-label">Ward(s) affected</span>
-          <select class="fl-sel" id="mf-wards" multiple style="min-height:72px;font-size:12px">${wardOpts}</select>
-          <div style="font-size:10px;color:var(--text3);margin-top:2px">Ctrl/Cmd to select multiple</div>
+          <div style="position:relative">
+            <input class="fl-input" id="mf-ward-search" placeholder="Search ward number or area…"
+              autocomplete="off" style="font-size:12px"/>
+            <div id="mf-ward-dropdown"
+              style="display:none;position:absolute;top:100%;left:0;right:0;background:var(--bg2);border:1px solid var(--border2);border-radius:0 0 6px 6px;max-height:160px;overflow-y:auto;z-index:50;font-size:12px">
+            </div>
+          </div>
+          <div id="mf-ward-tags" style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px;min-height:24px"></div>
+          <input type="hidden" id="mf-wards-hidden"/>
         </div>
         <div class="fl">
           <span class="fl-label">Mitigation type</span>
-          <select class="fl-sel" id="mf-type">${MIT_TYPES.map(t=>`<option ${m.mitigation_type===t?'selected':''}>${t}</option>`).join('')}</select>
+          <select class="fl-sel" id="mf-type">
+            ${MIT_TYPES.map(t=>`<option ${m.mitigation_type===t?'selected':''}>${t}</option>`).join('')}
+          </select>
         </div>
       </div>
+
+      <!-- Location + description -->
       <div class="fl" style="margin-bottom:12px">
         <span class="fl-label">Specific location <span style="color:var(--text3);font-size:10px;font-weight:400">Street, river, bridge, landmark, GPS</span></span>
         <input class="fl-input" id="mf-location" value="${m.specific_location||''}"
@@ -231,40 +462,179 @@ function showMitForm(existing) {
         <span class="fl-label">Intervention description <span style="color:var(--text3);font-size:10px;font-weight:400">Detail for project brief or IDP entry</span></span>
         <textarea class="fl-textarea" id="mf-desc" rows="3" style="min-height:72px">${m.description||''}</textarea>
       </div>
+
+      <!-- IDP fields -->
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px">
         <div class="fl"><span class="fl-label">IDP KPA</span>
           <select class="fl-sel" id="mf-kpa">
             <option value="">— Select —</option>
-            ${IDP_KPAS.map((k,i)=>`<option value="${k}" ${m.idp_kpa===k?'selected':''}>${k}</option>`).join('')}
+            ${IDP_KPAS.map(k=>`<option value="${k}" ${m.idp_kpa===k?'selected':''}>${k}</option>`).join('')}
           </select>
         </div>
-        <div class="fl"><span class="fl-label">Vote / project number</span><input class="fl-input" id="mf-vote" value="${m.idp_vote_number||''}" placeholder="e.g. 3/4/5/2"/></div>
+        <div class="fl"><span class="fl-label">Vote / project number</span>
+          <input class="fl-input" id="mf-vote" value="${m.idp_vote_number||''}" placeholder="e.g. 3/4/5/2"/>
+        </div>
         <div class="fl"><span class="fl-label">Status</span>
           <select class="fl-sel" id="mf-status">
             ${STATUSES.map(s=>`<option value="${s.value}" ${m.idp_status===s.value?'selected':''}>${s.label}</option>`).join('')}
           </select>
         </div>
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:12px;margin-bottom:12px">
-        <div class="fl"><span class="fl-label">DRR strategy</span><select class="fl-sel" id="mf-drr">${DRR.map(s=>`<option ${m.drr_strategy===s?'selected':''}>${s}</option>`).join('')}</select></div>
-        <div class="fl"><span class="fl-label">Timeframe</span><select class="fl-sel" id="mf-tf">${TIMEFRAMES.map(t=>`<option ${m.timeframe===t?'selected':''}>${t}</option>`).join('')}</select></div>
-        <div class="fl"><span class="fl-label">Cost estimate</span><input class="fl-input" id="mf-cost" value="${m.cost_estimate||''}" placeholder="e.g. R 2.4 million"/></div>
-        <div class="fl"><span class="fl-label">Responsible</span><input class="fl-input" id="mf-owner" value="${m.responsible_owner||''}" placeholder="Dept / Organisation"/></div>
+
+      <!-- DRR + timeframe + cost -->
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:12px;margin-bottom:20px">
+        <div class="fl"><span class="fl-label">DRR strategy</span>
+          <select class="fl-sel" id="mf-drr">
+            ${DRR.map(s=>`<option ${m.drr_strategy===s?'selected':''}>${s}</option>`).join('')}
+          </select>
+        </div>
+        <div class="fl"><span class="fl-label">Timeframe</span>
+          <select class="fl-sel" id="mf-tf">
+            ${TIMEFRAMES.map(t=>`<option ${m.timeframe===t?'selected':''}>${t}</option>`).join('')}
+          </select>
+        </div>
+        <div class="fl"><span class="fl-label">Cost estimate</span>
+          <input class="fl-input" id="mf-cost" value="${m.cost_estimate||''}" placeholder="e.g. R 2.4 million"/>
+        </div>
+        <div class="fl"><span class="fl-label">Cost estimation basis</span>
+          <select class="fl-sel" id="mf-cost-basis">
+            <option value="">— Select —</option>
+            ${COST_BASES.map(b=>`<option value="${b}" ${existingCostBasis===b?'selected':''}>${b}</option>`).join('')}
+          </select>
+        </div>
       </div>
-      <div class="fl" style="margin-bottom:12px">
-        <span class="fl-label">Legislation / policy reference</span>
-        <input class="fl-input" id="mf-legislation" value="${m.legislation_ref||''}" placeholder="e.g. National Water Act 36 of 1998"/>
+
+      <!-- ── SMART DRR MODELING SECTION ── -->
+      <div style="background:var(--bg3);border:1px solid var(--border);border-left:3px solid var(--purple);border-radius:0 6px 6px 0;padding:16px;margin-bottom:16px">
+        <div style="font-size:12px;font-weight:700;color:var(--purple);letter-spacing:.06em;text-transform:uppercase;margin-bottom:14px;font-family:monospace">
+          Smart Risk Reduction Modelling
+        </div>
+
+        <!-- Expected impact areas -->
+        <div class="fl" style="margin-bottom:14px">
+          <span class="fl-label">Expected impact area <span style="color:var(--text3);font-size:10px;font-weight:400">Select all that apply</span></span>
+          <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">
+            ${IMPACT_AREAS.map(a => `
+              <label style="display:inline-flex;align-items:center;gap:5px;background:var(--bg2);border:1px solid ${existingAreas.includes(a)?'var(--blue)':'var(--border)'};border-radius:5px;padding:4px 10px;cursor:pointer;font-size:11px;color:${existingAreas.includes(a)?'var(--blue)':'var(--text2)'};transition:all .12s">
+                <input type="checkbox" class="mf-impact-cb" value="${a}" ${existingAreas.includes(a)?'checked':''}
+                  style="width:11px;height:11px;accent-color:var(--blue);cursor:pointer"
+                  onchange="this.closest('label').style.borderColor=this.checked?'var(--blue)':'var(--border)';this.closest('label').style.color=this.checked?'var(--blue)':'var(--text2)';window._drmsaUpdateRR?.()"/>
+                ${a}
+              </label>`).join('')}
+          </div>
+        </div>
+
+        <!-- Impact rating cards -->
+        <div class="fl" style="margin-bottom:14px">
+          <span class="fl-label">Impact rating</span>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:6px">
+            ${IMPACT_RATINGS.map(r => `
+              <div class="mf-rating-card ${existingRating===r.value?'selected':''}" data-rating="${r.value}"
+                style="border:1px solid ${existingRating===r.value?r.col:'var(--border)'};border-radius:6px;padding:10px 12px;cursor:pointer;text-align:center;transition:all .15s;background:${existingRating===r.value?r.col+'18':'transparent'}">
+                <div style="font-size:13px;font-weight:700;color:${r.col}">${r.label}</div>
+                <div style="font-size:10px;color:var(--text3);margin-top:3px">${r.sub}</div>
+                <div style="font-size:9px;color:var(--text3);margin-top:2px;font-family:monospace">${r.range[0]}–${r.range[1]}% reduction</div>
+              </div>`).join('')}
+          </div>
+        </div>
+
+        <!-- Risk reduction estimate + override -->
+        <div style="display:grid;grid-template-columns:1fr auto;gap:12px;align-items:center;margin-bottom:14px">
+          <div id="mf-risk-range" style="font-size:13px;font-weight:700;font-family:monospace;color:var(--text3)">
+            Select impact rating to estimate risk reduction
+          </div>
+          <div class="fl" style="margin:0;width:120px">
+            <span class="fl-label" style="font-size:10px">Override %</span>
+            <input class="fl-input" id="mf-risk-pct" type="number" min="0" max="100"
+              value="${existingRiskPct||''}" placeholder="Auto"
+              style="font-family:monospace;font-size:13px"
+              oninput="this.dataset.manual='1'"/>
+          </div>
+        </div>
+
+        <!-- Intelligent justification -->
+        <div class="fl">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px">
+            <span class="fl-label" style="margin:0">Intelligent justification <span style="color:var(--text3);font-size:10px;font-weight:400">Auto-generated · fully editable</span></span>
+            <button class="btn btn-sm" id="mf-regen-btn" style="font-size:10px;padding:3px 10px">↺ Regenerate</button>
+          </div>
+          <textarea class="fl-textarea" id="mf-justification" rows="4"
+            style="min-height:90px;font-size:12px;line-height:1.7;color:var(--text2)"
+            placeholder="Fill in the form fields above to auto-generate a justification…">${existingJust}</textarea>
+        </div>
       </div>
+
+      <!-- Remaining fields -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+        <div class="fl"><span class="fl-label">Responsible</span>
+          <input class="fl-input" id="mf-owner" value="${m.responsible_owner||''}" placeholder="Dept / Organisation"/>
+        </div>
+        <div class="fl"><span class="fl-label">Legislation / policy reference</span>
+          <input class="fl-input" id="mf-legislation" value="${m.legislation_ref||''}" placeholder="e.g. National Water Act 36 of 1998"/>
+        </div>
+      </div>
+
       <div style="display:flex;gap:8px">
         <button class="btn btn-green btn-sm" id="mf-save-btn" data-id="${m.id||''}">Save mitigation</button>
         <button class="btn btn-sm" onclick="document.getElementById('idp-form-area').innerHTML=''">Cancel</button>
       </div>
     </div>`;
 
+  // Init ward picker with existing wards
+  initWardPicker(existingWards);
+
+  // Expose update functions globally for inline onchange handlers
+  window._drmsaUpdateRR = () => { updateRiskReduction(); regenerateJustification(); };
+
+  // Rating card click
+  area.querySelectorAll('.mf-rating-card').forEach(card => {
+    card.addEventListener('click', () => {
+      area.querySelectorAll('.mf-rating-card').forEach(c => {
+        const r = IMPACT_RATINGS.find(x => x.value === c.dataset.rating);
+        c.classList.remove('selected');
+        c.style.borderColor = 'var(--border)';
+        c.style.background  = 'transparent';
+      });
+      const r = IMPACT_RATINGS.find(x => x.value === card.dataset.rating);
+      card.classList.add('selected');
+      card.style.borderColor = r.col;
+      card.style.background  = r.col + '18';
+      updateRiskReduction();
+      regenerateJustification();
+    });
+  });
+
+  // Auto-regen on key field changes
+  ['mf-hazard','mf-desc','mf-type','mf-cost-basis'].forEach(id => {
+    document.getElementById(id)?.addEventListener('change', () => {
+      updateRiskReduction();
+      regenerateJustification();
+    });
+  });
+  document.getElementById('mf-desc')?.addEventListener('input', regenerateJustification);
+
+  // Regen button
+  document.getElementById('mf-regen-btn')?.addEventListener('click', () => {
+    const pct = document.getElementById('mf-risk-pct');
+    if (pct) delete pct.dataset.manual;
+    updateRiskReduction();
+    regenerateJustification();
+  });
+
+  // Hazard custom toggle
   document.getElementById('mf-hazard')?.addEventListener('change', function() {
     const custom = document.getElementById('mf-hazard-custom');
     if (custom) custom.style.display = this.value==='__custom__'?'block':'none';
+    regenerateJustification();
   });
+
+  // If editing, run initial calculation
+  if (existing) {
+    updateRiskReduction();
+    // Only regenerate if no existing justification
+    if (!existingJust) regenerateJustification();
+  }
+
   document.getElementById('mf-save-btn')?.addEventListener('click', saveMit);
 }
 
@@ -279,31 +649,37 @@ async function saveMit() {
   if (!hazard) { alert('Please select a hazard.'); return; }
   if (!desc)   { alert('Please enter a description.'); return; }
 
-  const wardSel = document.getElementById('mf-wards');
-  const wards   = wardSel ? [...wardSel.selectedOptions].map(o=>parseInt(o.value)) : [];
   const hData   = _hazards.find(h=>h.hazard_name===hazard);
-
-  const btn = document.getElementById('mf-save-btn');
+  const btn     = document.getElementById('mf-save-btn');
   if (btn) { btn.textContent='Saving…'; btn.disabled=true; }
 
+  // Read risk reduction — manual override takes priority
+  const riskPctEl = document.getElementById('mf-risk-pct');
+  const riskPct   = riskPctEl?.value ? parseInt(riskPctEl.value) : null;
+
   const payload = {
-    municipality_id:   _muniId,
-    hazard_name:       hazard,
-    hazard_category:   hData?.hazard_category||null,
-    risk_band:         hData?.risk_band||null,
-    mitigation_type:   {'Structural':'structural','Non-structural':'non-structural','Policy/Plan':'Policy/Plan','Awareness/Training':'Awareness/Training'}[document.getElementById('mf-type')?.value] || document.getElementById('mf-type')?.value || 'structural',
-    description:       desc,
-    specific_location: document.getElementById('mf-location')?.value.trim(),
-    affected_wards:    wards,
-    idp_kpa:           document.getElementById('mf-kpa')?.value,
-    idp_vote_number:   document.getElementById('mf-vote')?.value.trim(),
-    idp_status:        document.getElementById('mf-status')?.value||'proposed',
-    drr_strategy:      document.getElementById('mf-drr')?.value,
-    timeframe:         document.getElementById('mf-tf')?.value,
-    cost_estimate:     document.getElementById('mf-cost')?.value.trim(),
-    responsible_owner: document.getElementById('mf-owner')?.value.trim(),
-    legislation_ref:   document.getElementById('mf-legislation')?.value.trim(),
-    is_library:        false
+    municipality_id:    _muniId,
+    hazard_name:        hazard,
+    hazard_category:    hData?.hazard_category||null,
+    risk_band:          hData?.risk_band||null,
+    mitigation_type:    {'Structural':'structural','Non-structural':'non-structural','Policy/Plan':'Policy/Plan','Awareness/Training':'Awareness/Training'}[document.getElementById('mf-type')?.value] || document.getElementById('mf-type')?.value || 'structural',
+    description:        desc,
+    specific_location:  document.getElementById('mf-location')?.value.trim(),
+    affected_wards:     _selectedWards,
+    idp_kpa:            document.getElementById('mf-kpa')?.value,
+    idp_vote_number:    document.getElementById('mf-vote')?.value.trim(),
+    idp_status:         document.getElementById('mf-status')?.value||'proposed',
+    drr_strategy:       document.getElementById('mf-drr')?.value,
+    timeframe:          document.getElementById('mf-tf')?.value,
+    cost_estimate:      document.getElementById('mf-cost')?.value.trim(),
+    cost_basis:         document.getElementById('mf-cost-basis')?.value||null,
+    responsible_owner:  document.getElementById('mf-owner')?.value.trim(),
+    legislation_ref:    document.getElementById('mf-legislation')?.value.trim(),
+    impact_areas:       getSelectedImpactAreas(),
+    impact_rating:      getSelectedRating()||null,
+    risk_reduction_pct: riskPct,
+    drr_justification:  document.getElementById('mf-justification')?.value.trim()||null,
+    is_library:         false
   };
 
   const { error } = id
@@ -314,6 +690,7 @@ async function saveMit() {
 
   showToast('✓ Mitigation saved successfully!');
   document.getElementById('idp-form-area').innerHTML = '';
+  _selectedWards = [];
   await renderIDP();
 }
 
@@ -321,7 +698,7 @@ async function showLibrary() {
   const area = document.getElementById('idp-library-area');
   if (!area) return;
   if (area.innerHTML) { area.innerHTML=''; return; }
-  _libCache = []; // reset cache
+  _libCache = [];
 
   const names = _hazards.map(h=>h.hazard_name);
   const { data: suggestions } = await supabase
@@ -371,7 +748,11 @@ function emailReport(mits) {
     if (m.idp_kpa) lines.push(`   ${m.idp_kpa}`);
     if (m.idp_vote_number) lines.push(`   Vote: ${m.idp_vote_number}`);
     if (m.cost_estimate) lines.push(`   Cost: ${m.cost_estimate}`);
+    if (m.cost_basis) lines.push(`   Cost basis: ${m.cost_basis}`);
+    if (m.impact_rating) lines.push(`   Impact: ${m.impact_rating}`);
+    if (m.risk_reduction_pct) lines.push(`   Est. risk reduction: ~${m.risk_reduction_pct}%`);
     if (m.responsible_owner) lines.push(`   Responsible: ${m.responsible_owner}`);
+    if (m.drr_justification) lines.push(`   Justification: ${m.drr_justification}`);
     lines.push('');
   });
   const subject = encodeURIComponent(`IDP Mitigation Register — ${muniName}`);
