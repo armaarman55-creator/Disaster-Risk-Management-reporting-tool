@@ -2,9 +2,9 @@
 .hidden{display:none!important}
 
 /* ── AUTH SCREEN ── */
-.auth-screen{position:fixed;inset:0;background:var(--bg);display:flex;align-items:stretch;z-index:1000}
+.auth-screen{position:fixed;inset:0;background:var(--bg);display:flex;align-items:stretch;z-index:1000;overflow-y:auto}
 
-.auth-left{width:480px;flex-shrink:0;background:var(--bg2);border-right:1px solid var(--border);display:flex;flex-direction:column;padding:36px 44px;overflow-y:auto}
+.auth-left{width:480px;flex-shrink:0;background:var(--bg2);border-right:1px solid var(--border);display:flex;flex-direction:column;padding:36px 44px;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain}
 
 /* Brand */
 .auth-brand{display:flex;align-items:center;gap:12px;margin-bottom:36px}
