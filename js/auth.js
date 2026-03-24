@@ -3,6 +3,7 @@ import { supabase, getCurrentUser } from './supabase.js';
 import { initApp } from './app.js';
 
 export async function initAuth() {
+  // ── INTERCEPT PASSWORD RESET LINK ────────────────────────
   const hashParams = new URLSearchParams(window.location.hash.replace('#', ''));
   const queryParams = new URLSearchParams(window.location.search);
   const isRecovery = hashParams.get('type') === 'recovery' ||
@@ -14,6 +15,7 @@ export async function initAuth() {
     return;
   }
 
+  // Check existing session
   const { data: { session } } = await supabase.auth.getSession();
   if (session) {
     const user = await getCurrentUser();
@@ -40,6 +42,7 @@ export async function initAuth() {
   });
 }
 
+// ── MUNICIPALITIES ─────────────────────────────────────────
 async function loadMunicipalities() {
   const sel = document.getElementById('reg-muni');
   if (!sel) return;
@@ -71,6 +74,7 @@ async function loadMunicipalities() {
     ).join('');
 }
 
+// ── PANEL SWITCHING ────────────────────────────────────────
 function showPanel(name) {
   document.getElementById('panel-login')?.classList.add('hidden');
   document.getElementById('panel-register')?.classList.add('hidden');
@@ -88,6 +92,7 @@ function bindTabSwitching() {
   });
 }
 
+// ── ROLE CARDS ─────────────────────────────────────────────
 function bindRoleCards() {
   document.querySelectorAll('.role-card').forEach(card => {
     card.addEventListener('click', () => {
@@ -97,6 +102,7 @@ function bindRoleCards() {
   });
 }
 
+// ── PASSWORD TOGGLES ───────────────────────────────────────
 function bindPasswordToggles() {
   document.querySelectorAll('.pw-toggle').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -116,6 +122,7 @@ function eyeOffIcon() {
   return `<svg viewBox="0 0 16 16"><path d="M2 2l12 12M6.7 6.7A2 2 0 0 0 9.3 9.3M3.4 3.4C2.1 4.5 1 6 1 8s2.5 5 7 5c1.5 0 2.9-.4 4-.9M6 3.2C6.6 3.1 7.3 3 8 3c4.5 0 7 5 7 5s-.7 1.4-2 2.6"/></svg>`;
 }
 
+// ── SIGN IN ────────────────────────────────────────────────
 function bindSignIn() {
   document.getElementById('btn-signin')?.addEventListener('click', async () => {
     const email    = document.getElementById('login-email')?.value.trim();
@@ -154,6 +161,7 @@ function bindSignIn() {
   });
 }
 
+// ── GUEST LOGIN ────────────────────────────────────────────
 function bindGuestLogin() {
   document.getElementById('btn-guest')?.addEventListener('click', async () => {
     window._guestMode = true;
@@ -166,6 +174,7 @@ function bindGuestLogin() {
   });
 }
 
+// ── REGISTER ───────────────────────────────────────────────
 function bindRegister() {
   document.getElementById('btn-register')?.addEventListener('click', async () => {
     const email     = document.getElementById('reg-email')?.value.trim();
@@ -209,6 +218,7 @@ function bindRegister() {
   });
 }
 
+// ── FORGOT PASSWORD ────────────────────────────────────────
 function bindForgotPassword() {
   document.getElementById('btn-reset')?.addEventListener('click', async () => {
     const email = document.getElementById('reset-email')?.value.trim();
@@ -235,7 +245,49 @@ function bindForgotPassword() {
   });
 }
 
-//  FIXED FUNCTION
+// ── PASSWORD RESET SCREEN ──────────────────────────────────
+function showResetPasswordScreen() {
+  const authScreen = document.getElementById('auth-screen');
+  if (!authScreen) return;
+  authScreen.style.display = 'flex';
+  authScreen.style.opacity = '1';
+
+  const left = authScreen.querySelector('.auth-left');
+  if (!left) return;
+
+  left.innerHTML = `
+    <div class="auth-heading">Set new password</div>
+    <div class="auth-sub">Choose a new password for your account.</div>
+    <div class="auth-error" id="newpw-error"></div>
+    <div class="field-group">
+      <input class="field-input" type="password" id="newpw-input" placeholder="New password"/>
+    </div>
+    <div class="field-group">
+      <input class="field-input" type="password" id="newpw-confirm" placeholder="Confirm password"/>
+    </div>
+    <button class="auth-btn auth-btn-primary" id="newpw-btn">Set new password</button>
+  `;
+
+  document.getElementById('newpw-btn')?.addEventListener('click', async () => {
+    const pw = document.getElementById('newpw-input')?.value;
+    const confirm = document.getElementById('newpw-confirm')?.value;
+    const errEl = document.getElementById('newpw-error');
+
+    if (!pw || pw.length < 8) { showError(errEl, 'Password must be at least 8 characters.'); return; }
+    if (pw !== confirm) { showError(errEl, 'Passwords do not match.'); return; }
+
+    const { error } = await supabase.auth.updateUser({ password: pw });
+
+    if (error) {
+      showError(errEl, error.message);
+      return;
+    }
+
+    location.reload();
+  });
+}
+
+// ── FIXED showError ────────────────────────────────────────
 function showError(el, msg) {
   if (!el) return;
   el.textContent = msg;
