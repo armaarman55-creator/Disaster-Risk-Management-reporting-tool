@@ -1,6 +1,6 @@
 // js/sitrep.js
 import { supabase } from './supabase.js';
-import { openShareModal } from './share.js';
+import { showDownloadMenu, docHeader } from './download.js';
 
 let _muniId = null;
 let _user = null;
@@ -83,6 +83,7 @@ async function openSitrep(id, allSitreps) {
   const { data: s } = await supabase.from('sitreps').select('*').eq('id', id).single();
   if (!s) return;
   _currentSitrep = s;
+  window._sitrepLinkedData = { shelters, closures };
 
   // Load records for opt-in linking — nothing pre-linked
   const [sheltersRes, closuresRes] = await Promise.all([
@@ -120,18 +121,18 @@ async function openSitrep(id, allSitreps) {
       </div>
       <div class="share-foot">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-          <span style="font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--text3);font-family:var(--font-mono)">Share SITREP-${num}</span>
+          <span style="font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--text3);font-family:var(--font-mono)">SITREP-${num}</span>
           <div style="display:flex;align-items:center;gap:8px">
             <div class="tog-track ${s.is_published ? 'on' : ''}" id="sr-pub-tog"><div class="tog-knob"></div></div>
             <span style="font-size:11px;font-weight:700;font-family:var(--font-mono);color:${s.is_published ? 'var(--green)' : 'var(--text3)'}" id="sr-pub-lbl">${s.is_published ? 'PUBLISHED' : 'DRAFT'}</span>
           </div>
         </div>
-        <div class="share-channels">
-          <button class="sch pdf" onclick="generateSitrepPDF()"><div class="sch-ico" style="background:var(--red-dim)"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="var(--red)" stroke-width="1.4" stroke-linecap="round"><rect x="1.5" y="1" width="7" height="8" rx="1"/><line x1="3" y1="4" x2="7" y2="4"/><line x1="3" y1="6" x2="6" y2="6"/></svg></div>PDF report</button>
-          <button class="sch em" id="sr-email-btn"><div class="sch-ico" style="background:var(--blue-dim)"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="var(--blue)" stroke-width="1.4" stroke-linecap="round"><rect x="1" y="2.5" width="8" height="6" rx=".5"/><path d="M1 3l4 3 4-3"/></svg></div>Email distrib.</button>
-          <button class="sch portal" id="sr-portal-btn"><div class="sch-ico" style="background:var(--green-dim)"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="var(--green)" stroke-width="1.4" stroke-linecap="round"><circle cx="5" cy="5" r="4"/><path d="M1 5h8M5 1c-1.5 1.5-2 3-2 4s.5 2.5 2 4M5 1c1.5 1.5 2 3 2 4s-.5 2.5-2 4"/></svg></div>Public portal</button>
+        <div style="display:flex;gap:8px;align-items:center">
+          <button class="btn btn-sm" id="sr-download-btn">↓ Download</button>
+          <button class="btn btn-sm" id="sr-email-btn">✉ Email report</button>
+          <button class="btn btn-sm" id="sr-portal-btn">🌐 Public portal</button>
         </div>
-        <div class="sp-url-row">
+        <div class="sp-url-row" style="margin-top:8px">
           <div class="sp-url">${window.location.origin}/incidents/${s.id}/sitrep-${num}</div>
           <button class="btn btn-sm" onclick="navigator.clipboard?.writeText('${window.location.origin}/incidents/${s.id}/sitrep-${num}');this.textContent='Copied!';setTimeout(()=>this.textContent='Copy link',1500)">Copy link</button>
         </div>
@@ -157,6 +158,30 @@ async function openSitrep(id, allSitreps) {
   });
 
   bindFormEvents(s);
+
+  document.getElementById('sr-download-btn')?.addEventListener('click', function() {
+    const num = String(s.sitrep_number).padStart(2,'0');
+    const muniName = _user?.municipalities?.name || 'Municipality';
+    showDownloadMenu(this, {
+      filename: `SITREP-${num}-${muniName.replace(/\s+/g,'-')}`,
+      getPDF: () => generateSitrepPDF(),
+      getCSVRows: () => getSitrepCSVRows(s, shelters, closures),
+      getDocHTML: () => getSitrepDocHTML(s, shelters, closures, muniName)
+    });
+  });
+
+  document.getElementById('sr-email-btn')?.addEventListener('click', () => {
+    const num = String(s.sitrep_number).padStart(2,'0');
+    const muniName = _user?.municipalities?.name || 'Municipality';
+    const text = getSitrepText(s, shelters, closures, muniName);
+    const subject = encodeURIComponent(`SITREP-${num} — ${s.incident_name||''} — ${muniName}`);
+    const body = encodeURIComponent(text);
+    window.open(`mailto:?subject=${subject}&body=${body}`);
+  });
+
+  document.getElementById('sr-portal-btn')?.addEventListener('click', () => {
+    alert('This SitRep has been published to the public portal.');
+  });
 
   document.getElementById('sr-pub-tog')?.addEventListener('click', async function() {
     this.classList.toggle('on');
@@ -300,16 +325,13 @@ function renderActions(s) {
     </div>`;
 }
 
-function renderPublicSummary(s, shelters, closures) {
+function getSitrepText(s, shelters, closures, muniName) {
   const num = String(s.sitrep_number).padStart(2,'0');
-  const linkedShelterIds = Array.isArray(s.linked_shelters) ? s.linked_shelters : [];
-  const linkedClosureIds = Array.isArray(s.linked_closures) ? s.linked_closures : [];
-  const linkedShelters   = shelters.filter(sh => linkedShelterIds.includes(sh.id));
-  const linkedClosures   = closures.filter(rc => linkedClosureIds.includes(rc.id));
+  const linkedShelters = shelters.filter(sh => (s.linked_shelters||[]).includes(sh.id));
+  const linkedClosures = closures.filter(rc => (s.linked_closures||[]).includes(rc.id));
   const shelterText = linkedShelters.map(sh=>`${sh.name}: ${sh.current_occupancy||0}/${sh.capacity} (${(sh.status||'').toUpperCase()})`).join('\n');
   const closureText = linkedClosures.map(c=>`${c.road_name}: ${(c.status||'').toUpperCase()}`).join('\n');
-  const muniName = _user?.municipalities?.name || '';
-  const text = `SITUATION UPDATE — SITREP-${num}
+  return `SITUATION UPDATE — SITREP-${num}
 ${muniName} · ${new Date().toLocaleString('en-ZA')}
 
 Incident: ${s.incident_name||'—'}
@@ -327,35 +349,51 @@ ${s.narrative||''}
 
 Next SitRep due: ${s.next_due ? new Date(s.next_due).toLocaleString('en-ZA') : 'TBC'}
 
-Issued by: ${muniName} Disaster Management Center`;
+Issued by: ${muniName} Disaster Management Centre`;
+}
 
-  const links = window._drmsaSocialLinks || {};
-  const url   = `${window.location.origin}/incidents/${s.id}/sitrep-${num}`;
-  const fbUrl = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}`;
-  const twUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(`SITREP-${num} — ${s.incident_name||''} ${links.social_twitter?'via @'+links.social_twitter:''}`)}&url=${encodeURIComponent(url)}`;
+function getSitrepCSVRows(s, shelters, closures) {
+  const num = String(s.sitrep_number).padStart(2,'0');
+  const rows = [
+    ['Field','Value'],
+    ['SitRep', `SITREP-${num}`],
+    ['Incident', s.incident_name||''],
+    ['Status', s.status||''],
+    ['Hazard type', s.hazard_type||''],
+    ['Displaced', s.displaced_persons||0],
+    ['Injuries', s.injuries||0],
+    ['Fatalities', s.fatalities||0],
+    ['Properties damaged', s.properties_damaged||0],
+    ['Narrative', s.narrative||''],
+    ['Issued', s.issued_at ? new Date(s.issued_at).toLocaleString('en-ZA') : ''],
+    ['Next SitRep due', s.next_due ? new Date(s.next_due).toLocaleString('en-ZA') : 'TBC'],
+  ];
+  const linkedShelters = shelters.filter(sh => (s.linked_shelters||[]).includes(sh.id));
+  linkedShelters.forEach(sh => rows.push(['Shelter', `${sh.name}: ${sh.current_occupancy||0}/${sh.capacity}`]));
+  const linkedClosures = closures.filter(rc => (s.linked_closures||[]).includes(rc.id));
+  linkedClosures.forEach(rc => rows.push(['Road closure', rc.road_name]));
+  return rows;
+}
+
+function getSitrepDocHTML(s, shelters, closures, muniName) {
+  const num = String(s.sitrep_number).padStart(2,'0');
+  const text = getSitrepText(s, shelters, closures, muniName);
+  return `${docHeader(`SITREP-${num} — ${s.incident_name||'Situation Report'}`, muniName)}
+  <pre style="font-family:Arial,sans-serif;font-size:11pt;white-space:pre-wrap;line-height:1.7">${text}</pre>`;
+}
+
+function renderPublicSummary(s, shelters, closures) {
+  const muniName = _user?.municipalities?.name || '';
+  const text = getSitrepText(s, shelters, closures, muniName);
+  const num = String(s.sitrep_number).padStart(2,'0');
   const mailUrl = `mailto:?subject=${encodeURIComponent(`SITREP-${num} — ${s.incident_name||''}`)}&body=${encodeURIComponent(text)}`;
 
   return `
     <div class="fsec">
       <div class="fsec-title">Public summary — auto-generated</div>
       <div id="pub-summary-text" style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--r-md);padding:12px;font-size:11px;color:var(--text2);font-family:var(--font-mono);line-height:1.6;white-space:pre-wrap">${text}</div>
-      <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-        <span style="font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--text3);font-family:var(--font-mono)">Share via</span>
-        <a class="sch fb" href="${fbUrl}" target="_blank" style="text-decoration:none">
-          <div class="sch-ico" style="background:#1877F2">
-            <svg width="10" height="10" viewBox="0 0 10 10" fill="white"><path d="M7 1H5.5C4.7 1 4 1.7 4 2.5V4H2.5v1.5H4V9h1.5V5.5H7L7.5 4H5.5V2.5c0-.3.2-.5.5-.5H7V1z"/></svg>
-          </div>Facebook
-        </a>
-        <a class="sch xp" href="${twUrl}" target="_blank" style="text-decoration:none">
-          <div class="sch-ico" style="background:#000">
-            <svg width="10" height="10" viewBox="0 0 10 10" fill="white"><path d="M1 1.5l3.2 4.3L1 9h1l2.7-3 2.2 3H9L5.7 4.6 8.8 1.5h-1L5.2 4.3 3 1.5H1z"/></svg>
-          </div>Post on X
-        </a>
-        <a class="sch em" href="${mailUrl}" style="text-decoration:none">
-          <div class="sch-ico" style="background:var(--blue-dim)">
-            <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="var(--blue)" stroke-width="1.4" stroke-linecap="round"><rect x="1" y="2.5" width="8" height="6" rx=".5"/><path d="M1 3l4 3 4-3"/></svg>
-          </div>Email
-        </a>
+      <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
+        <a href="${mailUrl}" class="btn btn-sm">✉ Email summary</a>
         <button class="btn btn-sm" id="pub-copy-btn">Copy text</button>
       </div>
     </div>`;
@@ -498,16 +536,14 @@ window.toggleAction = async function(idx) {
 };
 
 window.generateSitrepPDF = function() {
-  const body = document.getElementById('sr-body')?.innerText || '';
+  const muniName = _user?.municipalities?.name || 'Municipality';
+  if (!_currentSitrep) return;
+  const { shelters, closures } = window._sitrepLinkedData || { shelters: [], closures: [] };
+  const text = getSitrepText(_currentSitrep, shelters, closures, muniName);
+  const num = String(_currentSitrep.sitrep_number).padStart(2,'0');
   const win = window.open('', '_blank');
-  win.document.write(`<html><head><title>SitRep</title><style>body{font-family:Arial,sans-serif;padding:40px;max-width:700px;margin:0 auto;font-size:13px;line-height:1.6}h1{font-size:18px}footer{margin-top:40px;font-size:10px;color:#888;border-top:1px solid #eee;padding-top:12px}</style></head><body><h1>Situation Report</h1><pre style="white-space:pre-wrap">${body}</pre><footer>DRMSA Platform · Created by Diswayne Maarman · Apache 2.0</footer></body></html>`);
+  win.document.write(`<html><head><title>SITREP-${num}</title><style>body{font-family:Arial,sans-serif;padding:40px;max-width:700px;margin:0 auto;font-size:12px;line-height:1.7}h1{font-size:18px;color:#1a3a6b}pre{white-space:pre-wrap;font-family:Arial,sans-serif}footer{margin-top:40px;font-size:10px;color:#888;border-top:1px solid #eee;padding-top:12px}</style></head><body><h1>SITREP-${num} — ${_currentSitrep.incident_name||''}</h1><pre>${text}</pre><footer>DRMSA · ${muniName} Disaster Management Centre · Apache 2.0</footer></body></html>`);
   win.print();
-};
-
-window.copySitrepPDMC = function() {
-  const body = document.getElementById('sr-body')?.innerText || '';
-  navigator.clipboard?.writeText('[PDMC SUBMISSION]\n' + body);
-  alert('PDMC formatted text copied to clipboard.');
 };
 
 function showToast(msg, isError = false) {
