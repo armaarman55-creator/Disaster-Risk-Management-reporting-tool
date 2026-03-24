@@ -3,23 +3,17 @@ import { supabase, getCurrentUser } from './supabase.js';
 import { initApp } from './app.js';
 
 export async function initAuth() {
-  // ── INTERCEPT PASSWORD RESET LINK ────────────────────────
-  // Supabase appends #access_token=...&type=recovery to the reset URL
-  // It also exchanges the token automatically, creating a session.
-  // We must catch this BEFORE the normal session check or the app loads instead.
   const hashParams = new URLSearchParams(window.location.hash.replace('#', ''));
   const queryParams = new URLSearchParams(window.location.search);
   const isRecovery = hashParams.get('type') === 'recovery' ||
                      queryParams.get('type') === 'recovery';
 
   if (isRecovery) {
-    // Clear the hash so it doesn't persist on reload
     history.replaceState(null, '', window.location.pathname);
     showResetPasswordScreen();
     return;
   }
 
-  // Check existing session
   const { data: { session } } = await supabase.auth.getSession();
   if (session) {
     const user = await getCurrentUser();
@@ -35,7 +29,6 @@ export async function initAuth() {
   bindForgotPassword();
   bindGuestLogin();
 
-  // Switch to register if link clicked
   document.getElementById('switch-to-register')?.addEventListener('click', () => {
     showPanel('register');
   });
@@ -47,7 +40,6 @@ export async function initAuth() {
   });
 }
 
-// ── MUNICIPALITIES ─────────────────────────────────────────
 async function loadMunicipalities() {
   const sel = document.getElementById('reg-muni');
   if (!sel) return;
@@ -64,7 +56,6 @@ async function loadMunicipalities() {
     return;
   }
 
-  // Group by district
   const grouped = {};
   data.forEach(m => {
     const d = m.district || 'Other';
@@ -80,14 +71,12 @@ async function loadMunicipalities() {
     ).join('');
 }
 
-// ── PANEL SWITCHING ────────────────────────────────────────
 function showPanel(name) {
   document.getElementById('panel-login')?.classList.add('hidden');
   document.getElementById('panel-register')?.classList.add('hidden');
   document.getElementById('panel-reset')?.classList.add('hidden');
   document.getElementById(`panel-${name}`)?.classList.remove('hidden');
 
-  // Sync tab styling
   document.querySelectorAll('.auth-tab').forEach(t => {
     t.classList.toggle('on', t.dataset.tab === name);
   });
@@ -99,7 +88,6 @@ function bindTabSwitching() {
   });
 }
 
-// ── ROLE CARDS ─────────────────────────────────────────────
 function bindRoleCards() {
   document.querySelectorAll('.role-card').forEach(card => {
     card.addEventListener('click', () => {
@@ -109,7 +97,6 @@ function bindRoleCards() {
   });
 }
 
-// ── PASSWORD TOGGLES ───────────────────────────────────────
 function bindPasswordToggles() {
   document.querySelectorAll('.pw-toggle').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -129,7 +116,6 @@ function eyeOffIcon() {
   return `<svg viewBox="0 0 16 16"><path d="M2 2l12 12M6.7 6.7A2 2 0 0 0 9.3 9.3M3.4 3.4C2.1 4.5 1 6 1 8s2.5 5 7 5c1.5 0 2.9-.4 4-.9M6 3.2C6.6 3.1 7.3 3 8 3c4.5 0 7 5 7 5s-.7 1.4-2 2.6"/></svg>`;
 }
 
-// ── SIGN IN ────────────────────────────────────────────────
 function bindSignIn() {
   document.getElementById('btn-signin')?.addEventListener('click', async () => {
     const email    = document.getElementById('login-email')?.value.trim();
@@ -163,13 +149,11 @@ function bindSignIn() {
     await initApp(user);
   });
 
-  // Enter key on password field
   document.getElementById('login-pass')?.addEventListener('keydown', e => {
     if (e.key === 'Enter') document.getElementById('btn-signin')?.click();
   });
 }
 
-// ── GUEST LOGIN ────────────────────────────────────────────
 function bindGuestLogin() {
   document.getElementById('btn-guest')?.addEventListener('click', async () => {
     window._guestMode = true;
@@ -182,7 +166,6 @@ function bindGuestLogin() {
   });
 }
 
-// ── REGISTER ───────────────────────────────────────────────
 function bindRegister() {
   document.getElementById('btn-register')?.addEventListener('click', async () => {
     const email     = document.getElementById('reg-email')?.value.trim();
@@ -222,20 +205,10 @@ function bindRegister() {
       return;
     }
 
-    // Show success state
-    document.getElementById('panel-register').innerHTML = `
-      <div style="text-align:center;padding:20px 0">
-        <div style="width:52px;height:52px;background:var(--green-dim);border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 16px">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--green)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-        </div>
-        <div style="font-family:var(--font-display);font-size:18px;font-weight:700;color:var(--text);margin-bottom:8px">Registration submitted</div>
-        <div style="font-size:13px;color:var(--text3);line-height:1.7;margin-bottom:20px">Your account is pending approval by your Municipal Disaster Officer.<br>You'll receive an email when your account is activated.</div>
-        <button class="auth-btn auth-btn-secondary" style="max-width:200px;margin:0 auto" onclick="document.getElementById('switch-to-login').click()">Back to sign in</button>
-      </div>`;
+    document.getElementById('panel-register').innerHTML = `...`;
   });
 }
 
-// ── FORGOT PASSWORD ────────────────────────────────────────
 function bindForgotPassword() {
   document.getElementById('btn-reset')?.addEventListener('click', async () => {
     const email = document.getElementById('reset-email')?.value.trim();
@@ -262,94 +235,8 @@ function bindForgotPassword() {
   });
 }
 
-// ── PASSWORD RESET SCREEN (after clicking email link) ─────
-function showResetPasswordScreen() {
-  const authScreen = document.getElementById('auth-screen');
-  if (!authScreen) return;
-  authScreen.style.display = 'flex';
-  authScreen.style.opacity = '1';
-
-  const left = authScreen.querySelector('.auth-left');
-  if (!left) return;
-
-  // Replace auth-left content with reset form
-  left.innerHTML = `
-    <div class="auth-brand">
-      <div class="auth-brand-icon">
-        <svg viewBox="0 0 40 40" fill="none" width="40" height="40">
-          <polygon points="20,34 4,10 36,10" fill="#1a3a6b" stroke="white" stroke-width="1.8" stroke-linejoin="round"/>
-        </svg>
-      </div>
-      <div>
-        <div class="auth-brand-name">DRMSA</div>
-        <div class="auth-brand-sub">Risk Platform</div>
-      </div>
-    </div>
-    <div class="auth-heading">Set new password</div>
-    <div class="auth-sub">Choose a new password for your account.</div>
-    <div class="auth-error" id="newpw-error"></div>
-    <div class="auth-reset-msg" id="newpw-success"></div>
-    <div class="field-group">
-      <div class="field-label">New password</div>
-      <div class="pw-wrap">
-        <input class="field-input" type="password" id="newpw-input" placeholder="Min 8 characters" autocomplete="new-password"/>
-        <button class="pw-toggle" type="button" id="newpw-toggle">
-          <svg viewBox="0 0 16 16"><path d="M1 8s2.5-5 7-5 7 5 7 5-2.5 5-7 5-7-5-7-5z"/><circle cx="8" cy="8" r="2"/></svg>
-        </button>
-      </div>
-    </div>
-    <div class="field-group">
-      <div class="field-label">Confirm new password</div>
-      <div class="pw-wrap">
-        <input class="field-input" type="password" id="newpw-confirm" placeholder="Repeat password" autocomplete="new-password"/>
-        <button class="pw-toggle" type="button" id="newpw-confirm-toggle">
-          <svg viewBox="0 0 16 16"><path d="M1 8s2.5-5 7-5 7 5 7 5-2.5 5-7 5-7-5-7-5z"/><circle cx="8" cy="8" r="2"/></svg>
-        </button>
-      </div>
-    </div>
-    <button class="auth-btn auth-btn-primary" id="newpw-btn">Set new password</button>`;
-
-  // Toggle visibility buttons
-  document.getElementById('newpw-toggle')?.addEventListener('click', () => {
-    const inp = document.getElementById('newpw-input');
-    if (inp) inp.type = inp.type === 'password' ? 'text' : 'password';
-  });
-  document.getElementById('newpw-confirm-toggle')?.addEventListener('click', () => {
-    const inp = document.getElementById('newpw-confirm');
-    if (inp) inp.type = inp.type === 'password' ? 'text' : 'password';
-  });
-
-  document.getElementById('newpw-btn')?.addEventListener('click', async () => {
-    const pw      = document.getElementById('newpw-input')?.value;
-    const confirm = document.getElementById('newpw-confirm')?.value;
-    const errEl   = document.getElementById('newpw-error');
-    const sucEl   = document.getElementById('newpw-success');
-    const btn     = document.getElementById('newpw-btn');
-
-    if (!pw || pw.length < 8) { showError(errEl, 'Password must be at least 8 characters.'); return; }
-    if (pw !== confirm)        { showError(errEl, 'Passwords do not match.'); return; }
-
-    btn.textContent = 'Saving…'; btn.disabled = true;
-
-    const { error } = await supabase.auth.updateUser({ password: pw });
-
-    if (error) {
-      showError(errEl, error.message);
-      btn.textContent = 'Set new password'; btn.disabled = false;
-      return;
-    }
-
-    // Success — show message then load the app
-    sucEl.textContent = '✓ Password updated successfully! Signing you in…';
-    sucEl.classList.add('show');
-    btn.textContent = 'Done'; btn.disabled = true;
-
-    setTimeout(async () => {
-      const user = await getCurrentUser();
-      if (user) { hideAuth(); await initApp(user); }
-    }, 1500);
-  });
-}
+//  FIXED FUNCTION
+function showError(el, msg) {
   if (!el) return;
   el.textContent = msg;
   el.classList.add('show');
