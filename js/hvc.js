@@ -597,11 +597,13 @@ window.toggleHazardApplicable = function(id, checked) {
   if (!body) return;
   body.style.display = checked ? 'block' : 'none';
   if (checked) {
-    // Init ward picker if not already done for this hazard
-    if (!_hvcPickerInited.has(id)) {
-      initHvcWardPicker(id, _hvcWardSelections[id] || []);
-      _hvcPickerInited.add(id);
-    }
+    // Use rAF to ensure the body is visible in DOM before initialising picker
+    requestAnimationFrame(() => {
+      if (!_hvcPickerInited.has(id)) {
+        initHvcWardPicker(id, _hvcWardSelections[id] || []);
+        _hvcPickerInited.add(id);
+      }
+    });
   } else {
     if (chip) { chip.textContent = 'NOT APPLICABLE'; chip.className = 'badge b-gray'; }
     document.getElementById(`risk-val-${id}`).textContent = '—';
@@ -1093,7 +1095,7 @@ async function editAssessment(id) {
       : [];
     _hvcWardSelections[hid] = existingWards;
     _hvcPickerInited.add(hid);
-    initHvcWardPicker(hid, existingWards);
+    requestAnimationFrame(() => initHvcWardPicker(hid, existingWards));
 
     // Pre-fill role players
     const r1 = document.getElementById(`${hid}_r1`);
