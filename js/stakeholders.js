@@ -1,5 +1,6 @@
 // js/stakeholders.js — Stakeholder directory with hazard assignment, grouped exports
 import { supabase } from './supabase.js';
+import { showDownloadMenu } from './download.js';
 
 let _muniId = null;
 let _orgs    = [];
@@ -127,8 +128,7 @@ async function renderStakeholders() {
           <option value="">All sectors</option>
           ${SECTORS.map(s=>`<option value="${s}">${s}</option>`).join('')}
         </select>
-        <button class="btn btn-sm" id="export-csv-btn">↓ Export CSV</button>
-        <button class="btn btn-sm" id="export-pdf-btn">↓ Export PDF</button>
+        <button class="btn btn-sm" id="export-dl-btn">↓ Download</button>
         <button class="btn btn-red btn-sm" id="add-org-btn">+ Add organisation</button>
       </div>
     </div>
@@ -140,8 +140,15 @@ async function renderStakeholders() {
   requestAnimationFrame(() => {
     document.getElementById('add-org-btn')?.addEventListener('click', () => showOrgForm(null));
     document.getElementById('sector-filter')?.addEventListener('change', filterBySector);
-    document.getElementById('export-csv-btn')?.addEventListener('click', exportCSV);
-    document.getElementById('export-pdf-btn')?.addEventListener('click', exportPDF);
+    document.getElementById('export-dl-btn')?.addEventListener('click', function() {
+      const muniName = window._drmsaUser?.municipalities?.name || 'Municipality';
+      showDownloadMenu(this, {
+        filename: `DRMSA-stakeholders-${muniName.replace(/\s+/g,'-')}`,
+        getPDF:     () => exportPDF(),
+        getCSVRows: () => getStakeholderCSVRows(),
+        getDocHTML: () => getStakeholderDocHTML(muniName)
+      });
+    });
     bindOrgEvents();
   });
 }
@@ -445,11 +452,10 @@ function buildHazardGroups() {
   return { groups, unassigned };
 }
 
-// ── CSV EXPORT ────────────────────────────────────────────
-function exportCSV() {
-  const { groups, unassigned } = buildHazardGroups();
+// ── EXPORT HELPERS ────────────────────────────────────────
+function getStakeholderCSVRows() {
   const rows = [['Hazard Type','Category','Assigned Via','Organisation','Sector','Contact Name','Position','Cell','Direct Tel','Email','After Hours','Primary']];
-
+  const { groups, unassigned } = buildHazardGroups();
   Object.entries(groups).forEach(([hazard, entries]) => {
     const cat = getHazardCategory(hazard) || '';
     entries.forEach(({ org, contacts, via }) => {
@@ -462,7 +468,6 @@ function exportCSV() {
       }
     });
   });
-
   unassigned.forEach(org => {
     const contacts = org.stakeholder_contacts || [];
     if (!contacts.length) {
@@ -473,13 +478,47 @@ function exportCSV() {
       });
     }
   });
+  return rows;
+}
 
-  const csv  = rows.map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-  const url  = URL.createObjectURL(blob);
-  Object.assign(document.createElement('a'), { href: url, download: `DRMSA-stakeholders-by-hazard-${new Date().toISOString().slice(0,10)}.csv` }).click();
-  URL.revokeObjectURL(url);
-  showToast('✓ CSV downloaded — sort by Hazard Type in Excel');
+function getStakeholderDocHTML(muniName) {
+  const { groups, unassigned } = buildHazardGroups();
+  let html = `<h1>Stakeholder Directory</h1>
+  <div class="meta">${muniName} · Generated ${new Date().toLocaleString('en-ZA')} · Disaster Management Centre</div>
+  <hr style="border:none;border-top:2pt solid #1a3a6b;margin:10pt 0"/>`;
+
+  Object.entries(groups).forEach(([hazard, entries]) => {
+    const cat = getHazardCategory(hazard) || '';
+    html += `<h2>${hazard} <span style="font-size:9pt;font-weight:400;color:#666">${cat}</span></h2>
+    <table><thead><tr><th>Organisation</th><th>Contact</th><th>Position</th><th>Cell</th><th>Direct Tel</th><th>Email</th></tr></thead><tbody>`;
+    entries.forEach(({ org, contacts }) => {
+      if (!contacts.length) {
+        html += `<tr><td><strong>${org.name}</strong></td><td colspan="5" style="color:#aaa;font-style:italic">No contacts assigned</td></tr>`;
+      } else {
+        contacts.forEach((c, i) => {
+          html += `<tr><td>${i===0?`<strong>${org.name}</strong>`:''}</td><td>${c.full_name||'—'}${c.is_primary?' <span style="background:#e8f0fe;color:#1a3a6b;padding:1px 4px;border-radius:3px;font-size:8pt;font-weight:700">PRIMARY</span>':''}</td><td>${c.position||'—'}</td><td>${c.cell||'—'}</td><td>${c.direct_tel||'—'}</td><td>${c.email||'—'}</td></tr>`;
+        });
+      }
+    });
+    html += '</tbody></table>';
+  });
+
+  if (unassigned.length) {
+    html += `<h2>Unassigned <span style="font-size:9pt;font-weight:400;color:#666">No hazard linked</span></h2>
+    <table><thead><tr><th>Organisation</th><th>Sector</th><th>Contact</th><th>Position</th><th>Cell</th><th>Email</th></tr></thead><tbody>`;
+    unassigned.forEach(org => {
+      const contacts = org.stakeholder_contacts || [];
+      if (!contacts.length) {
+        html += `<tr><td><strong>${org.name}</strong></td><td>${org.sector||'—'}</td><td colspan="4" style="color:#aaa;font-style:italic">No contacts</td></tr>`;
+      } else {
+        contacts.forEach((c, i) => {
+          html += `<tr><td>${i===0?`<strong>${org.name}</strong>`:''}</td><td>${i===0?org.sector||'—':''}</td><td>${c.full_name||'—'}</td><td>${c.position||'—'}</td><td>${c.cell||'—'}</td><td>${c.email||'—'}</td></tr>`;
+        });
+      }
+    });
+    html += '</tbody></table>';
+  }
+  return html;
 }
 
 // ── PDF EXPORT ────────────────────────────────────────────
