@@ -281,7 +281,7 @@ let _selectedWards = [];
 function initWardPicker() {
   renderWardTags();
 
-  const search = document.getElementById('mf-ward-search');
+  const search   = document.getElementById('mf-ward-search');
   const dropdown = document.getElementById('mf-ward-dropdown');
   if (!search || !dropdown) return;
 
@@ -290,7 +290,7 @@ function initWardPicker() {
     if (!q) { dropdown.style.display = 'none'; return; }
 
     const matches = _wards.filter(w => {
-      const num = String(w.ward_number);
+      const num  = String(w.ward_number);
       const name = (w.area_name||'').toLowerCase();
       return (num.includes(q) || name.includes(q)) && !_selectedWards.includes(w.ward_number);
     }).slice(0, 12);
@@ -298,14 +298,18 @@ function initWardPicker() {
     if (!matches.length) { dropdown.style.display = 'none'; return; }
 
     dropdown.innerHTML = matches.map(w =>
-      `<div data-ward="${w.ward_number}" style="padding:7px 12px;cursor:pointer;border-bottom:1px solid var(--border);transition:background .1s"
-        onmouseenter="this.style.background='var(--bg3)'" onmouseleave="this.style.background=''"
+      `<div data-ward="${w.ward_number}"
+        style="padding:7px 12px;cursor:pointer;border-bottom:1px solid var(--border);transition:background .1s"
+        onmouseenter="this.style.background='var(--bg3)'"
+        onmouseleave="this.style.background=''"
         >Ward ${w.ward_number}${w.area_name?' — '+w.area_name:''}</div>`
     ).join('');
     dropdown.style.display = 'block';
 
+    // Use mousedown instead of click so it fires before the blur event closes dropdown
     dropdown.querySelectorAll('[data-ward]').forEach(item => {
-      item.addEventListener('click', () => {
+      item.addEventListener('mousedown', (e) => {
+        e.preventDefault(); // prevent search input losing focus
         _selectedWards.push(parseInt(item.dataset.ward));
         search.value = '';
         dropdown.style.display = 'none';
@@ -316,14 +320,10 @@ function initWardPicker() {
     });
   });
 
-  // Close dropdown on outside click — use { once: true } to prevent leak
-  setTimeout(() => {
-    document.addEventListener('click', function closeDD(e) {
-      if (!search.contains(e.target) && !dropdown.contains(e.target)) {
-        dropdown.style.display = 'none';
-      }
-    }, { once: false });
-  }, 100);
+  // Close on blur of search input
+  search.addEventListener('blur', () => {
+    setTimeout(() => { dropdown.style.display = 'none'; }, 150);
+  });
 }
 
 function renderWardTags() {
