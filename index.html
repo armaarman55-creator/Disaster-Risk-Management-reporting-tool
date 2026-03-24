@@ -101,22 +101,25 @@
               <svg viewBox="0 0 14 14" fill="none" style="stroke:#1a5fb4;stroke-width:1.5;width:14px;height:14px;stroke-linecap:round;stroke-linejoin:round"><path d="M7 2L12 11H2L7 2Z"/></svg>
             </div>
             <div class="role-card-name">Disaster Officer</div>
-            <div class="role-card-desc">Full edit access</div>
+            <div class="role-card-desc">Manages the platform, full access to all modules</div>
           </div>
           <div class="role-card" data-role="planner">
             <div class="role-card-icon" style="background:var(--amber-dim)">
               <svg viewBox="0 0 14 14" fill="none" style="stroke:var(--amber);stroke-width:1.5;width:14px;height:14px;stroke-linecap:round"><rect x="2" y="2" width="10" height="10" rx="1"/><path d="M4 5h6M4 8h4"/></svg>
             </div>
             <div class="role-card-name">IDP Planner</div>
-            <div class="role-card-desc">Mitigations &amp; IDP</div>
+            <div class="role-card-desc">Mitigation linking and IDP planning only</div>
           </div>
           <div class="role-card" data-role="viewer">
             <div class="role-card-icon" style="background:var(--blue-dim)">
               <svg viewBox="0 0 14 14" fill="none" style="stroke:var(--blue);stroke-width:1.5;width:14px;height:14px;stroke-linecap:round"><path d="M1 7s2.5-4.5 6-4.5S13 7 13 7s-2.5 4.5-6 4.5S1 7 1 7z"/><circle cx="7" cy="7" r="1.8"/></svg>
             </div>
             <div class="role-card-name">Viewer</div>
-            <div class="role-card-desc">Read-only</div>
+            <div class="role-card-desc">Read-only — for councillors &amp; stakeholders</div>
           </div>
+        </div>
+        <div style="font-size:11px;color:var(--text3);line-height:1.6;background:var(--bg3);border:1px solid var(--border);border-radius:var(--r-md);padding:8px 11px;margin-top:-6px">
+          💡 <strong style="color:var(--text2)">Already have an invite?</strong> Use the link in your email — you don't need to register here.
         </div>
       </div>
       <div class="field-row-2">
@@ -554,28 +557,44 @@ document.getElementById('footer-signout-top')?.addEventListener('click', async (
   const search = document.getElementById('map-ward-search');
   const dd     = document.getElementById('map-ward-dd');
   if (!search || !dd) return;
+
   search.addEventListener('input', () => {
     const q = search.value.trim().toLowerCase();
     if (!q) { dd.style.display = 'none'; return; }
+
+    // Read centroids at input time — may not be ready on first keystroke
+    // but will be ready by the time user has typed enough to select
     const centroids = window._drmsaWardCentroids || {};
     const nums = Object.keys(centroids).map(Number);
+    if (!nums.length) {
+      dd.innerHTML = '<div style="padding:8px 12px;font-size:11px;color:var(--text3)">Map not loaded yet</div>';
+      dd.style.display = 'block';
+      return;
+    }
+
     const matches = nums.filter(w => String(w).includes(q)).slice(0, 12);
     if (!matches.length) { dd.style.display = 'none'; return; }
+
     dd.innerHTML = matches.map(w =>
-      `<div data-ward="${w}" style="padding:6px 10px;cursor:pointer;border-bottom:1px solid var(--border);transition:background .1s"
-        onmouseenter="this.style.background='var(--bg3)'" onmouseleave="this.style.background=''">Ward ${w}</div>`
+      `<div data-ward="${w}"
+        style="padding:6px 10px;cursor:pointer;border-bottom:1px solid var(--border);font-size:11px;transition:background .1s"
+        onmouseenter="this.style.background='var(--bg3)'"
+        onmouseleave="this.style.background=''">Ward ${w}</div>`
     ).join('');
     dd.style.display = 'block';
+
     dd.querySelectorAll('[data-ward]').forEach(item => {
-      item.addEventListener('click', () => {
+      item.addEventListener('mousedown', (e) => {
+        e.preventDefault();
         window._drmsaZoomToWard?.(parseInt(item.dataset.ward));
         search.value = '';
         dd.style.display = 'none';
       });
     });
   });
-  document.addEventListener('click', e => {
-    if (!search.contains(e.target) && !dd.contains(e.target)) dd.style.display = 'none';
+
+  search.addEventListener('blur', () => {
+    setTimeout(() => { dd.style.display = 'none'; }, 150);
   });
 })();
 
