@@ -1,6 +1,7 @@
 // js/hvc.js — Full HVC Assessment Tool (Annexure 3 intact)
 import { supabase } from './supabase.js';
 import { writeAudit } from './audit.js';
+import { showDownloadMenu, docHeader } from './download.js';
 
 function showToast(msg, isError=false) {
   document.querySelectorAll('.drmsa-toast').forEach(t => t.remove());
@@ -307,8 +308,7 @@ function renderAssessmentList(assessments) {
             <span class="badge ${a.status==='complete'?'b-green':'b-amber'}">${(a.status||'draft').toUpperCase()}</span>
             <button class="btn btn-sm" data-open="${a.id}">View</button>
             <button class="btn btn-sm btn-green" data-edit="${a.id}">Edit</button>
-            <button class="btn btn-sm" data-export-pdf="${a.id}" data-label="${a.label||a.season+' '+a.year}">↓ PDF</button>
-            <button class="btn btn-sm" data-export-csv="${a.id}" data-label="${a.label||a.season+' '+a.year}">↓ CSV</button>
+            <button class="btn btn-sm" data-download="${a.id}" data-label="${a.label||a.season+' '+a.year}">↓ Download</button>
             <button class="btn btn-sm btn-red" data-delete="${a.id}" data-label="${a.label||a.season+' '+a.year}">Delete</button>
           </div>
         </div>
@@ -317,27 +317,34 @@ function renderAssessmentList(assessments) {
 }
 
 function bindListEvents() {
-  // View
   document.querySelectorAll('[data-open]').forEach(btn => {
     btn.addEventListener('click', () => openAssessment(btn.dataset.open));
   });
 
-  // Export PDF
-  document.querySelectorAll('[data-export-pdf]').forEach(btn => {
-    btn.addEventListener('click', () => exportAssessmentPDF(btn.dataset.exportPdf, btn.dataset.label));
+  document.querySelectorAll('[data-download]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const id    = btn.dataset.download;
+      const label = btn.dataset.label;
+      const muniName = _user?.municipalities?.name || 'Municipality';
+      const [scoresRes, assessRes] = await Promise.all([
+        supabase.from('hvc_hazard_scores').select('*').eq('assessment_id', id).order('risk_rating', { ascending: false }),
+        supabase.from('hvc_assessments').select('*').eq('id', id).single()
+      ]);
+      const scores = scoresRes.data || [];
+      const assessment = assessRes.data || {};
+      showDownloadMenu(btn, {
+        filename: `HVC-${label.replace(/\s+/g,'-')}-${muniName.replace(/\s+/g,'-')}`,
+        getPDF:     () => exportAssessmentPDF(id, label),
+        getCSVRows: () => getHVCCSVRows(scores, assessment, muniName),
+        getDocHTML: () => getHVCDocHTML(scores, assessment, muniName)
+      });
+    });
   });
 
-  // Export CSV
-  document.querySelectorAll('[data-export-csv]').forEach(btn => {
-    btn.addEventListener('click', () => exportAssessmentCSV(btn.dataset.exportCsv, btn.dataset.label));
-  });
-
-  // Edit
   document.querySelectorAll('[data-edit]').forEach(btn => {
     btn.addEventListener('click', () => editAssessment(btn.dataset.edit));
   });
 
-  // Delete
   document.querySelectorAll('[data-delete]').forEach(btn => {
     btn.addEventListener('click', () => deleteAssessment(btn.dataset.delete, btn.dataset.label));
   });
@@ -804,10 +811,12 @@ function bindFormEvents() {
     document.getElementById('custom-h-name').value = '';
   });
 
-  // Preview matrix
-  document.getElementById('preview-matrix-btn')?.addEventListener('click', () => {
-    const wrap = document.getElementById('risk-matrix-wrap');
-    if (wrap) { wrap.style.display = wrap.style.display==='none' ? 'block' : 'none'; }
+  // Preview matrix — bind after form renders
+  requestAnimationFrame(() => {
+    document.getElementById('preview-matrix-btn')?.addEventListener('click', () => {
+      const wrap = document.getElementById('risk-matrix-wrap');
+      if (wrap) wrap.style.display = wrap.style.display === 'none' ? 'block' : 'none';
+    });
   });
 
   // Save
@@ -895,8 +904,10 @@ async function saveAssessment() {
 
   // Show success toast
   showToast('✓ Assessment saved! Dashboard will update automatically.');
-  _assessmentSaving = false;
-  setTimeout(() => renderHVCPage(), 1500);
+  setTimeout(async () => {
+    await renderHVCPage();
+    _assessmentSaving = false;
+  }, 1500);
 }
 
 function buildRow(id, hazard, cat, s) {
@@ -941,8 +952,7 @@ async function openAssessment(id) {
       <div style="display:flex;gap:6px;flex-wrap:wrap">
         <button class="btn btn-sm" id="show-matrix">Risk matrix</button>
         <button class="btn btn-sm btn-green" id="view-edit">Edit assessment</button>
-        <button class="btn btn-sm btn-green" id="view-export-pdf">↓ Export PDF</button>
-        <button class="btn btn-sm btn-green" id="view-export-csv">↓ Export CSV</button>
+        <button class="btn btn-sm" id="view-download-btn">↓ Download</button>
         <button class="btn btn-sm btn-red" id="view-delete">Delete assessment</button>
       </div>
     </div>
@@ -999,8 +1009,15 @@ async function openAssessment(id) {
     if (m) m.style.display = m.style.display==='none'?'block':'none';
   });
   document.getElementById('view-edit')?.addEventListener('click', () => editAssessment(id));
-  document.getElementById('view-export-pdf')?.addEventListener('click', () => exportAssessmentPDF(id, label));
-  document.getElementById('view-export-csv')?.addEventListener('click', () => exportAssessmentCSV(id, label));
+  document.getElementById('view-download-btn')?.addEventListener('click', function() {
+    const muniName = _user?.municipalities?.name || 'Municipality';
+    showDownloadMenu(this, {
+      filename: `HVC-${label.replace(/\s+/g,'-')}-${muniName.replace(/\s+/g,'-')}`,
+      getPDF:     () => exportAssessmentPDF(id, label),
+      getCSVRows: () => getHVCCSVRows(scores, assessment, muniName),
+      getDocHTML: () => getHVCDocHTML(scores, assessment, muniName)
+    });
+  });
   document.getElementById('view-delete')?.addEventListener('click', () => deleteAssessment(id, label));
 }
 
@@ -1211,6 +1228,42 @@ This will permanently remove all hazard scores for this assessment. This cannot 
   await writeAudit('delete', 'hvc_assessment', id, `Deleted HVC Assessment: ${label}`, { label }, null);
   showToast('✓ Assessment deleted');
   await renderHVCPage();
+}
+
+// ── DOWNLOAD HELPERS ─────────────────────────────────────
+function getHVCCSVRows(scores, assessment, muniName) {
+  const rows = [['Rank','Hazard','Category','H.Score','V.Score','C.Score','Resilience','Risk Rating','Band','Priority','Level','Wards']];
+  scores.forEach((s, i) => {
+    rows.push([
+      i+1, s.hazard_name, s.hazard_category||'',
+      s.hazard_score?.toFixed(2)||'', s.vulnerability_score?.toFixed(2)||'',
+      s.capacity_score?.toFixed(2)||'', s.resilience_index?.toFixed(3)||'',
+      s.risk_rating?.toFixed(2)||'', s.risk_band||'',
+      s.priority_index?.toFixed(2)||'', s.priority_level||'',
+      Array.isArray(s.affected_wards) ? s.affected_wards.join('; ') : ''
+    ]);
+  });
+  return rows;
+}
+
+function getHVCDocHTML(scores, assessment, muniName) {
+  const label = assessment.label || `${assessment.season||''} ${assessment.year||''}`;
+  let rows = scores.map((s,i) => `
+    <tr>
+      <td>${i+1}</td><td><strong>${s.hazard_name}</strong></td><td>${s.hazard_category||'—'}</td>
+      <td>${s.hazard_score?.toFixed(2)||'—'}</td><td>${s.vulnerability_score?.toFixed(2)||'—'}</td>
+      <td>${s.capacity_score?.toFixed(2)||'—'}</td><td>${s.resilience_index?.toFixed(3)||'—'}</td>
+      <td><strong>${s.risk_rating?.toFixed(2)||'—'}</strong></td><td>${s.risk_band||'—'}</td>
+      <td>${s.priority_level||'—'}</td>
+      <td>${Array.isArray(s.affected_wards)&&s.affected_wards.length?'Wards '+s.affected_wards.join(', '):'—'}</td>
+    </tr>`).join('');
+  return `${docHeader(`HVC Assessment — ${label}`, muniName, `Lead assessor: ${assessment.lead_assessor||'—'}`)}
+  <h2>Risk Ranking — ${scores.length} hazards scored</h2>
+  <table>
+    <thead><tr><th>#</th><th>Hazard</th><th>Category</th><th>H.Score</th><th>V.Score</th><th>C.Score</th><th>Resilience</th><th>Risk Rating</th><th>Band</th><th>Priority</th><th>Wards</th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table>
+  <p class="meta">Formula: Risk Rating = Hazard Score × (Vulnerability ÷ Capacity) | DMA Act 57 of 2002 · Annexure 3</p>`;
 }
 
 // ── EXPORT PDF ────────────────────────────────────────────
