@@ -124,39 +124,62 @@ async function loadUsers() {
 
 function showInviteForm() {
   const area = document.getElementById('invite-form-area');
-  if (!area || area.innerHTML) { area.innerHTML = ''; return; }
+  if (!area) return;
+  if (area.innerHTML) { area.innerHTML = ''; return; }
   area.innerHTML = `
     <div style="padding:14px 16px;background:var(--bg3);border-bottom:1px solid var(--border)">
+      <div style="font-size:11px;color:var(--text3);margin-bottom:10px;line-height:1.6">
+        Invite personnel to access your municipality's DRMSA instance. Each invited user receives an email with a secure link to set their password.
+      </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
         <div class="fl"><span class="fl-label">Full name</span><input class="fl-input" id="inv-name" placeholder="Full name"/></div>
-        <div class="fl"><span class="fl-label">Email</span><input class="fl-input" id="inv-email" type="email" placeholder="email@example.com"/></div>
+        <div class="fl"><span class="fl-label">Work email</span><input class="fl-input" id="inv-email" type="email" placeholder="email@municipality.gov.za"/></div>
       </div>
       <div style="display:flex;gap:8px;align-items:center">
         <select class="fl-sel" id="inv-role" style="flex:1">
-          <option value="disaster_officer">Disaster Officer</option>
+          <option value="disaster_officer">Disaster Risk Management Official</option>
           <option value="planner">IDP Planner</option>
-          <option value="viewer">Viewer</option>
+          <option value="viewer">Viewer / Read-only</option>
           ${_user?.role === 'admin' ? '<option value="admin">System Admin</option>' : ''}
         </select>
         <button class="btn btn-green btn-sm" id="send-inv-btn">Send invite</button>
-        <button class="btn btn-sm" onclick="document.getElementById('invite-form-area').innerHTML=''">Cancel</button>
+        <button class="btn btn-sm" onclick="document.getElementById('invite-form-area').innerHTML=''">Done</button>
       </div>
       <div id="inv-error" style="font-size:12px;color:var(--red);margin-top:6px;display:none"></div>
+      <div id="inv-sent-list" style="margin-top:10px"></div>
     </div>`;
 
   document.getElementById('send-inv-btn')?.addEventListener('click', async () => {
-    const email = document.getElementById('inv-email')?.value.trim();
-    const name  = document.getElementById('inv-name')?.value.trim();
-    const role  = document.getElementById('inv-role')?.value;
-    const errEl = document.getElementById('inv-error');
+    const email  = document.getElementById('inv-email')?.value.trim();
+    const name   = document.getElementById('inv-name')?.value.trim();
+    const role   = document.getElementById('inv-role')?.value;
+    const errEl  = document.getElementById('inv-error');
+    const sentEl = document.getElementById('inv-sent-list');
+    const btn    = document.getElementById('send-inv-btn');
     if (!email || !name) { errEl.textContent='Name and email required'; errEl.style.display='block'; return; }
 
+    btn.textContent = 'Sending…'; btn.disabled = true;
+    errEl.style.display = 'none';
+
     const { error } = await supabase.auth.admin.inviteUserByEmail(email, {
-      data: { full_name: name, municipality_id: _user.municipality_id, role, invited_by_admin: 'true' }
+      data: { full_name: name, municipality_id: _user.municipality_id, user_role: role, invited_by_admin: 'true' }
     });
 
-    if (error) { errEl.textContent = error.message; errEl.style.display='block'; }
-    else { document.getElementById('invite-form-area').innerHTML=''; showToast(`Invite sent to ${email}`); await loadUsers(); }
+    if (error) {
+      errEl.textContent = error.message; errEl.style.display = 'block';
+    } else {
+      // Show sent confirmation and clear fields for next invite
+      const roleLabel = { disaster_officer: 'DRMO', planner: 'IDP Planner', viewer: 'Viewer', admin: 'Admin' }[role] || role;
+      sentEl.innerHTML += `<div style="font-size:11px;color:var(--green);padding:4px 0;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px">
+        <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="var(--green)" stroke-width="2" stroke-linecap="round"><polyline points="1,5 4,8 9,2"/></svg>
+        ${name} &lt;${email}&gt; — ${roleLabel}
+      </div>`;
+      document.getElementById('inv-name').value = '';
+      document.getElementById('inv-email').value = '';
+      showToast(`Invite sent to ${email}`);
+      await loadUsers();
+    }
+    btn.textContent = 'Send invite'; btn.disabled = false;
   });
 }
 
@@ -183,30 +206,15 @@ async function loadMuniSettings() {
     <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border)">
       <div style="font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--text3);font-family:monospace;margin-bottom:4px">Municipality ID</div>
       <div style="font-size:10px;color:var(--text3);font-family:monospace;word-break:break-all">${muni.id}</div>
-    </div>
-
-    <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border)">
-      <div style="font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--text3);font-family:monospace;margin-bottom:10px">Social media links</div>
-      <div style="font-size:12px;color:var(--text3);margin-bottom:10px;line-height:1.6">
-        These links are used when sharing content to social platforms. If not set, a prompt will appear asking users to add them first.
-      </div>
-      <div class="fl"><span class="fl-label">Facebook page URL</span><input class="fl-input" id="ms-facebook" value="${muni.social_facebook||''}" placeholder="https://facebook.com/YourMunicipality"/></div>
-      <div class="fl"><span class="fl-label">X / Twitter handle</span><input class="fl-input" id="ms-twitter" value="${muni.social_twitter||''}" placeholder="@YourMunicipality (without @)"/></div>
-      <div class="fl"><span class="fl-label">WhatsApp number (with country code)</span><input class="fl-input" id="ms-whatsapp" value="${muni.social_whatsapp||''}" placeholder="27821234567"/></div>
-      <div class="fl"><span class="fl-label">Municipality website</span><input class="fl-input" id="ms-website" value="${muni.social_website||''}" placeholder="https://www.yourmunicipality.gov.za"/></div>
     </div>`;
 
   document.getElementById('save-ms-btn')?.addEventListener('click', async () => {
     const { error } = await supabase.from('municipalities').update({
-      name:             document.getElementById('ms-name')?.value,
-      code:             document.getElementById('ms-code')?.value,
-      ward_count:       parseInt(document.getElementById('ms-wards')?.value)||0,
-      district:         document.getElementById('ms-district')?.value,
-      province:         document.getElementById('ms-province')?.value,
-      social_facebook:  document.getElementById('ms-facebook')?.value.trim()||null,
-      social_twitter:   document.getElementById('ms-twitter')?.value.trim()||null,
-      social_whatsapp:  document.getElementById('ms-whatsapp')?.value.trim()||null,
-      social_website:   document.getElementById('ms-website')?.value.trim()||null,
+      name:       document.getElementById('ms-name')?.value,
+      code:       document.getElementById('ms-code')?.value,
+      ward_count: parseInt(document.getElementById('ms-wards')?.value)||0,
+      district:   document.getElementById('ms-district')?.value,
+      province:   document.getElementById('ms-province')?.value,
     }).eq('id', _user.municipality_id);
     if (!error) {
       await writeAudit('update','municipality_settings',_user.municipality_id,'Municipality settings updated');
@@ -354,7 +362,12 @@ function initials(name) {
 }
 
 function roleLabel(r) {
-  return { admin:'Admin', disaster_officer:'Disaster Officer', planner:'IDP Planner', viewer:'Viewer' }[r] || r || '—';
+  return {
+    admin: 'System Admin',
+    disaster_officer: 'Disaster Risk Management Official',
+    planner: 'IDP Planner',
+    viewer: 'Viewer'
+  }[r] || r || '—';
 }
 
 function showToast(msg, isError=false) {
