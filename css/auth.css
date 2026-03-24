@@ -2,9 +2,9 @@
 .hidden{display:none!important}
 
 /* ── AUTH SCREEN ── */
-.auth-screen{position:fixed;inset:0;background:var(--bg);display:flex;align-items:stretch;z-index:1000;overflow-y:auto}
+.auth-screen{position:fixed;inset:0;background:var(--bg);display:flex;align-items:stretch;z-index:1000;overflow-y:auto;min-height:-webkit-fill-available}
 
-.auth-left{width:480px;flex-shrink:0;background:var(--bg2);border-right:1px solid var(--border);display:flex;flex-direction:column;padding:36px 44px;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain}
+.auth-left{width:480px;max-width:100%;flex-shrink:0;background:var(--bg2);border-right:1px solid var(--border);display:flex;flex-direction:column;padding:36px 44px;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain}
 
 /* Brand */
 .auth-brand{display:flex;align-items:center;gap:12px;margin-bottom:36px}
@@ -94,3 +94,31 @@
 .auth-reset-msg.show{display:block}
 .admin-info-box{background:var(--blue-dim);border:1px solid rgba(88,166,255,.2);border-radius:var(--r-md);padding:11px 13px;font-size:12px;color:var(--text2);line-height:1.7;margin-top:12px;font-family:Inter,system-ui,sans-serif}
 .admin-info-box strong{color:var(--blue)}
+
+/* ── MOBILE RESPONSIVE ── */
+@media (max-width: 520px) {
+  .auth-left {
+    padding: 24px 20px;
+    width: 100%;
+  }
+  .field-row-2 {
+    grid-template-columns: 1fr;
+  }
+  .role-cards {
+    grid-template-columns: 1fr;
+  }
+  .auth-brand {
+    margin-bottom: 24px;
+  }
+}
+@media (max-width: 380px) {
+  .auth-left {
+    padding: 18px 14px;
+  }
+  .auth-heading {
+    font-size: 20px;
+  }
+  .auth-brand-name {
+    font-size: 18px;
+  }
+}
