@@ -109,7 +109,9 @@ async function loadAssessmentData() {
   if ((wards||[]).length) {
     const risks = [...new Set((wards||[]).map(w => w.dominant_risk))];
     console.log('  Unique dominant_risk values:', risks);
-    if (risks.every(r => !r)) console.warn('  All dominant_risk values are NULL — run SQL 18_fix_ward_risk_fallback.sql');
+    if (risks.every(r => !r) && (assessments||[]).length > 0) {
+      console.warn('  All dominant_risk values are NULL — run SQL 18_fix_ward_risk_fallback.sql');
+    }
   }
 
   // Populate assessment selector
@@ -881,6 +883,44 @@ function initDashboardEvents() {
   document.getElementById('assess-sel-top')?.addEventListener('change', e => selectAssessment(e.target.value));
   document.getElementById('assess-map')?.addEventListener('change', e => selectAssessment(e.target.value));
   document.getElementById('trend-sel')?.addEventListener('change', e => renderTrend(parseInt(e.target.value)));
+
+  // Ward search on hazard map — init here so app is loaded and elements are visible
+  const mapSearch = document.getElementById('map-ward-search');
+  const mapDd     = document.getElementById('map-ward-dd');
+  if (mapSearch && mapDd && !mapSearch._searchInited) {
+    mapSearch._searchInited = true;
+    mapSearch.addEventListener('input', () => {
+      const q = mapSearch.value.trim().toLowerCase();
+      if (!q) { mapDd.style.display = 'none'; return; }
+      const centroids = _wardCentroids;
+      const nums = Object.keys(centroids).map(Number);
+      if (!nums.length) {
+        mapDd.innerHTML = '<div style="padding:8px 12px;font-size:11px;color:var(--text3)">Map not loaded yet — complete an HVC assessment first</div>';
+        mapDd.style.display = 'block';
+        return;
+      }
+      const matches = nums.filter(w => String(w).includes(q)).slice(0, 12);
+      if (!matches.length) { mapDd.style.display = 'none'; return; }
+      mapDd.innerHTML = matches.map(w =>
+        `<div data-ward="${w}"
+          style="padding:6px 10px;cursor:pointer;border-bottom:1px solid var(--border);font-size:11px;transition:background .1s"
+          onmouseenter="this.style.background='var(--bg3)'"
+          onmouseleave="this.style.background=''">Ward ${w}</div>`
+      ).join('');
+      mapDd.style.display = 'block';
+      mapDd.querySelectorAll('[data-ward]').forEach(item => {
+        item.addEventListener('mousedown', e => {
+          e.preventDefault();
+          zoomToWard(parseInt(item.dataset.ward));
+          mapSearch.value = '';
+          mapDd.style.display = 'none';
+        });
+      });
+    });
+    mapSearch.addEventListener('blur', () => {
+      setTimeout(() => { mapDd.style.display = 'none'; }, 150);
+    });
+  }
   // Layer toggle — Hazard shows risk colours, Shelters shows shelter dots
   document.querySelectorAll('.lyr').forEach(btn => {
     btn.addEventListener('click', async () => {
