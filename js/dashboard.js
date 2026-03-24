@@ -190,46 +190,60 @@ async function renderWardMap(neutralMode = false) {
 
   g.innerHTML = '<text x="155" y="95" text-anchor="middle" font-size="10" fill="var(--text3)" font-family="monospace">Loading ward boundaries…</text>';
 
-  // Build wardRisk from TWO sources - prefer explicit ward assignments,
-  // fall back to municipality-wide highest risk if no ward has been assigned
+  // Build wardRisk using COMPOSITE scoring — weighted average + 20% peak penalty
+  // This prevents one high-rating hazard from turning the entire map red
   const wardRisk = {};
+  const wardPeak = {}; // track peak hazard per ward for border colour
   const hazards  = neutralMode ? [] : (_assessmentData?.hazards || []);
 
-  // Method 1: explicit affected_wards on each hazard score
   const RISK_ORDER = ['Extremely High','High','Tolerable','Low','Negligible'];
+
+  // Collect all hazard ratings per ward
+  const wardRatings = {}; // wardNum → [riskRating, ...]
   hazards.forEach(h => {
     if (!Array.isArray(h.affected_wards) || h.affected_wards.length === 0) return;
-    const band = h.risk_band || ratingToBand(h.risk_rating);
+    const rating = h.risk_rating ?? null;
+    const band   = h.risk_band || ratingToBand(rating);
     if (!band) return;
     h.affected_wards.forEach(wNum => {
-      const cur = wardRisk[wNum];
+      if (!wardRatings[wNum]) wardRatings[wNum] = [];
+      if (rating !== null) wardRatings[wNum].push(rating);
+      // Track peak band per ward
+      const cur = wardPeak[wNum];
       if (!cur || RISK_ORDER.indexOf(band) < RISK_ORDER.indexOf(cur)) {
-        wardRisk[wNum] = band;
+        wardPeak[wNum] = band;
       }
     });
   });
 
-  // Method 2: wards table dominant_risk (set by DB function after save)
+  // Apply composite formula: avg + 0.2 × (peak - avg)
+  Object.entries(wardRatings).forEach(([wNum, ratings]) => {
+    if (!ratings.length) return;
+    const avg  = ratings.reduce((a, b) => a + b, 0) / ratings.length;
+    const peak = Math.max(...ratings);
+    const composite = avg + 0.2 * (peak - avg);
+    wardRisk[wNum] = ratingToBand(composite);
+  });
+
+  // Method 2: wards table dominant_risk (fallback for wards with no explicit assignment)
   _wardData.forEach(w => {
     if (w.dominant_risk && !wardRisk[w.ward_number]) {
       wardRisk[w.ward_number] = w.dominant_risk;
     }
   });
 
-  // Method 3: if still no ward colours, use the highest overall risk
-  // to colour all wards equally (gives at least some visual feedback)
+  // Method 3: if still no ward colours, use composite of ALL hazards across municipality
   const allWardNums = _wardData.map(w => w.ward_number);
   const hasAnyColour = allWardNums.some(n => wardRisk[n]);
   if (!hasAnyColour && hazards.length > 0) {
-    const topBand = hazards.reduce((best, h) => {
-      const band = h.risk_band || ratingToBand(h.risk_rating);
-      if (!band) return best;
-      if (!best || RISK_ORDER.indexOf(band) < RISK_ORDER.indexOf(best)) return band;
-      return best;
-    }, null);
-    if (topBand) {
+    const allRatings = hazards.map(h => h.risk_rating).filter(r => r !== null && r !== undefined);
+    if (allRatings.length) {
+      const avg  = allRatings.reduce((a, b) => a + b, 0) / allRatings.length;
+      const peak = Math.max(...allRatings);
+      const composite = avg + 0.2 * (peak - avg);
+      const topBand = ratingToBand(composite);
       allWardNums.forEach(n => { wardRisk[n] = topBand; });
-      console.log('[Dashboard] No ward-specific risk data — colouring all wards with top band:', topBand);
+      console.log('[Dashboard] No ward-specific data — composite municipality band:', topBand);
     }
   }
 
@@ -304,6 +318,11 @@ async function renderWardMap(neutralMode = false) {
       const rawRisk2 = wardRisk[parseInt(wardNo)] || 'Negligible';
       const risk   = Object.keys(RISK_COLOURS).find(k => k.toLowerCase() === rawRisk2.toLowerCase()) || rawRisk2;
       const fill   = RISK_COLOURS[risk] || '#6e7681';
+      const peakBand = wardPeak[parseInt(wardNo)];
+      const strokeCol = peakBand && peakBand !== risk
+        ? (RISK_COLOURS[peakBand] || fill)
+        : fill;
+      const strokeW = peakBand && peakBand !== risk ? '2' : '0.6';
       const geom   = f.geometry;
       if (!geom) return;
       const rings  = geom.type==='MultiPolygon' ? geom.coordinates.flat(1) : geom.coordinates;
@@ -314,8 +333,8 @@ async function renderWardMap(neutralMode = false) {
         poly.setAttribute('points', pts);
         poly.setAttribute('fill', fill);
         poly.setAttribute('fill-opacity','0.45');
-        poly.setAttribute('stroke', fill);
-        poly.setAttribute('stroke-width','0.6');
+        poly.setAttribute('stroke', strokeCol);
+        poly.setAttribute('stroke-width', strokeW);
         poly.style.cursor = 'pointer';
         poly.addEventListener('mouseenter', function(){ this.setAttribute('fill-opacity','0.75'); });
         poly.addEventListener('mouseleave', function(){ this.setAttribute('fill-opacity','0.45'); });
@@ -333,6 +352,8 @@ async function renderWardMap(neutralMode = false) {
       const cy = allPts.reduce((s,p)=>s+p[1],0)/allPts.length;
       // Store centroid for ward search zoom
       _wardCentroids[parseInt(wardNo)] = { cx, cy };
+      // Keep global in sync immediately after each ward
+      window._drmsaWardCentroids = _wardCentroids;
       const t  = document.createElementNS('http://www.w3.org/2000/svg','text');
       t.setAttribute('x', cx.toFixed(1)); t.setAttribute('y', cy.toFixed(1));
       t.setAttribute('text-anchor','middle'); t.setAttribute('dominant-baseline','central');
@@ -350,9 +371,14 @@ async function renderWardMap(neutralMode = false) {
       const rawRisk = wardRisk[idx+1] || 'Negligible';
       const risk = Object.keys(RISK_COLOURS).find(k => k.toLowerCase() === rawRisk.toLowerCase()) || rawRisk;
       const fill = RISK_COLOURS[risk] || '#6e7681';
+      const peakBand = wardPeak[idx+1];
+      const strokeCol = peakBand && peakBand !== risk ? (RISK_COLOURS[peakBand] || fill) : fill;
+      const strokeW   = peakBand && peakBand !== risk ? '2' : '1.2';
       const poly = document.createElementNS('http://www.w3.org/2000/svg','polygon');
       poly.setAttribute('points',wp.pts); poly.setAttribute('fill',fill);
-      poly.setAttribute('fill-opacity','0.42'); poly.setAttribute('stroke',fill); poly.setAttribute('stroke-width','1.2');
+      poly.setAttribute('fill-opacity','0.42');
+      poly.setAttribute('stroke', strokeCol);
+      poly.setAttribute('stroke-width', strokeW);
       poly.style.cursor='pointer';
       poly.addEventListener('mouseenter',function(){this.setAttribute('fill-opacity','0.68');});
       poly.addEventListener('mouseleave',function(){this.setAttribute('fill-opacity','0.42');});
@@ -366,6 +392,7 @@ async function renderWardMap(neutralMode = false) {
       const cx=pts.reduce((s,p)=>s+p[0],0)/pts.length;
       const cy=pts.reduce((s,p)=>s+p[1],0)/pts.length;
       _wardCentroids[idx+1] = { cx, cy };
+      window._drmsaWardCentroids = _wardCentroids;
       const t=document.createElementNS('http://www.w3.org/2000/svg','text');
       t.setAttribute('x',cx.toFixed(1)); t.setAttribute('y',cy.toFixed(1));
       t.setAttribute('text-anchor','middle'); t.setAttribute('dominant-baseline','central');
