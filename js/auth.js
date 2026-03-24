@@ -3,6 +3,22 @@ import { supabase, getCurrentUser } from './supabase.js';
 import { initApp } from './app.js';
 
 export async function initAuth() {
+  // ── INTERCEPT PASSWORD RESET LINK ────────────────────────
+  // Supabase appends #access_token=...&type=recovery to the reset URL
+  // It also exchanges the token automatically, creating a session.
+  // We must catch this BEFORE the normal session check or the app loads instead.
+  const hashParams = new URLSearchParams(window.location.hash.replace('#', ''));
+  const queryParams = new URLSearchParams(window.location.search);
+  const isRecovery = hashParams.get('type') === 'recovery' ||
+                     queryParams.get('type') === 'recovery';
+
+  if (isRecovery) {
+    // Clear the hash so it doesn't persist on reload
+    history.replaceState(null, '', window.location.pathname);
+    showResetPasswordScreen();
+    return;
+  }
+
   // Check existing session
   const { data: { session } } = await supabase.auth.getSession();
   if (session) {
@@ -127,9 +143,10 @@ function bindSignIn() {
 
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) {
-      showError(errEl, error.message === 'Invalid login credentials'
-        ? 'Incorrect email or password.'
-        : error.message);
+      const msg = error.message === 'Invalid login credentials'
+        ? 'Incorrect email or password. If you just registered, please check your inbox and confirm your email first.'
+        : error.message;
+      showError(errEl, msg);
       btn.textContent = 'Sign in'; btn.disabled = false;
       return;
     }
@@ -245,8 +262,94 @@ function bindForgotPassword() {
   });
 }
 
-// ── HELPERS ────────────────────────────────────────────────
-function showError(el, msg) {
+// ── PASSWORD RESET SCREEN (after clicking email link) ─────
+function showResetPasswordScreen() {
+  const authScreen = document.getElementById('auth-screen');
+  if (!authScreen) return;
+  authScreen.style.display = 'flex';
+  authScreen.style.opacity = '1';
+
+  const left = authScreen.querySelector('.auth-left');
+  if (!left) return;
+
+  // Replace auth-left content with reset form
+  left.innerHTML = `
+    <div class="auth-brand">
+      <div class="auth-brand-icon">
+        <svg viewBox="0 0 40 40" fill="none" width="40" height="40">
+          <polygon points="20,34 4,10 36,10" fill="#1a3a6b" stroke="white" stroke-width="1.8" stroke-linejoin="round"/>
+        </svg>
+      </div>
+      <div>
+        <div class="auth-brand-name">DRMSA</div>
+        <div class="auth-brand-sub">Risk Platform</div>
+      </div>
+    </div>
+    <div class="auth-heading">Set new password</div>
+    <div class="auth-sub">Choose a new password for your account.</div>
+    <div class="auth-error" id="newpw-error"></div>
+    <div class="auth-reset-msg" id="newpw-success"></div>
+    <div class="field-group">
+      <div class="field-label">New password</div>
+      <div class="pw-wrap">
+        <input class="field-input" type="password" id="newpw-input" placeholder="Min 8 characters" autocomplete="new-password"/>
+        <button class="pw-toggle" type="button" id="newpw-toggle">
+          <svg viewBox="0 0 16 16"><path d="M1 8s2.5-5 7-5 7 5 7 5-2.5 5-7 5-7-5-7-5z"/><circle cx="8" cy="8" r="2"/></svg>
+        </button>
+      </div>
+    </div>
+    <div class="field-group">
+      <div class="field-label">Confirm new password</div>
+      <div class="pw-wrap">
+        <input class="field-input" type="password" id="newpw-confirm" placeholder="Repeat password" autocomplete="new-password"/>
+        <button class="pw-toggle" type="button" id="newpw-confirm-toggle">
+          <svg viewBox="0 0 16 16"><path d="M1 8s2.5-5 7-5 7 5 7 5-2.5 5-7 5-7-5-7-5z"/><circle cx="8" cy="8" r="2"/></svg>
+        </button>
+      </div>
+    </div>
+    <button class="auth-btn auth-btn-primary" id="newpw-btn">Set new password</button>`;
+
+  // Toggle visibility buttons
+  document.getElementById('newpw-toggle')?.addEventListener('click', () => {
+    const inp = document.getElementById('newpw-input');
+    if (inp) inp.type = inp.type === 'password' ? 'text' : 'password';
+  });
+  document.getElementById('newpw-confirm-toggle')?.addEventListener('click', () => {
+    const inp = document.getElementById('newpw-confirm');
+    if (inp) inp.type = inp.type === 'password' ? 'text' : 'password';
+  });
+
+  document.getElementById('newpw-btn')?.addEventListener('click', async () => {
+    const pw      = document.getElementById('newpw-input')?.value;
+    const confirm = document.getElementById('newpw-confirm')?.value;
+    const errEl   = document.getElementById('newpw-error');
+    const sucEl   = document.getElementById('newpw-success');
+    const btn     = document.getElementById('newpw-btn');
+
+    if (!pw || pw.length < 8) { showError(errEl, 'Password must be at least 8 characters.'); return; }
+    if (pw !== confirm)        { showError(errEl, 'Passwords do not match.'); return; }
+
+    btn.textContent = 'Saving…'; btn.disabled = true;
+
+    const { error } = await supabase.auth.updateUser({ password: pw });
+
+    if (error) {
+      showError(errEl, error.message);
+      btn.textContent = 'Set new password'; btn.disabled = false;
+      return;
+    }
+
+    // Success — show message then load the app
+    sucEl.textContent = '✓ Password updated successfully! Signing you in…';
+    sucEl.classList.add('show');
+    btn.textContent = 'Done'; btn.disabled = true;
+
+    setTimeout(async () => {
+      const user = await getCurrentUser();
+      if (user) { hideAuth(); await initApp(user); }
+    }, 1500);
+  });
+}
   if (!el) return;
   el.textContent = msg;
   el.classList.add('show');
