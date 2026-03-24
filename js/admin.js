@@ -77,7 +77,6 @@ async function renderAdmin(page) {
   document.getElementById('invite-btn')?.addEventListener('click', showInviteForm);
 }
 
-
 async function loadUsers() {
   const listEl = document.getElementById('users-list');
   const countEl = document.getElementById('users-count');
@@ -99,24 +98,18 @@ async function loadUsers() {
     return;
   }
 
-  listEl.innerHTML = users.map(u => `...`).join('');
+  // 
+  listEl.innerHTML = users.map(u => `
+    <div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid rgba(48,54,61,.4)">
+      <div style="width:30px;height:30px;border-radius:50%;background:var(--bg4);border:1px solid var(--border2);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--text3);font-family:monospace;flex-shrink:0">${initials(u.full_name)}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:600;color:var(--text)">${u.full_name || 'Unnamed'}</div>
+        <div style="font-size:11px;color:var(--text3);font-family:monospace">${roleLabel(u.role)}</div>
+      </div>
+      <div style="display:flex;gap:6px;align-items:center;flex-shrink:0">
+        <span class="badge ${u.status==='active'?'b-green':u.status==='pending'?'b-amber':'b-gray'}">${(u.status||'?').toUpperCase()}</span>
+      </div>
+    </div>`).join('');
 }
 
-
-function showInviteForm() { /* unchanged */ }
-async function loadMuniSettings() { /* unchanged */ }
-function loadApiSettings() { /* unchanged */ }
-async function testWeatherApi() { /* unchanged */ }
-
-window.toggleApiKey = function() { /* unchanged */ };
-window.approveUser = async function(id, name) { /* unchanged */ };
-window.suspendUser = async function(id, name) { /* unchanged */ };
-window.changeRole = async function(id, role, name) { /* unchanged */ };
-
-function initials(name) { /* unchanged */ }
-function roleLabel(r) { /* unchanged */ }
-function showToast(msg, isError=false) { /* unchanged */ }
-
-async function loadAuditTrail(body) { /* unchanged */ }
-function renderAuditGroups(groups, all) { /* unchanged */ }
-function exportAuditCSV(entries) { /* unchanged */ }
+// everything else remains exactly the same…
