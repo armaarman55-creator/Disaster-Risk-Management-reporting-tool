@@ -4,6 +4,17 @@ import { writeAudit } from './audit.js';
 
 let _user = null;
 
+// ── FIX: define roleLabel to avoid ReferenceError ─────────
+function roleLabel(role) {
+  switch(role) {
+    case 'admin': return 'Administrator';
+    case 'disaster_officer': return 'Disaster Officer';
+    case 'planner': return 'Planner';
+    case 'viewer': return 'Viewer';
+    default: return 'User';
+  }
+}
+
 // ── FIX: Move initials function above loadUsers ─────────────
 function initials(name) {
   return (name||'?').split(' ').map(n=>n[0]).join('').toUpperCase().slice(0,2);
