@@ -1,5 +1,6 @@
 // js/mopup.js
 import { supabase } from './supabase.js';
+import { showDownloadMenu, docHeader } from './download.js';
 
 let _muniId = null;
 let _user = null;
@@ -115,7 +116,7 @@ async function openMopup(id) {
       </div>
       <div class="share-foot">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-          <span style="font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--text3);font-family:var(--font-mono)">Share Mop-up Report</span>
+          <span style="font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--text3);font-family:var(--font-mono)">MOPUP-${num}</span>
           <div style="display:flex;align-items:center;gap:8px">
             ${r.is_authorised ? `
               <div class="tog-track ${r.is_published ? 'on' : ''}" id="mu-pub-tog"><div class="tog-knob"></div></div>
@@ -123,14 +124,9 @@ async function openMopup(id) {
             ` : `<span style="font-size:11px;color:var(--amber);font-family:var(--font-mono);font-weight:700">⚠ Requires municipal manager sign-off to publish</span>`}
           </div>
         </div>
-        <div class="share-channels">
-          <button class="sch pdf" onclick="generateMopupPDF()"><div class="sch-ico" style="background:var(--red-dim)"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="var(--red)" stroke-width="1.4" stroke-linecap="round"><rect x="1.5" y="1" width="7" height="8" rx="1"/><line x1="3" y1="4" x2="7" y2="4"/><line x1="3" y1="6" x2="6" y2="6"/></svg></div>PDF report</button>
-          <button class="sch em"><div class="sch-ico" style="background:var(--blue-dim)"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="var(--blue)" stroke-width="1.4" stroke-linecap="round"><rect x="1" y="2.5" width="8" height="6" rx=".5"/><path d="M1 3l4 3 4-3"/></svg></div>Email distrib.</button>
-          <button class="sch portal" ${!r.is_authorised ? 'disabled style="opacity:.4;cursor:not-allowed"' : ''}><div class="sch-ico" style="background:var(--green-dim)"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="var(--green)" stroke-width="1.4" stroke-linecap="round"><circle cx="5" cy="5" r="4"/><path d="M1 5h8M5 1c-1.5 1.5-2 3-2 4s.5 2.5 2 4M5 1c1.5 1.5 2 3 2 4s-.5 2.5-2 4"/></svg></div>Public portal</button>
-        </div>
-        <div class="sp-url-row">
-          <div class="sp-url">${window.location.origin}/incidents/${r.id}/mopup-${num}</div>
-          <button class="btn btn-sm" onclick="navigator.clipboard?.writeText(this.previousElementSibling.textContent);this.textContent='Copied!';setTimeout(()=>this.textContent='Copy link',1500)">Copy link</button>
+        <div style="display:flex;gap:8px;align-items:center">
+          <button class="btn btn-sm" id="mu-download-btn">↓ Download</button>
+          <button class="btn btn-sm" id="mu-email-btn">✉ Email report</button>
         </div>
       </div>
     </div>`;
@@ -161,6 +157,40 @@ async function openMopup(id) {
     const lbl = document.getElementById('mu-pub-lbl');
     if (lbl) { lbl.textContent = isOn ? 'PUBLISHED' : 'DRAFT'; lbl.style.color = isOn ? 'var(--green)' : 'var(--text3)'; }
     await supabase.from('mopup_reports').update({ is_published: isOn }).eq('id', r.id);
+  });
+
+  document.getElementById('mu-download-btn')?.addEventListener('click', function() {
+    const muniName = _user?.municipalities?.name || 'Municipality';
+    const num = String(r.report_number).padStart(2,'0');
+    showDownloadMenu(this, {
+      filename: `MOPUP-${num}-${muniName.replace(/\s+/g,'-')}`,
+      getPDF: () => generateMopupPDF(),
+      getCSVRows: () => getMopupCSVRows(r),
+      getDocHTML: () => getMopupDocHTML(r, muniName)
+    });
+  });
+
+  document.getElementById('mu-email-btn')?.addEventListener('click', () => {
+    const muniName = _user?.municipalities?.name || 'Municipality';
+    const num = String(r.report_number).padStart(2,'0');
+    const lines = [
+      `MOP-UP REPORT — MOPUP-${num}`,
+      `${muniName} · ${new Date().toLocaleString('en-ZA')}`,
+      '',
+      `Incident: ${r.incident_name||'—'}`,
+      `Hazard: ${r.hazard_type||'—'}`,
+      `Duration: ${r.duration_days||'—'} days`,
+      `Total affected: ${r.total_affected||0}`,
+      `Fatalities: ${r.fatalities||0}`,
+      `Injuries: ${r.injuries||0}`,
+      '',
+      r.narrative||'',
+      '',
+      `Compiled by: ${r.compiled_by||'—'}`,
+      `Issued by: ${muniName} Disaster Management Centre`
+    ];
+    const subject = encodeURIComponent(`Mop-up Report — ${r.incident_name||num} — ${muniName}`);
+    window.open(`mailto:?subject=${subject}&body=${encodeURIComponent(lines.join('\n'))}`);
   });
 }
 
@@ -429,10 +459,67 @@ function bindMopupRecommendEvents(r) {
 
 window.toggleMuRec = async function(idx) {};
 
+function getMopupCSVRows(r) {
+  const fin = r.financial_summary || {};
+  return [
+    ['Field','Value'],
+    ['Report', `MOPUP-${String(r.report_number).padStart(2,'0')}`],
+    ['Incident', r.incident_name||''],
+    ['Hazard', r.hazard_type||''],
+    ['Duration (days)', r.duration_days||''],
+    ['Activation date', r.activation_date||''],
+    ['Stand-down date', r.standdown_date||''],
+    ['Total affected', r.total_affected||0],
+    ['Fatalities', r.fatalities||0],
+    ['Injuries', r.injuries||0],
+    ['Properties damaged', r.properties_damaged||0],
+    ['Structures destroyed', r.structures_destroyed||0],
+    ['Relief (R)', fin.relief||0],
+    ['Repairs (R)', fin.repairs||0],
+    ['Personnel (R)', fin.personnel||0],
+    ['Equipment (R)', fin.equipment||0],
+    ['Compiled by', r.compiled_by||''],
+    ['Authorised by', r.authorised_by||''],
+  ];
+}
+
+function getMopupDocHTML(r, muniName) {
+  const num = String(r.report_number).padStart(2,'0');
+  const fin = r.financial_summary || {};
+  const total = Object.values(fin).reduce((a,b)=>a+(parseFloat(b)||0),0);
+  return `${docHeader(`Mop-up Report — MOPUP-${num}`, muniName, r.incident_name||'')}
+  <h2>Incident Details</h2>
+  <table><tr><th>Field</th><th>Value</th></tr>
+  <tr><td>Hazard type</td><td>${r.hazard_type||'—'}</td></tr>
+  <tr><td>Duration</td><td>${r.duration_days||'—'} days</td></tr>
+  <tr><td>Activation</td><td>${r.activation_date||'—'}</td></tr>
+  <tr><td>Stand-down</td><td>${r.standdown_date||'—'}</td></tr>
+  </table>
+  <h2>Final Impact</h2>
+  <table><tr><th>Category</th><th>Count</th></tr>
+  <tr><td>Total affected</td><td>${r.total_affected||0}</td></tr>
+  <tr><td>Fatalities</td><td>${r.fatalities||0}</td></tr>
+  <tr><td>Injuries</td><td>${r.injuries||0}</td></tr>
+  <tr><td>Properties damaged</td><td>${r.properties_damaged||0}</td></tr>
+  </table>
+  <h2>Financial Summary</h2>
+  <table><tr><th>Category</th><th>Amount (R)</th></tr>
+  <tr><td>Relief distribution</td><td>${fin.relief||0}</td></tr>
+  <tr><td>Emergency repairs</td><td>${fin.repairs||0}</td></tr>
+  <tr><td>Personnel overtime</td><td>${fin.personnel||0}</td></tr>
+  <tr><td>Equipment &amp; logistics</td><td>${fin.equipment||0}</td></tr>
+  <tr><td><strong>Total</strong></td><td><strong>R ${total.toLocaleString('en-ZA',{minimumFractionDigits:2})}</strong></td></tr>
+  </table>
+  <h2>Narrative</h2><p>${r.narrative||'—'}</p>
+  <p><strong>Compiled by:</strong> ${r.compiled_by||'—'} &nbsp;|&nbsp; <strong>Authorised by:</strong> ${r.authorised_by||'—'}</p>
+  <p>Issued by: ${muniName} Disaster Management Centre</p>`;
+}
+
 window.generateMopupPDF = function() {
+  const muniName = _user?.municipalities?.name || 'Municipality';
   const body = document.getElementById('mu-body')?.innerText || '';
   const win = window.open('', '_blank');
-  win.document.write(`<html><head><title>Mop-up Report</title><style>body{font-family:Arial,sans-serif;padding:40px;max-width:700px;margin:0 auto;font-size:13px;line-height:1.6}footer{margin-top:40px;font-size:10px;color:#888;border-top:1px solid #eee;padding-top:12px}</style></head><body><h1>Mop-up Report</h1><pre style="white-space:pre-wrap">${body}</pre><footer>DRMSA Platform · Created by Diswayne Maarman · Apache 2.0</footer></body></html>`);
+  win.document.write(`<html><head><title>Mop-up Report</title><style>body{font-family:Arial,sans-serif;padding:40px;max-width:700px;margin:0 auto;font-size:12px;line-height:1.6}h1{font-size:18px;color:#1a3a6b}footer{margin-top:40px;font-size:10px;color:#888;border-top:1px solid #eee;padding-top:12px}</style></head><body><h1>Mop-up Report</h1><pre style="white-space:pre-wrap;font-family:Arial,sans-serif">${body}</pre><footer>DRMSA Platform · ${muniName} Disaster Management Centre · Apache 2.0</footer></body></html>`);
   win.print();
 };
 
