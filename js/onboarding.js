@@ -150,22 +150,27 @@ function renderStepBody(step, user) {
           <div class="fl"><span class="fl-label">Last name</span><input class="fl-input" id="ob-c-last" placeholder="Last name"/></div>
         </div>
         <div class="fl"><span class="fl-label">Organisation</span><input class="fl-input" id="ob-c-org" placeholder="e.g. Municipal Disaster Office"/></div>
+        <div class="fl"><span class="fl-label">Position / title</span><input class="fl-input" id="ob-c-position" placeholder="e.g. Disaster Risk Officer"/></div>
         <div class="frow">
           <div class="fl"><span class="fl-label">Cell number</span><input class="fl-input" id="ob-c-cell" placeholder="082 000 0000"/></div>
-          <div class="fl"><span class="fl-label">Email</span><input class="fl-input" id="ob-c-email" placeholder="name@example.com"/></div>
+          <div class="fl"><span class="fl-label">Direct telephone</span><input class="fl-input" id="ob-c-tel" placeholder="021 000 0000"/></div>
         </div>
-        <div style="font-size:12px;color:var(--text3);margin-top:4px">Optional — you can skip this and add contacts later.</div>`;
+        <div class="fl"><span class="fl-label">Email</span><input class="fl-input" id="ob-c-email" placeholder="name@example.com"/></div>
+        <div style="font-size:12px;color:var(--text3);margin-top:4px">Optional — you can skip this and add contacts later from the Stakeholder Directory.</div>`;
 
     case 4:
       return `
         <div style="text-align:center;padding:10px 0">
-          <div style="width:56px;height:56px;background:var(--green-dim);border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 16px">
+          <div style="width:56px;height:56px;background:var(--green-dim);border-radius:50%;display:flex;align-items:center;justify-content:justify;margin:0 auto 16px">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--green)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
           </div>
           <div style="font-family:Inter,system-ui,sans-serif;font-size:17px;font-weight:700;color:var(--text);margin-bottom:8px">Setup complete</div>
-          <div style="font-size:13px;color:var(--text3);line-height:1.7">
-            Your DRMSA instance is ready.<br>
-            Start with the <strong style="color:var(--text)">HVC Assessment Tool</strong> to assess your municipality's hazard risk profile.
+          <div style="font-size:13px;color:var(--text3);line-height:1.9;text-align:left">
+            Your DRMSA instance is ready. Here's where to start:<br><br>
+            <span style="color:var(--red)">①</span> <strong style="color:var(--text)">HVC Assessment Tool</strong> — score your hazards, assign wards and generate your risk profile<br>
+            <span style="color:var(--amber)">②</span> <strong style="color:var(--text)">Stakeholder Directory</strong> — add organisations and contacts linked to each hazard type<br>
+            <span style="color:var(--blue)">③</span> <strong style="color:var(--text)">IDP Linkage</strong> — link mitigations to your IDP with smart DRR justification<br>
+            <span style="color:var(--green)">④</span> <strong style="color:var(--text)">SitRep / Mop-up</strong> — issue situation reports and mop-up reports during incidents
           </div>
         </div>`;
 
@@ -208,7 +213,7 @@ async function saveContact(user, muniId) {
   } else {
     const { data: newOrg } = await supabase
       .from('stakeholder_orgs')
-      .insert({ municipality_id: muniId, name: orgName, sector: 'Government', is_active: true })
+      .insert({ municipality_id: muniId, name: orgName, sector: 'Other Government', is_active: true })
       .select('id')
       .single();
     orgId = newOrg?.id;
@@ -220,8 +225,10 @@ async function saveContact(user, muniId) {
     org_id:          orgId,
     municipality_id: muniId,
     full_name:       `${first} ${last}`,
-    cell:            document.getElementById('ob-c-cell')?.value.trim(),
-    email:           document.getElementById('ob-c-email')?.value.trim(),
+    position:        document.getElementById('ob-c-position')?.value.trim() || null,
+    cell:            document.getElementById('ob-c-cell')?.value.trim()     || null,
+    direct_tel:      document.getElementById('ob-c-tel')?.value.trim()      || null,
+    email:           document.getElementById('ob-c-email')?.value.trim()    || null,
     is_active:       true,
     is_primary:      true
   });
