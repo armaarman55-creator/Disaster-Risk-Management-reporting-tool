@@ -90,6 +90,8 @@ const _scores = {};
 let _customHazards = [];
 // Per-hazard ward selections for searchable picker
 let _hvcWardSelections = {};
+// Track which hazard pickers have been initialised
+const _hvcPickerInited = new Set();
 
 // ── HVC WARD PICKER ───────────────────────────────────────
 function initHvcWardPicker(hazardId, existingWards = []) {
@@ -123,7 +125,8 @@ function initHvcWardPicker(hazardId, existingWards = []) {
     dropdown.style.display = 'block';
 
     dropdown.querySelectorAll('[data-ward]').forEach(item => {
-      item.addEventListener('click', () => {
+      item.addEventListener('mousedown', (e) => {
+        e.preventDefault();
         _hvcWardSelections[hazardId].push(parseInt(item.dataset.ward));
         search.value = '';
         dropdown.style.display = 'none';
@@ -131,6 +134,11 @@ function initHvcWardPicker(hazardId, existingWards = []) {
         recalcHazardWards(hazardId);
       });
     });
+  });
+
+  // Close on blur
+  search.addEventListener('blur', () => {
+    setTimeout(() => { dropdown.style.display = 'none'; }, 150);
   });
 
   // Select all wards button
@@ -264,8 +272,9 @@ async function renderHVCPage() {
     _customHazards = [];
     // Clear stale scores from previous session
     Object.keys(_scores).forEach(k => delete _scores[k]);
-    // Reset ward selections
+    // Reset ward selections and picker tracking
     _hvcWardSelections = {};
+    _hvcPickerInited.clear();
     document.getElementById('hvc-content').innerHTML = renderNewForm();
     bindFormEvents();
   });
@@ -588,11 +597,10 @@ window.toggleHazardApplicable = function(id, checked) {
   if (!body) return;
   body.style.display = checked ? 'block' : 'none';
   if (checked) {
-    // Init ward picker if not already done
-    if (!document.getElementById(`hvc-ward-search-${id}`)?._pickerInited) {
+    // Init ward picker if not already done for this hazard
+    if (!_hvcPickerInited.has(id)) {
       initHvcWardPicker(id, _hvcWardSelections[id] || []);
-      const searchEl = document.getElementById(`hvc-ward-search-${id}`);
-      if (searchEl) searchEl._pickerInited = true;
+      _hvcPickerInited.add(id);
     }
   } else {
     if (chip) { chip.textContent = 'NOT APPLICABLE'; chip.className = 'badge b-gray'; }
@@ -805,10 +813,15 @@ function bindFormEvents() {
 }
 
 // ── SAVE ─────────────────────────────────────────────────
+// Prevent double-save
+let _assessmentSaving = false;
+
 async function saveAssessment() {
+  if (_assessmentSaving) return;
   const label = document.getElementById('a-label')?.value.trim();
   if (!label) { alert('Please enter an assessment label.'); return; }
 
+  _assessmentSaving = true;
   const btn = document.getElementById('save-hvc-btn');
   if (btn) { btn.textContent='Saving…'; btn.disabled=true; }
 
@@ -846,7 +859,7 @@ async function saveAssessment() {
       hazard_count: rows.length, status: 'complete'
     }).select().single();
 
-  if (error) { alert('Error: ' + error.message); if(btn){btn.textContent='Save assessment';btn.disabled=false;} return; }
+  if (error) { alert('Error: ' + error.message); _assessmentSaving = false; if(btn){btn.textContent='Save assessment';btn.disabled=false;} return; }
 
   if (rows.length) {
     const { error: scErr } = await supabase.from('hvc_hazard_scores').insert(rows.map(r=>({...r, assessment_id: assessment.id})));
@@ -880,6 +893,7 @@ async function saveAssessment() {
 
   // Show success toast
   showToast('✓ Assessment saved! Dashboard will update automatically.');
+  _assessmentSaving = false;
   setTimeout(() => renderHVCPage(), 1500);
 }
 
@@ -1016,6 +1030,7 @@ async function editAssessment(id) {
   // Render the new form with pre-filled values
   _customHazards = [];
   _hvcWardSelections = {};
+  _hvcPickerInited.clear();
   const content = document.getElementById('hvc-content');
   if (!content) return;
 
@@ -1077,6 +1092,7 @@ async function editAssessment(id) {
       ? s.affected_wards.map(Number).filter(Boolean)
       : [];
     _hvcWardSelections[hid] = existingWards;
+    _hvcPickerInited.add(hid);
     initHvcWardPicker(hid, existingWards);
 
     // Pre-fill role players
