@@ -591,14 +591,16 @@ function showMitForm(existing) {
     </div>`;
 
   // Init ward picker with _selectedWards (already set above)
-  initWardPicker(_selectedWards);
+  requestAnimationFrame(() => {
+    initWardPicker();
 
-  // Select all wards button
-  document.getElementById('mf-ward-all-btn')?.addEventListener('click', () => {
-    _selectedWards = _wards.map(w => w.ward_number);
-    renderWardTags();
-    updateRiskReduction();
-    regenerateJustification();
+    // Select all wards button
+    document.getElementById('mf-ward-all-btn')?.addEventListener('click', () => {
+      _selectedWards = _wards.map(w => w.ward_number);
+      renderWardTags();
+      updateRiskReduction();
+      regenerateJustification();
+    });
   });
 
   // Expose update functions globally for inline onchange handlers
