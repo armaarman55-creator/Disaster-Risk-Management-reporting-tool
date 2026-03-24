@@ -1,5 +1,6 @@
 // js/idp.js — IDP Linkage & Spatial Mitigation Register
 import { supabase } from './supabase.js';
+import { showDownloadMenu, docHeader } from './download.js';
 
 function showToast(msg, isError=false) {
   document.querySelectorAll('.drmsa-toast').forEach(t => t.remove());
@@ -156,7 +157,7 @@ async function renderIDP() {
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           <button class="btn btn-sm" id="idp-library-btn">Library suggestions</button>
           <button class="btn btn-sm" id="idp-email-btn">Email report</button>
-          <button class="btn btn-sm" id="idp-pdf-all-btn">↓ Export all PDF</button>
+          <button class="btn btn-sm" id="idp-download-btn">↓ Download</button>
           <button class="btn btn-red btn-sm" id="idp-add-btn">+ Add mitigation</button>
         </div>
       </div>
@@ -195,7 +196,15 @@ async function renderIDP() {
   document.getElementById('idp-add-btn')?.addEventListener('click', () => showMitForm(null));
   document.getElementById('idp-library-btn')?.addEventListener('click', () => showLibrary(mits||[]));
   document.getElementById('idp-email-btn')?.addEventListener('click', () => emailReport(mits||[]));
-  document.getElementById('idp-pdf-all-btn')?.addEventListener('click', () => exportAllMitsPDF(mits||[]));
+  document.getElementById('idp-download-btn')?.addEventListener('click', function() {
+    const muniName = _user?.municipalities?.name || 'Municipality';
+    showDownloadMenu(this, {
+      filename: `IDP-mitigations-${muniName.replace(/\s+/g,'-')}`,
+      getPDF:     () => exportAllMitsPDF(mits||[]),
+      getCSVRows: () => getIDPCSVRows(mits||[]),
+      getDocHTML: () => getIDPDocHTML(mits||[], muniName)
+    });
+  });
   document.getElementById('idp-filter-btn')?.addEventListener('click', () => applyFilters(mits||[]));
   document.getElementById('idp-clear-btn')?.addEventListener('click', async () => { await renderIDP(); });
   bindMitEvents(mits||[]);
@@ -245,7 +254,7 @@ function renderMitList(mits) {
           </div>
           <div style="display:flex;gap:5px;flex-shrink:0;flex-wrap:wrap">
             <button class="btn btn-sm mit-edit" data-id="${m.id}">Edit</button>
-            <button class="btn btn-sm" onclick="window._downloadMitPDF('${m.id}')">↓ PDF</button>
+            <button class="btn btn-sm mit-dl" data-id="${m.id}">↓</button>
             <button class="btn btn-sm btn-red mit-delete" data-id="${m.id}">✕</button>
           </div>
         </div>
@@ -807,6 +816,32 @@ function bindMitEvents(mits) {
       if (m) showMitForm(m);
     });
   });
+  document.querySelectorAll('.mit-dl').forEach(btn => {
+    btn.addEventListener('click', function() {
+      const rec = window._drmsaMitCache?.[this.dataset.id];
+      if (!rec) { showToast('Reload the page and try again', true); return; }
+      const muniName = _user?.municipalities?.name || 'Municipality';
+      const wardLabels = Array.isArray(rec.affected_wards) && rec.affected_wards.length
+        ? rec.affected_wards.map(w => { const wd=_wards.find(x=>x.ward_number==w); return `Ward ${w}${wd?.area_name?' ('+wd.area_name+')':''}`; }).join(', ')
+        : 'No wards specified';
+      showDownloadMenu(this, {
+        filename: `Mitigation-${rec.hazard_name?.replace(/\s+/g,'-')||'record'}`,
+        getPDF:     () => { const w=window.open('','_blank'); w.document.write(`<html><head><title>Mitigation</title><style>body{font-family:Arial,sans-serif;padding:32px;max-width:700px}</style></head><body>${mitPDFHtml(rec, muniName, wardLabels)}</body></html>`); w.print(); },
+        getCSVRows: () => [
+          ['Field','Value'],
+          ['Hazard', rec.hazard_name||''],
+          ['Description', rec.description||''],
+          ['Wards', wardLabels],
+          ['Status', rec.idp_status||''],
+          ['Cost estimate', rec.cost_estimate||''],
+          ['Impact rating', rec.impact_rating||''],
+          ['Risk reduction', rec.risk_reduction_pct?`~${rec.risk_reduction_pct}%`:''],
+          ['Justification', rec.drr_justification||'']
+        ],
+        getDocHTML: () => `${docHeader(`Mitigation — ${rec.hazard_name||''}`, muniName)}${mitPDFHtml(rec, muniName, wardLabels)}`
+      });
+    });
+  });
 }
 
 function mitPDFHtml(m, muniName, wardLabels) {
@@ -881,6 +916,57 @@ window._downloadMitPDF = function(id) {
   const w = window.open('','_blank');
   if (w) { w.document.write(html); w.document.close(); w.print(); }
 };
+
+function getIDPCSVRows(mits) {
+  const rows = [['Hazard','Category','Risk Band','Type','Description','Wards','KPA','Vote','Status','DRR Strategy','Timeframe','Cost Estimate','Cost Basis','Impact Rating','Risk Reduction %','Responsible','Justification']];
+  mits.forEach(m => {
+    rows.push([
+      m.hazard_name||'', m.hazard_category||'', m.risk_band||'',
+      m.mitigation_type||'', m.description||'',
+      Array.isArray(m.affected_wards)?m.affected_wards.join('; '):'',
+      m.idp_kpa||'', m.idp_vote_number||'', m.idp_status||'',
+      m.drr_strategy||'', m.timeframe||'', m.cost_estimate||'',
+      m.cost_basis||'', m.impact_rating||'',
+      m.risk_reduction_pct||'', m.responsible_owner||'',
+      m.drr_justification||''
+    ]);
+  });
+  return rows;
+}
+
+function getIDPDocHTML(mits, muniName) {
+  const groups = {};
+  mits.forEach(m => {
+    const h = m.hazard_name || 'Unspecified';
+    if (!groups[h]) groups[h] = [];
+    groups[h].push(m);
+  });
+  const funded   = mits.filter(m=>m.idp_status==='linked-funded').length;
+  const awaiting = mits.filter(m=>m.idp_status==='linked-awaiting').length;
+  let html = `${docHeader('IDP Linkage & Mitigation Register', muniName)}
+  <p><strong>Total:</strong> ${mits.length} &nbsp;|&nbsp; <strong>Funded:</strong> ${funded} &nbsp;|&nbsp; <strong>Awaiting:</strong> ${awaiting}</p>`;
+  Object.entries(groups).forEach(([hazard, items]) => {
+    html += `<h2>${hazard}</h2><table>
+    <thead><tr><th>Description</th><th>Type</th><th>Wards</th><th>KPA</th><th>Status</th><th>Cost</th><th>Impact</th><th>Risk Red.</th></tr></thead><tbody>`;
+    items.forEach(m => {
+      html += `<tr>
+        <td>${m.description||'—'}</td>
+        <td>${m.mitigation_type||'—'}</td>
+        <td>${Array.isArray(m.affected_wards)?m.affected_wards.join(', '):'—'}</td>
+        <td>${m.idp_kpa?.split(' — ')[0]||'—'}</td>
+        <td>${m.idp_status||'—'}</td>
+        <td>${m.cost_estimate||'—'}</td>
+        <td>${m.impact_rating||'—'}</td>
+        <td>${m.risk_reduction_pct?'~'+m.risk_reduction_pct+'%':'—'}</td>
+      </tr>`;
+      if (m.drr_justification) {
+        html += `<tr><td colspan="8" style="font-style:italic;color:#555;font-size:9pt;background:#fafafa">${m.drr_justification}</td></tr>`;
+      }
+    });
+    html += '</tbody></table>';
+  });
+  return html;
+}
 
 function exportAllMitsPDF(mits) {
   if (!mits.length) { showToast('No mitigations to export', true); return; }
