@@ -76,8 +76,8 @@
     <!-- ── PANEL: REGISTER ── -->
     <div id="panel-register" class="hidden">
       <div class="auth-heading">Create account</div>
-      <div class="auth-sub">Register for access. Your Disaster Officer will approve your account.</div>
-      <div class="auth-notice"><strong>Open source.</strong> DRMSA is free for all South African municipalities and registered NGOs. Multiple users per municipality are supported — each with their own role.</div>
+      <div class="auth-sub">Register as the Disaster Risk Management Official for your municipality.</div>
+      <div class="auth-notice"><strong>Open source.</strong> DRMSA is free for all South African municipalities and registered NGOs. Once registered, you can invite additional personnel from the Admin panel.</div>
       <div class="auth-error" id="reg-error"></div>
       <div class="field-row-2">
         <div class="field-group"><div class="field-label">First name</div><input class="field-input" id="reg-first" placeholder="First name"/></div>
@@ -92,35 +92,6 @@
         <select class="field-select" id="reg-muni">
           <option value="">Loading municipalities…</option>
         </select>
-      </div>
-      <div class="field-group">
-        <div class="field-label">Access role</div>
-        <div class="role-cards">
-          <div class="role-card selected" data-role="disaster_officer">
-            <div class="role-card-icon" style="background:rgba(26,95,180,.12)">
-              <svg viewBox="0 0 14 14" fill="none" style="stroke:#1a5fb4;stroke-width:1.5;width:14px;height:14px;stroke-linecap:round;stroke-linejoin:round"><path d="M7 2L12 11H2L7 2Z"/></svg>
-            </div>
-            <div class="role-card-name">Disaster Officer</div>
-            <div class="role-card-desc">Manages the platform, full access to all modules</div>
-          </div>
-          <div class="role-card" data-role="planner">
-            <div class="role-card-icon" style="background:var(--amber-dim)">
-              <svg viewBox="0 0 14 14" fill="none" style="stroke:var(--amber);stroke-width:1.5;width:14px;height:14px;stroke-linecap:round"><rect x="2" y="2" width="10" height="10" rx="1"/><path d="M4 5h6M4 8h4"/></svg>
-            </div>
-            <div class="role-card-name">IDP Planner</div>
-            <div class="role-card-desc">Mitigation linking and IDP planning only</div>
-          </div>
-          <div class="role-card" data-role="viewer">
-            <div class="role-card-icon" style="background:var(--blue-dim)">
-              <svg viewBox="0 0 14 14" fill="none" style="stroke:var(--blue);stroke-width:1.5;width:14px;height:14px;stroke-linecap:round"><path d="M1 7s2.5-4.5 6-4.5S13 7 13 7s-2.5 4.5-6 4.5S1 7 1 7z"/><circle cx="7" cy="7" r="1.8"/></svg>
-            </div>
-            <div class="role-card-name">Viewer</div>
-            <div class="role-card-desc">Read-only — for councillors &amp; stakeholders</div>
-          </div>
-        </div>
-        <div style="font-size:11px;color:var(--text3);line-height:1.6;background:var(--bg3);border:1px solid var(--border);border-radius:var(--r-md);padding:8px 11px;margin-top:-6px">
-          💡 <strong style="color:var(--text2)">Already have an invite?</strong> Use the link in your email — you don't need to register here.
-        </div>
       </div>
       <div class="field-row-2">
         <div class="field-group">
@@ -139,7 +110,8 @@
         </div>
       </div>
       <button class="auth-btn auth-btn-primary" id="btn-register">Submit registration</button>
-      <div style="margin-top:10px;font-size:12px;color:var(--text3);text-align:center;font-family:var(--font-body)">Awaiting approval by your Municipal Disaster Officer.</div>
+      <div style="margin-top:10px;font-size:12px;color:var(--text3);text-align:center;font-family:var(--font-body)">Your account is activated automatically if you are the first user for your municipality.</div>
+      <div style="margin-top:6px;font-size:12px;color:var(--text3);text-align:center;font-family:var(--font-body)">💡 <strong style="color:var(--text2)">Already have an invite?</strong> Use the link in your email instead.</div>
     </div>
 
     <!-- ── PANEL: RESET PASSWORD ── -->
@@ -501,24 +473,6 @@ initPWA();
 
 const savedTheme = localStorage.getItem('drmsa-theme') || 'dark';
 document.documentElement.setAttribute('data-theme', savedTheme);
-
-async function loadMunis() {
-  const sel = document.getElementById('reg-muni');
-  if (!sel) return;
-  const { data } = await supabase.from('municipalities').select('id,name,code,district').order('name');
-  if (data) {
-    const g = {};
-    data.forEach(m => { if (!g[m.district]) g[m.district]=[]; g[m.district].push(m); });
-    sel.innerHTML = '<option value="">— Select municipality —</option>' +
-      Object.entries(g).map(([d,ms])=>`<optgroup label="${d}">${ms.map(m=>`<option value="${m.id}">${m.name} — ${m.code}</option>`).join('')}</optgroup>`).join('');
-  }
-}
-
-document.getElementById('switch-to-register')?.addEventListener('click', () => {
-  document.getElementById('login-panel').classList.add('hidden');
-  document.getElementById('register-panel').classList.remove('hidden');
-  loadMunis();
-});
 
 // Hamburger menu toggle
 document.getElementById('mob-menu-btn')?.addEventListener('click', () => {
