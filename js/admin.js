@@ -4,6 +4,11 @@ import { writeAudit } from './audit.js';
 
 let _user = null;
 
+// ── FIX: Move initials function above loadUsers ─────────────
+function initials(name) {
+  return (name||'?').split(' ').map(n=>n[0]).join('').toUpperCase().slice(0,2);
+}
+
 export async function initAdmin(user) {
   _user = user;
   const page = document.getElementById('page-admin');
@@ -46,6 +51,7 @@ async function renderAdmin(page) {
         </div>
       </div>
 
+      <!-- Audit trail section -->
       <div class="panel" style="margin-top:20px">
         <div class="ph" style="cursor:pointer;user-select:none" id="audit-toggle-header">
           <div>
@@ -61,6 +67,7 @@ async function renderAdmin(page) {
   await loadUsers();
   await loadMuniSettings();
 
+  // Wire audit trail toggle
   document.getElementById('audit-toggle-header')?.addEventListener('click', async () => {
     const body = document.getElementById('audit-trail-body');
     const icon = document.getElementById('audit-toggle-icon');
@@ -72,7 +79,6 @@ async function renderAdmin(page) {
       await loadAuditTrail(body);
     }
   });
-
   loadApiSettings();
   document.getElementById('invite-btn')?.addEventListener('click', showInviteForm);
 }
@@ -98,7 +104,6 @@ async function loadUsers() {
     return;
   }
 
-  // 
   listEl.innerHTML = users.map(u => `
     <div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid rgba(48,54,61,.4)">
       <div style="width:30px;height:30px;border-radius:50%;background:var(--bg4);border:1px solid var(--border2);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--text3);font-family:monospace;flex-shrink:0">${initials(u.full_name)}</div>
@@ -108,8 +113,18 @@ async function loadUsers() {
       </div>
       <div style="display:flex;gap:6px;align-items:center;flex-shrink:0">
         <span class="badge ${u.status==='active'?'b-green':u.status==='pending'?'b-amber':'b-gray'}">${(u.status||'?').toUpperCase()}</span>
+        ${u.status === 'pending' ? `<button class="btn btn-sm btn-green" onclick="approveUser('${u.id}')">Approve</button>` : ''}
+        ${u.id !== _user.id
+          ? `<select onchange="changeRole('${u.id}',this.value)" style="font-size:11px;background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:3px 6px;color:var(--text);font-family:monospace">
+              ${(_user.role === 'admin'
+              ? ['disaster_officer','planner','viewer','admin']
+              : ['disaster_officer','planner','viewer']
+            ).map(r=>`<option value="${r}" ${u.role===r?'selected':''}>${roleLabel(r)}</option>`).join('')}
+             </select>
+             <button class="btn btn-sm btn-red" onclick="suspendUser('${u.id}')">✕</button>` 
+          : '<span style="font-size:10px;color:var(--text3);font-family:monospace">You</span>'}
       </div>
     </div>`).join('');
 }
 
-// everything else remains exactly the same…
+// ── THE REST OF YOUR ADMIN.JS CODE REMAINS UNCHANGED ─────
