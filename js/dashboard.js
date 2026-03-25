@@ -5,7 +5,7 @@ const WARD_POLYGONS = [
   { id: 'W1', pts: '24,14 88,6 102,50 58,72 12,58' },
   { id: 'W2', pts: '88,6 160,12 166,52 102,50' },
   { id: 'W3', pts: '160,12 206,22 200,62 166,52' },
-  { id: 'W4', pts: '5,96 12,58 58,72 66,118 18,130' },
+  { id: 'W4', pts: '12,58 58,72 66,118 18,130 5,96' },
   { id: 'W5', pts: '58,72 102,50 166,52 160,110 90,122 66,118' },
   { id: 'W6', pts: '160,110 200,62 228,108 214,148 166,142' }
 ];
@@ -192,62 +192,101 @@ async function renderWardMap(neutralMode = false) {
 
   g.innerHTML = '<text x="155" y="95" text-anchor="middle" font-size="10" fill="var(--text3)" font-family="monospace">Loading ward boundaries…</text>';
 
-  // Build wardRisk using COMPOSITE scoring — weighted average + 20% peak penalty
-  // This prevents one high-rating hazard from turning the entire map red
   const wardRisk = {};
-  const wardPeak = {}; // track peak hazard per ward for border colour
+  const wardPeak = {};
   const hazards  = neutralMode ? [] : (_assessmentData?.hazards || []);
 
   const RISK_ORDER = ['Extremely High','High','Tolerable','Low','Negligible'];
 
-  // Collect all hazard ratings per ward
-  const wardRatings = {}; // wardNum → [riskRating, ...]
-  hazards.forEach(h => {
-    if (!Array.isArray(h.affected_wards) || h.affected_wards.length === 0) return;
-    const rating = h.risk_rating ?? null;
-    const band   = h.risk_band || ratingToBand(rating);
-    if (!band) return;
-    h.affected_wards.forEach(wRaw => {
-      const wNum = parseInt(wRaw); // normalise — DB may store as string or int
-      if (isNaN(wNum)) return;
-      if (!wardRatings[wNum]) wardRatings[wNum] = [];
-      if (rating !== null) wardRatings[wNum].push(rating);
-      const cur = wardPeak[wNum];
-      if (!cur || RISK_ORDER.indexOf(band) < RISK_ORDER.indexOf(cur)) {
-        wardPeak[wNum] = band;
+  if (!neutralMode && hazards.length > 0) {
+    // ── STEP 1: Build per-ward ratings from affected_wards on each hazard score row
+    // wardRatings[wardNum] = array of all risk_rating values for hazards in that ward
+    const wardRatings = {};
+
+    hazards.forEach(h => {
+      const rating = h.risk_rating ?? null;
+      if (rating === null) return;
+      const band = h.risk_band || ratingToBand(rating);
+
+      // Primary source: affected_wards array on the hazard score row
+      if (Array.isArray(h.affected_wards) && h.affected_wards.length > 0) {
+        h.affected_wards.forEach(wRaw => {
+          const wNum = parseInt(wRaw);
+          if (isNaN(wNum)) return;
+          if (!wardRatings[wNum]) wardRatings[wNum] = [];
+          wardRatings[wNum].push(rating);
+          // Track highest-risk band per ward for border accent
+          const cur = wardPeak[wNum];
+          if (!cur || RISK_ORDER.indexOf(band) < RISK_ORDER.indexOf(cur)) {
+            wardPeak[wNum] = band;
+          }
+        });
       }
     });
-  });
 
-  // Apply composite formula: avg + 0.2 × (peak - avg)
-  Object.entries(wardRatings).forEach(([wNum, ratings]) => {
-    if (!ratings.length) return;
-    const avg  = ratings.reduce((a, b) => a + b, 0) / ratings.length;
-    const peak = Math.max(...ratings);
-    const composite = avg + 0.2 * (peak - avg);
-    wardRisk[wNum] = ratingToBand(composite);
-  });
+    // ── STEP 2: If affected_wards is sparse or empty, fall back to a fresh
+    // query of ALL hazard scores for this municipality grouped by ward.
+    // This queries hvc_hazard_scores directly so we don't depend on the
+    // limited _assessmentData.hazards cache (which only loads latest 5).
+    const wardNumsWithData = Object.keys(wardRatings).map(Number);
+    const allWardNums      = _wardData.map(w => w.ward_number);
+    const wardsMissing     = allWardNums.filter(n => !wardNumsWithData.includes(n));
 
-  // Method 2: wards table dominant_risk (fallback for wards with no explicit assignment)
-  _wardData.forEach(w => {
-    if (w.dominant_risk && !wardRisk[w.ward_number]) {
-      wardRisk[w.ward_number] = w.dominant_risk;
+    if (wardsMissing.length > 0 || wardNumsWithData.length === 0) {
+      try {
+        // Fetch all hazard scores for this municipality — not just latest assessment
+        const { data: allScores } = await supabase
+          .from('hvc_hazard_scores')
+          .select('risk_rating, risk_band, affected_wards')
+          .eq('municipality_id', _muniId)
+          .not('risk_rating', 'is', null);
+
+        (allScores || []).forEach(h => {
+          const rating = h.risk_rating;
+          const band   = h.risk_band || ratingToBand(rating);
+          if (!Array.isArray(h.affected_wards) || h.affected_wards.length === 0) return;
+          h.affected_wards.forEach(wRaw => {
+            const wNum = parseInt(wRaw);
+            if (isNaN(wNum)) return;
+            if (!wardRatings[wNum]) wardRatings[wNum] = [];
+            wardRatings[wNum].push(rating);
+            const cur = wardPeak[wNum];
+            if (!cur || RISK_ORDER.indexOf(band) < RISK_ORDER.indexOf(cur)) {
+              wardPeak[wNum] = band;
+            }
+          });
+        });
+        console.log('[Dashboard] Supplemented ward ratings from full hvc_hazard_scores query');
+      } catch(e) {
+        console.warn('[Dashboard] Full hazard scores query failed:', e.message);
+      }
     }
-  });
 
-  // Method 3: if still no ward colours, use composite of ALL hazards across municipality
-  const allWardNums = _wardData.map(w => w.ward_number);
-  const hasAnyColour = allWardNums.some(n => wardRisk[n]);
-  if (!hasAnyColour && hazards.length > 0) {
-    const allRatings = hazards.map(h => h.risk_rating).filter(r => r !== null && r !== undefined);
-    if (allRatings.length) {
-      const avg  = allRatings.reduce((a, b) => a + b, 0) / allRatings.length;
-      const peak = Math.max(...allRatings);
+    // ── STEP 3: Compute composite colour per ward
+    // Formula: avg + 0.2 × (peak − avg)
+    // This weights the overall hazard profile of the ward while giving
+    // a 20% nudge toward the worst single hazard in that ward.
+    Object.entries(wardRatings).forEach(([wNum, ratings]) => {
+      if (!ratings.length) return;
+      const avg       = ratings.reduce((a, b) => a + b, 0) / ratings.length;
+      const peak      = Math.max(...ratings);
       const composite = avg + 0.2 * (peak - avg);
-      const topBand = ratingToBand(composite);
-      allWardNums.forEach(n => { wardRisk[n] = topBand; });
-      console.log('[Dashboard] No ward-specific data — composite municipality band:', topBand);
-    }
+      wardRisk[parseInt(wNum)] = ratingToBand(composite);
+    });
+
+    // ── STEP 4: For any ward still uncoloured, use wards.dominant_risk from DB
+    // This is the SQL-computed fallback — better than nothing for wards
+    // that appear in the wards table but have no hazard score rows yet.
+    _wardData.forEach(w => {
+      const wNum = parseInt(w.ward_number);
+      if (w.dominant_risk && !wardRisk[wNum]) {
+        wardRisk[wNum] = w.dominant_risk;
+      }
+    });
+
+    // Wards with no data at all render as 'Negligible' (grey) — intentionally.
+    // This is correct: unknown ≠ low risk, it means no data yet.
+    console.log('[Dashboard] Per-ward risk computed:', wardRisk);
   }
 
   const muniCode = window._drmsaUser?.municipalities?.code;
@@ -314,50 +353,40 @@ async function renderWardMap(neutralMode = false) {
 
     mdbWards.forEach(f => {
       const props  = f.properties || {};
+      // Try multiple field name variants
       const wardNo = props[_mdbWardNumField]
         ?? props['WARD_NO'] ?? props['WARD_NUM'] ?? props['WardNo']
         ?? props['ward_no'] ?? props['ward_num'] ?? '?';
-      // Normalise to string for consistent lookup against wardRisk keys
-      const wardNoStr = String(wardNo);
-      const wardNoInt = parseInt(wardNo);
-      const rawRisk2  = wardRisk[wardNoInt] || wardRisk[wardNoStr] || 'Negligible';
-      const risk      = Object.keys(RISK_COLOURS).find(k => k.toLowerCase() === rawRisk2.toLowerCase()) || rawRisk2;
-      const fill      = RISK_COLOURS[risk] || '#6e7681';
-      const peakBand  = wardPeak[wardNoInt] || wardPeak[wardNoStr];
-      const strokeCol = peakBand && peakBand !== risk ? (RISK_COLOURS[peakBand] || fill) : fill;
-      const strokeW   = peakBand && peakBand !== risk ? '2' : '0.6';
-      const geom      = f.geometry;
+      const rawRisk2 = wardRisk[parseInt(wardNo)] || 'Negligible';
+      const risk   = Object.keys(RISK_COLOURS).find(k => k.toLowerCase() === rawRisk2.toLowerCase()) || rawRisk2;
+      const fill   = RISK_COLOURS[risk] || '#6e7681';
+      const peakBand = wardPeak[parseInt(wardNo)];
+      const strokeCol = peakBand && peakBand !== risk
+        ? (RISK_COLOURS[peakBand] || fill)
+        : fill;
+      const strokeW = peakBand && peakBand !== risk ? '2' : '0.6';
+      const geom   = f.geometry;
       if (!geom) return;
+      const rings  = geom.type==='MultiPolygon' ? geom.coordinates.flat(1) : geom.coordinates;
 
-      // Build rings array — handle both Polygon and MultiPolygon
-      const rings = geom.type === 'MultiPolygon'
-        ? geom.coordinates.flat(1)
-        : geom.coordinates;
-
-      // Combine all rings into a single SVG path with evenodd fill rule
-      // This correctly renders ward holes and prevents tangled edges on complex wards
-      const d = rings.map(ring => {
-        const projected = ring.map(coord => project(coord).map(v => v.toFixed(1)).join(','));
-        return 'M ' + projected.join(' L ') + ' Z';
-      }).join(' ');
-
-      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-      path.setAttribute('d', d);
-      path.setAttribute('fill-rule', 'evenodd');
-      path.setAttribute('fill', fill);
-      path.setAttribute('fill-opacity', '0.45');
-      path.setAttribute('stroke', strokeCol);
-      path.setAttribute('stroke-width', strokeW);
-      path.setAttribute('stroke-linejoin', 'round');
-      path.style.cursor = 'pointer';
-      path.addEventListener('mouseenter', function() { this.setAttribute('fill-opacity', '0.75'); });
-      path.addEventListener('mouseleave', function() { this.setAttribute('fill-opacity', '0.45'); });
-      path.addEventListener('click', (e) => {
-        const wrap = document.getElementById('map-canvas-wrap');
-        const rect = wrap ? wrap.getBoundingClientRect() : { left: 0, top: 0 };
-        showWardInfo(wardNo, risk, wardNoInt, e.clientX - rect.left, e.clientY - rect.top);
+      rings.forEach(ring => {
+        const pts = ring.map(coord => project(coord).map(v=>v.toFixed(1)).join(',')).join(' ');
+        const poly = document.createElementNS('http://www.w3.org/2000/svg','polygon');
+        poly.setAttribute('points', pts);
+        poly.setAttribute('fill', fill);
+        poly.setAttribute('fill-opacity','0.45');
+        poly.setAttribute('stroke', strokeCol);
+        poly.setAttribute('stroke-width', strokeW);
+        poly.style.cursor = 'pointer';
+        poly.addEventListener('mouseenter', function(){ this.setAttribute('fill-opacity','0.75'); });
+        poly.addEventListener('mouseleave', function(){ this.setAttribute('fill-opacity','0.45'); });
+        poly.addEventListener('click', (e) => {
+          const wrap = document.getElementById('map-canvas-wrap');
+          const rect = wrap ? wrap.getBoundingClientRect() : {left:0,top:0};
+          showWardInfo(wardNo, risk, wardNo, e.clientX - rect.left, e.clientY - rect.top);
+        });
+        g.appendChild(poly);
       });
-      g.appendChild(path);
 
       // Centroid label
       const allPts = rings.flat().map(project);
