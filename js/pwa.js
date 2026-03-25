@@ -4,7 +4,23 @@ let deferredPrompt = null;
 export function initPWA() {
   // Register service worker
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('/sw.js').catch(err => console.warn('SW registration failed:', err));
+    (async () => {
+      try {
+        // Hard-reset old DRMSA SW/caches so stale JS bundles don't keep breaking sign-in.
+        const regs = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(regs.map(r => r.unregister()));
+
+        if ('caches' in window) {
+          const keys = await caches.keys();
+          await Promise.all(keys.filter(k => k.startsWith('drmsa-')).map(k => caches.delete(k)));
+        }
+
+        const reg = await navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' });
+        await reg.update();
+      } catch (err) {
+        console.warn('SW registration failed:', err);
+      }
+    })();
   }
 
   // Intercept browser install prompt
