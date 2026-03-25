@@ -452,29 +452,55 @@ function buildHazardGroups() {
   return { groups, unassigned };
 }
 
+// Builds a two-level structure: category → hazard → [{org, contacts, via}]
+// Used by PDF and Word exports so output is grouped by category first.
+function buildCategoryGroups() {
+  const { groups, unassigned } = buildHazardGroups();
+  const catGroups = {}; // category → { hazard → entries[] }
+
+  Object.entries(groups).forEach(([hazard, entries]) => {
+    const cat = getHazardCategory(hazard) || 'Other';
+    if (!catGroups[cat]) catGroups[cat] = {};
+    catGroups[cat][hazard] = entries;
+  });
+
+  // Preserve the defined category order from HAZARD_CATEGORIES
+  const ordered = {};
+  Object.keys(HAZARD_CATEGORIES).forEach(cat => {
+    if (catGroups[cat]) ordered[cat] = catGroups[cat];
+  });
+  // Append any 'Other' that didn't match
+  if (catGroups['Other']) ordered['Other'] = catGroups['Other'];
+
+  return { catGroups: ordered, unassigned };
+}
+
 // ── EXPORT HELPERS ────────────────────────────────────────
 function getStakeholderCSVRows() {
-  const rows = [['Hazard Type','Category','Assigned Via','Organisation','Sector','Contact Name','Position','Cell','Direct Tel','Email','After Hours','Primary']];
-  const { groups, unassigned } = buildHazardGroups();
-  Object.entries(groups).forEach(([hazard, entries]) => {
-    const cat = getHazardCategory(hazard) || '';
-    entries.forEach(({ org, contacts, via }) => {
-      if (!contacts.length) {
-        rows.push([hazard, cat, via, org.name, org.sector||'', 'No contacts', '', '', '', '', '', '']);
-      } else {
-        contacts.forEach(c => {
-          rows.push([hazard, cat, via, org.name, org.sector||'', c.full_name||'', c.position||'', c.cell||'', c.direct_tel||'', c.email||'', c.after_hours||'', c.is_primary?'Yes':'No']);
-        });
-      }
+  const rows = [['Category','Hazard Type','Assigned Via','Organisation','Sector','Contact Name','Position','Cell','Direct Tel','Email','After Hours','Primary']];
+  const { catGroups, unassigned } = buildCategoryGroups();
+
+  Object.entries(catGroups).forEach(([cat, hazards]) => {
+    Object.entries(hazards).forEach(([hazard, entries]) => {
+      entries.forEach(({ org, contacts, via }) => {
+        if (!contacts.length) {
+          rows.push([cat, hazard, via, org.name, org.sector||'', 'No contacts', '', '', '', '', '', '']);
+        } else {
+          contacts.forEach(c => {
+            rows.push([cat, hazard, via, org.name, org.sector||'', c.full_name||'', c.position||'', c.cell||'', c.direct_tel||'', c.email||'', c.after_hours||'', c.is_primary?'Yes':'No']);
+          });
+        }
+      });
     });
   });
+
   unassigned.forEach(org => {
     const contacts = org.stakeholder_contacts || [];
     if (!contacts.length) {
-      rows.push(['Unassigned','','', org.name, org.sector||'', 'No contacts', '', '', '', '', '', '']);
+      rows.push(['Unassigned', '', '', org.name, org.sector||'', 'No contacts', '', '', '', '', '', '']);
     } else {
       contacts.forEach(c => {
-        rows.push(['Unassigned','','', org.name, org.sector||'', c.full_name||'', c.position||'', c.cell||'', c.direct_tel||'', c.email||'', c.after_hours||'', c.is_primary?'Yes':'No']);
+        rows.push(['Unassigned', '', '', org.name, org.sector||'', c.full_name||'', c.position||'', c.cell||'', c.direct_tel||'', c.email||'', c.after_hours||'', c.is_primary?'Yes':'No']);
       });
     }
   });
@@ -482,29 +508,49 @@ function getStakeholderCSVRows() {
 }
 
 function getStakeholderDocHTML(muniName) {
-  const { groups, unassigned } = buildHazardGroups();
-  let html = `<h1>Stakeholder Directory</h1>
-  <div class="meta">${muniName} · Generated ${new Date().toLocaleString('en-ZA')} · Disaster Management Centre</div>
+  const { catGroups, unassigned } = buildCategoryGroups();
+  const dot = col => `display:inline-block;width:8px;height:8px;border-radius:50%;background:${col};margin-right:6px;vertical-align:middle`;
+
+  let html = `<h1>Stakeholder Directory — Hazard Response Reference</h1>
+  <div class="meta">${muniName} · Generated ${new Date().toLocaleString('en-ZA')} · Disaster Management Centre · CONFIDENTIAL — FOR OFFICIAL USE</div>
   <hr style="border:none;border-top:2pt solid #1a3a6b;margin:10pt 0"/>`;
 
-  Object.entries(groups).forEach(([hazard, entries]) => {
-    const cat = getHazardCategory(hazard) || '';
-    html += `<h2>${hazard} <span style="font-size:9pt;font-weight:400;color:#666">${cat}</span></h2>
-    <table><thead><tr><th>Organisation</th><th>Contact</th><th>Position</th><th>Cell</th><th>Direct Tel</th><th>Email</th></tr></thead><tbody>`;
-    entries.forEach(({ org, contacts }) => {
-      if (!contacts.length) {
-        html += `<tr><td><strong>${org.name}</strong></td><td colspan="5" style="color:#aaa;font-style:italic">No contacts assigned</td></tr>`;
-      } else {
-        contacts.forEach((c, i) => {
-          html += `<tr><td>${i===0?`<strong>${org.name}</strong>`:''}</td><td>${c.full_name||'—'}${c.is_primary?' <span style="background:#e8f0fe;color:#1a3a6b;padding:1px 4px;border-radius:3px;font-size:8pt;font-weight:700">PRIMARY</span>':''}</td><td>${c.position||'—'}</td><td>${c.cell||'—'}</td><td>${c.direct_tel||'—'}</td><td>${c.email||'—'}</td></tr>`;
-        });
-      }
+  Object.entries(catGroups).forEach(([cat, hazards]) => {
+    const col = CAT_COLOURS[cat] || '#888';
+    html += `<h2 style="color:${col};border-left:4pt solid ${col};padding-left:8pt;margin-top:18pt">${cat}</h2>`;
+    Object.entries(hazards).forEach(([hazard, entries]) => {
+      const totalContacts = entries.reduce((t, e) => t + e.contacts.length, 0);
+      html += `<h3 style="font-size:11pt;color:#1a3a6b;margin-top:10pt;margin-bottom:4pt">
+        <span style="${dot(col)}"></span>${hazard}
+        <span style="font-size:9pt;font-weight:400;color:#888"> — ${entries.length} org${entries.length!==1?'s':''}, ${totalContacts} contact${totalContacts!==1?'s':''}</span>
+      </h3>
+      <table><thead><tr>
+        <th>Organisation</th><th>Contact</th><th>Position</th>
+        <th>Cell</th><th>Direct Tel</th><th>Email</th><th>After Hours</th>
+      </tr></thead><tbody>`;
+      entries.forEach(({ org, contacts }) => {
+        if (!contacts.length) {
+          html += `<tr><td><strong>${org.name}</strong></td><td colspan="6" style="color:#aaa;font-style:italic">No contacts assigned</td></tr>`;
+        } else {
+          contacts.forEach((c, i) => {
+            html += `<tr>
+              <td>${i===0?`<strong>${org.name}</strong><br/><span style="font-size:8pt;color:#888">${org.sector||''}</span>`:''}</td>
+              <td>${c.full_name||'—'}${c.is_primary?' <span style="background:#e8f0fe;color:#1a3a6b;padding:1px 4px;border-radius:3px;font-size:8pt;font-weight:700">PRIMARY</span>':''}</td>
+              <td>${c.position||'—'}</td>
+              <td>${c.cell||'—'}</td>
+              <td>${c.direct_tel||'—'}</td>
+              <td>${c.email||'—'}</td>
+              <td>${c.after_hours||'—'}</td>
+            </tr>`;
+          });
+        }
+      });
+      html += '</tbody></table>';
     });
-    html += '</tbody></table>';
   });
 
   if (unassigned.length) {
-    html += `<h2>Unassigned <span style="font-size:9pt;font-weight:400;color:#666">No hazard linked</span></h2>
+    html += `<h2 style="color:#888;border-left:4pt solid #aaa;padding-left:8pt;margin-top:18pt">Unassigned — No hazard linked</h2>
     <table><thead><tr><th>Organisation</th><th>Sector</th><th>Contact</th><th>Position</th><th>Cell</th><th>Email</th></tr></thead><tbody>`;
     unassigned.forEach(org => {
       const contacts = org.stakeholder_contacts || [];
@@ -512,7 +558,14 @@ function getStakeholderDocHTML(muniName) {
         html += `<tr><td><strong>${org.name}</strong></td><td>${org.sector||'—'}</td><td colspan="4" style="color:#aaa;font-style:italic">No contacts</td></tr>`;
       } else {
         contacts.forEach((c, i) => {
-          html += `<tr><td>${i===0?`<strong>${org.name}</strong>`:''}</td><td>${i===0?org.sector||'—':''}</td><td>${c.full_name||'—'}</td><td>${c.position||'—'}</td><td>${c.cell||'—'}</td><td>${c.email||'—'}</td></tr>`;
+          html += `<tr>
+            <td>${i===0?`<strong>${org.name}</strong>`:''}</td>
+            <td>${i===0?org.sector||'—':''}</td>
+            <td>${c.full_name||'—'}</td>
+            <td>${c.position||'—'}</td>
+            <td>${c.cell||'—'}</td>
+            <td>${c.email||'—'}</td>
+          </tr>`;
         });
       }
     });
@@ -523,33 +576,65 @@ function getStakeholderDocHTML(muniName) {
 
 // ── PDF EXPORT ────────────────────────────────────────────
 function exportPDF() {
-  const { groups, unassigned } = buildHazardGroups();
+  const { catGroups, unassigned } = buildCategoryGroups();
   const muniName = window._drmsaUser?.municipalities?.name || 'Municipality';
   const date = new Date().toLocaleString('en-ZA');
   const dot = col => `display:inline-block;width:8px;height:8px;border-radius:50%;background:${col};margin-right:8px;vertical-align:middle`;
 
   let sectionsHtml = '';
 
-  Object.entries(groups).forEach(([hazard, entries]) => {
-    const cat = getHazardCategory(hazard) || 'Other';
+  Object.entries(catGroups).forEach(([cat, hazards]) => {
     const col = CAT_COLOURS[cat] || '#888';
-    const totalContacts = entries.reduce((t, e) => t + e.contacts.length, 0);
-    let rows = '';
-    entries.forEach(({ org, contacts, via }) => {
-      if (!contacts.length) {
-        rows += `<tr><td class="pdf-org">${org.name}</td><td style="color:#aaa;font-style:italic">No contacts assigned</td><td>—</td><td>—</td><td>—</td><td>—</td><td><span class="pdf-via pdf-via-org">${via}</span></td></tr>`;
-      } else {
-        contacts.forEach((c, i) => {
-          rows += `<tr><td class="pdf-org">${i===0?org.name:''}</td><td>${c.full_name||'—'}${c.is_primary?' <span class="pdf-primary">PRIMARY</span>':''}</td><td>${c.position||'—'}</td><td>${c.cell||'—'}</td><td>${c.direct_tel||'—'}</td><td>${c.email||'—'}</td><td>${i===0?`<span class="pdf-via ${via==='ORG'?'pdf-via-org':'pdf-via-ct'}">${via}</span>`:''}</td></tr>`;
-        });
-      }
-    });
+    const totalOrgs = Object.values(hazards).reduce((t, e) => t + e.length, 0);
+    const totalCts  = Object.values(hazards).reduce((t, e) => t + e.reduce((tt, x) => tt + x.contacts.length, 0), 0);
+
     sectionsHtml += `
-      <div class="pdf-hazard-head" style="border-left:4px solid ${col}">
-        <span style="${dot(col)}"></span>${hazard}
-        <span style="margin-left:auto;font-size:9px;opacity:.7;font-weight:400">${cat.toUpperCase()} · ${entries.length} org${entries.length!==1?'s':''} · ${totalContacts} contact${totalContacts!==1?'s':''}</span>
-      </div>
-      <table class="pdf-table"><thead><tr><th>Organisation</th><th>Contact</th><th>Position</th><th>Cell</th><th>Direct Tel</th><th>Email</th><th>Via</th></tr></thead><tbody>${rows}</tbody></table>`;
+      <div class="cat-header" style="border-left:5px solid ${col};background:${col}18">
+        <span style="${dot(col)}"></span>
+        <span class="cat-title" style="color:${col}">${cat}</span>
+        <span class="cat-meta">${Object.keys(hazards).length} hazard type${Object.keys(hazards).length!==1?'s':''} · ${totalOrgs} org${totalOrgs!==1?'s':''} · ${totalCts} contact${totalCts!==1?'s':''}</span>
+      </div>`;
+
+    Object.entries(hazards).forEach(([hazard, entries]) => {
+      const totalContacts = entries.reduce((t, e) => t + e.contacts.length, 0);
+      let rows = '';
+      entries.forEach(({ org, contacts, via }) => {
+        if (!contacts.length) {
+          rows += `<tr><td class="pdf-org">${org.name}<br/><span class="pdf-sector">${org.sector||''}</span></td><td colspan="5" style="color:#aaa;font-style:italic">No contacts assigned</td><td><span class="pdf-via pdf-via-org">${via}</span></td></tr>`;
+        } else {
+          contacts.forEach((c, i) => {
+            rows += `<tr>
+              <td class="pdf-org">${i===0?`${org.name}<br/><span class="pdf-sector">${org.sector||''}</span>`:''}</td>
+              <td>${c.full_name||'—'}${c.is_primary?' <span class="pdf-primary">PRIMARY</span>':''}</td>
+              <td>${c.position||'—'}</td>
+              <td>${c.cell||'—'}</td>
+              <td>${c.direct_tel||'—'}</td>
+              <td>${c.email||'—'}</td>
+              <td>${c.after_hours||'—'}</td>
+              <td>${i===0?`<span class="pdf-via ${via==='ORG'?'pdf-via-org':'pdf-via-ct'}">${via}</span>`:''}</td>
+            </tr>`;
+          });
+        }
+      });
+      sectionsHtml += `
+        <div class="hazard-header" style="border-left:3px solid ${col}">
+          <span style="${dot(col)}"></span>${hazard}
+          <span class="hazard-meta">${entries.length} org${entries.length!==1?'s':''} · ${totalContacts} contact${totalContacts!==1?'s':''}</span>
+        </div>
+        <table class="pdf-table">
+          <thead><tr>
+            <th style="width:16%">Organisation</th>
+            <th style="width:14%">Contact</th>
+            <th style="width:13%">Position</th>
+            <th style="width:11%">Cell</th>
+            <th style="width:11%">Direct Tel</th>
+            <th style="width:16%">Email</th>
+            <th style="width:11%">After Hours</th>
+            <th style="width:8%">Via</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>`;
+    });
   });
 
   if (unassigned.length) {
@@ -557,62 +642,100 @@ function exportPDF() {
     unassigned.forEach(org => {
       const contacts = org.stakeholder_contacts || [];
       if (!contacts.length) {
-        rows += `<tr><td class="pdf-org">${org.name}</td><td style="color:#aaa;font-style:italic">No contacts assigned</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>`;
+        rows += `<tr><td class="pdf-org">${org.name}</td><td>${org.sector||'—'}</td><td colspan="5" style="color:#aaa;font-style:italic">No contacts assigned</td><td>—</td></tr>`;
       } else {
         contacts.forEach((c, i) => {
-          rows += `<tr><td class="pdf-org">${i===0?org.name:''}</td><td>${c.full_name||'—'}${c.is_primary?' <span class="pdf-primary">PRIMARY</span>':''}</td><td>${c.position||'—'}</td><td>${c.cell||'—'}</td><td>${c.direct_tel||'—'}</td><td>${c.email||'—'}</td><td>—</td></tr>`;
+          rows += `<tr>
+            <td class="pdf-org">${i===0?`${org.name}<br/><span class="pdf-sector">${org.sector||''}</span>`:''}</td>
+            <td>${i===0?org.sector||'—':''}</td>
+            <td>${c.full_name||'—'}${c.is_primary?' <span class="pdf-primary">PRIMARY</span>':''}</td>
+            <td>${c.position||'—'}</td>
+            <td>${c.cell||'—'}</td>
+            <td>${c.email||'—'}</td>
+            <td>${c.after_hours||'—'}</td>
+            <td>—</td>
+          </tr>`;
         });
       }
     });
     sectionsHtml += `
-      <div class="pdf-hazard-head" style="background:#666;border-left:4px solid #aaa">
-        <span style="${dot('#aaa')}"></span>UNASSIGNED
-        <span style="margin-left:auto;font-size:9px;opacity:.7;font-weight:400">NO HAZARD LINKED · ${unassigned.length} org${unassigned.length!==1?'s':''}</span>
+      <div class="cat-header" style="border-left:5px solid #888;background:#f5f5f5">
+        <span style="${dot('#aaa')}"></span>
+        <span class="cat-title" style="color:#888">Unassigned</span>
+        <span class="cat-meta">No hazard linked · ${unassigned.length} org${unassigned.length!==1?'s':''}</span>
       </div>
-      <table class="pdf-table"><thead><tr><th>Organisation</th><th>Contact</th><th>Position</th><th>Cell</th><th>Direct Tel</th><th>Email</th><th>Via</th></tr></thead><tbody>${rows}</tbody></table>`;
+      <table class="pdf-table">
+        <thead><tr>
+          <th>Organisation</th><th>Sector</th><th>Contact</th>
+          <th>Position</th><th>Cell</th><th>Email</th><th>After Hours</th><th>Via</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>`;
   }
 
-  const html = `<html><head><title>Stakeholder Directory — ${muniName}</title>
-  <style>
-    body{font-family:Arial,sans-serif;font-size:11px;color:#111;padding:24px;max-width:960px;margin:0 auto}
-    .pdf-header{border-bottom:2px solid #1a3a6b;padding-bottom:14px;margin-bottom:20px;display:flex;align-items:flex-start;justify-content:space-between}
-    .pdf-brand{font-size:20px;font-weight:800;color:#1a3a6b}
-    .pdf-doc-type{font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#666;margin-top:2px}
-    .pdf-muni{font-size:14px;font-weight:700;color:#111;margin-top:6px}
-    .pdf-meta{font-size:10px;color:#888;margin-top:2px}
-    .pdf-hazard-head{background:#1a3a6b;color:#fff;padding:8px 14px;font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;margin:18px 0 0;border-radius:4px 4px 0 0;display:flex;align-items:center}
-    .pdf-table{width:100%;border-collapse:collapse;margin-bottom:4px}
-    .pdf-table th{background:#f0f4f8;padding:6px 9px;text-align:left;font-size:9px;font-weight:700;color:#444;letter-spacing:.04em;text-transform:uppercase;border-bottom:1px solid #ddd}
-    .pdf-table td{padding:6px 9px;border-bottom:1px solid #eee;color:#333;vertical-align:top}
-    .pdf-table tr:nth-child(even) td{background:#fafbfc}
-    .pdf-org{font-weight:600;color:#1a3a6b}
-    .pdf-primary{font-size:8px;background:#e8f0fe;color:#1a3a6b;padding:1px 4px;border-radius:3px;font-weight:700;margin-left:4px}
-    .pdf-via{font-size:8px;padding:1px 5px;border-radius:3px;font-weight:700}
-    .pdf-via-org{background:#dbeafe;color:#1d4ed8}
-    .pdf-via-ct{background:#dcfce7;color:#15803d}
-    .pdf-footer{margin-top:28px;padding-top:10px;border-top:1px solid #eee;font-size:9px;color:#aaa;display:flex;justify-content:space-between}
-  </style></head><body>
-  <div class="pdf-header">
-    <div>
-      <div class="pdf-brand">DRMSA</div>
-      <div class="pdf-doc-type">Stakeholder Directory — Hazard Response Reference</div>
-      <div class="pdf-muni">${muniName}</div>
-      <div class="pdf-meta">Generated: ${date} · Disaster Management Centre · CONFIDENTIAL — FOR OFFICIAL USE</div>
-    </div>
-    <svg viewBox="0 0 40 40" fill="none" width="40" height="40"><polygon points="20,34 4,10 36,10" fill="#1a3a6b"/></svg>
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>Stakeholder Directory — ${muniName}</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:Arial,Helvetica,sans-serif;font-size:9px;color:#1a1a2e;background:#fff}
+  @media screen{body{padding:20px;max-width:1100px;margin:0 auto}}
+  @page{size:A4 landscape;margin:12mm 10mm}
+  @media print{body{padding:0}}
+  @media screen{
+    .print-btn{display:block;margin:0 auto 20px;padding:10px 28px;background:#1a3a6b;color:#fff;border:none;border-radius:6px;font-size:13px;font-weight:700;cursor:pointer;letter-spacing:.04em}
+    .print-btn:hover{background:#16305a}
+  }
+  @media print{.print-btn{display:none}}
+  .pdf-header{border-bottom:2px solid #1a3a6b;padding-bottom:12px;margin-bottom:16px;display:flex;align-items:flex-start;justify-content:space-between}
+  .pdf-brand{font-size:17px;font-weight:800;color:#1a3a6b}
+  .pdf-doc-type{font-size:8px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#666;margin-top:2px}
+  .pdf-muni{font-size:12px;font-weight:700;color:#111;margin-top:5px}
+  .pdf-meta{font-size:8px;color:#888;margin-top:2px}
+  .cat-header{padding:7px 12px;margin:16px 0 0;border-radius:4px 4px 0 0;display:flex;align-items:center;page-break-after:avoid}
+  .cat-title{font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase}
+  .cat-meta{margin-left:auto;font-size:8px;opacity:.7;font-weight:400}
+  .hazard-header{padding:5px 12px;background:#f0f4f8;display:flex;align-items:center;font-size:9px;font-weight:700;color:#1a3a6b;page-break-after:avoid;margin-top:1px}
+  .hazard-meta{margin-left:auto;font-size:8px;font-weight:400;color:#888}
+  .pdf-table{width:100%;border-collapse:collapse;margin-bottom:1px;font-size:8.5px}
+  .pdf-table thead{display:table-header-group}
+  .pdf-table th{background:#1a3a6b;color:#fff;padding:5px 7px;text-align:left;font-size:7.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;white-space:nowrap}
+  .pdf-table td{padding:4px 7px;border-bottom:1px solid #eef0f3;color:#333;vertical-align:top}
+  .pdf-table tr:nth-child(even) td{background:#f7f9fc}
+  .pdf-org{font-weight:700;color:#1a3a6b}
+  .pdf-sector{font-size:7.5px;color:#888;font-weight:400}
+  .pdf-primary{font-size:7px;background:#e8f0fe;color:#1a3a6b;padding:1px 4px;border-radius:3px;font-weight:700;margin-left:4px}
+  .pdf-via{font-size:7px;padding:1px 5px;border-radius:3px;font-weight:700}
+  .pdf-via-org{background:#dbeafe;color:#1d4ed8}
+  .pdf-via-ct{background:#dcfce7;color:#15803d}
+  .pdf-footer{margin-top:20px;padding-top:8px;border-top:1px solid #eee;font-size:8px;color:#aaa;display:flex;justify-content:space-between}
+</style>
+</head>
+<body>
+<button class="print-btn" onclick="window.print()">&#8659; Save as PDF / Print (Landscape A4)</button>
+<div class="pdf-header">
+  <div>
+    <div class="pdf-brand">DRMSA</div>
+    <div class="pdf-doc-type">Stakeholder Directory — Hazard Response Reference</div>
+    <div class="pdf-muni">${muniName}</div>
+    <div class="pdf-meta">Generated: ${date} · Disaster Management Centre · CONFIDENTIAL — FOR OFFICIAL USE</div>
   </div>
-  ${sectionsHtml}
-  <div class="pdf-footer">
-    <span>DRMSA Disaster Risk Management Platform · ${muniName} Disaster Management Centre</span>
-    <span>Apache 2.0 · Created by Diswayne Maarman</span>
-  </div>
-  </body></html>`;
+  <svg viewBox="0 0 40 40" fill="none" width="36" height="36"><polygon points="20,34 4,10 36,10" fill="#1a3a6b"/></svg>
+</div>
+${sectionsHtml}
+<div class="pdf-footer">
+  <span>DRMSA Disaster Risk Management Platform · ${muniName} Disaster Management Centre</span>
+  <span>Generated ${date}</span>
+</div>
+</body>
+</html>`;
 
   const w = window.open('', '_blank');
-  if (w) { w.document.write(html); w.document.close(); w.print(); }
-  showToast('✓ PDF print dialog opened');
+  if (w) { w.document.write(html); w.document.close(); }
+  showToast('✓ PDF preview opened — click Print to save as PDF');
 }
-
 function emptyState(msg) {
   return `<div style="text-align:center;padding:48px 20px;color:var(--text3);font-size:12px">${msg}</div>`;
 }
