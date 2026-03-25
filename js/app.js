@@ -165,29 +165,9 @@ async function loadPageModule(pageId) {
       case 'sitrep':       { const m = await import('./sitrep.js');       m.initSitrep(_user);       break; }
       case 'mopup':        { const m = await import('./mopup.js');        m.initMopup(_user);        break; }
       case 'stakeholders': { const m = await import('./stakeholders.js'); m.initStakeholders(_user); break; }
-      case 'hvc':          {
-        try {
-          const m = await import('./hvc.js');
-          m.initHVC(_user);
-        } catch (e1) {
-          console.warn('Primary HVC module failed, trying fallback hvc_v2.js:', e1);
-          const m2 = await import('./hvc_v2.js');
-          m2.initHVC(_user);
-        }
-        break;
-      }
+      case 'hvc':          { const m = await import('./hvc.js');          m.initHVC(_user);          break; }
       case 'idp':          { const m = await import('./idp.js');          m.initIDP(_user);          break; }
-      case 'admin':        {
-        try {
-          const m = await import('./admin.js');
-          m.initAdmin(_user);
-        } catch (e1) {
-          console.warn('Primary Admin module failed, trying fallback admin_v3.js:', e1);
-          const m2 = await import('./admin_v3.js');
-          m2.initAdmin(_user);
-        }
-        break;
-      }
+      case 'admin':        { const m = await import('./admin.js');        m.initAdmin(_user);        break; }
       case 'profile':      { const m = await import('./profile.js');      m.initProfile(_user);      break; }
       case 'risk-map':    renderPlaceholder('risk-map',    'Risk map',          'Complete HVC assessments to generate a full risk map.');    break;
       case 'history':     renderPlaceholder('history',     'Assessment history','All completed HVC assessments will appear here.');           break;
