@@ -45,7 +45,22 @@ async function renderSitrepList() {
   document.getElementById('new-sitrep-btn')?.addEventListener('click', () => createNewSitrep(sitreps));
 
   page.querySelectorAll('.sr-list-item').forEach(item => {
-    item.addEventListener('click', () => openSitrep(item.dataset.id, sitreps));
+    item.addEventListener('click', (e) => {
+      if (e.target.closest('.sr-delete-btn')) return;
+      openSitrep(item.dataset.id, sitreps);
+    });
+  });
+
+  page.querySelectorAll('.sr-delete-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const id  = btn.dataset.id;
+      const num = btn.dataset.num;
+      if (!confirm(`Delete SITREP-${num}? This cannot be undone.`)) return;
+      const { error } = await supabase.from('sitreps').delete().eq('id', id);
+      if (error) { alert('Delete failed: ' + error.message); return; }
+      await renderSitrepList();
+    });
   });
 }
 
@@ -59,6 +74,7 @@ function renderSitrepListItem(s) {
         <div class="sr-list-meta">${s.hazard_type || '—'} · Wards ${Array.isArray(s.affected_wards) ? s.affected_wards.join(', ') : (s.affected_wards || '?')} · ${s.issued_at ? new Date(s.issued_at).toLocaleString('en-ZA') : '—'}</div>
       </div>
       <span class="badge ${s.status === 'active' ? 'b-red' : s.status === 'resolved' ? 'b-green' : 'b-amber'}">${(s.status || 'draft').toUpperCase()}</span>
+      <button class="btn btn-sm btn-red sr-delete-btn" data-id="${s.id}" data-num="${num}" style="margin-left:6px;flex-shrink:0" title="Delete SitRep">✕</button>
     </div>`;
 }
 
@@ -165,7 +181,8 @@ async function openSitrep(id, allSitreps) {
       filename: `SITREP-${num}-${muniName.replace(/\s+/g,'-')}`,
       getPDF: () => generateSitrepPDF(),
       getCSVRows: () => getSitrepCSVRows(s, shelters, closures),
-      getDocHTML: () => getSitrepDocHTML(s, shelters, closures, muniName)
+      getDocHTML: () => getSitrepDocHTML(s, shelters, closures, muniName),
+      dropup: true
     });
   });
 
@@ -550,4 +567,3 @@ function showToast(msg, isError = false) {
   document.body.appendChild(t);
   setTimeout(()=>{t.style.opacity='0';setTimeout(()=>t.remove(),300);},2500);
 }
- 
