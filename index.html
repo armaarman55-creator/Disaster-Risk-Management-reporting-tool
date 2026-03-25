@@ -291,7 +291,9 @@
         <div style="border:1px solid var(--border);border-radius:6px;overflow:hidden;display:flex">
           <div class="lyr on" style="padding:4px 10px;font-size:11px;cursor:pointer">Hazard</div>
           <div class="lyr" style="padding:4px 10px;font-size:11px;cursor:pointer">Shelters</div>
+          <div class="lyr" style="padding:4px 10px;font-size:11px;cursor:pointer">Projects</div>
         </div>
+        <button id="map-add-project" class="btn btn-sm" style="padding:4px 10px;font-size:11px">+ Project marker</button>
         <button id="map-zoom-in"  class="btn btn-sm" style="padding:4px 10px;font-size:15px;font-weight:700;line-height:1">+</button>
         <button id="map-zoom-out" class="btn btn-sm" style="padding:4px 10px;font-size:15px;font-weight:700;line-height:1">−</button>
         <button id="map-zoom-reset" class="btn btn-sm" style="padding:4px 10px;font-size:11px">Reset</button>
@@ -304,7 +306,7 @@
     </div>
 
     <!-- Legend + ward info -->
-    <div style="padding:10px 16px;border-top:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
+    <div id="map-legend-bar" style="padding:10px 16px;border-top:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
       <div style="display:flex;gap:14px;flex-wrap:wrap">
         <div style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text3)"><div style="width:10px;height:10px;border-radius:2px;background:#f85149;opacity:.8"></div>Extremely high</div>
         <div style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text3)"><div style="width:10px;height:10px;border-radius:2px;background:#d29922;opacity:.8"></div>High</div>
@@ -322,7 +324,7 @@
     <div style="display:flex;flex-direction:column;gap:16px">
       <div class="panel">
         <div class="ph"><div><div class="ph-title">Hazard risk profile</div><div class="ph-sub" id="hz-sub">No assessment loaded</div></div></div>
-        <div class="pb hz-scroll"><table class="hz-tbl" id="hz-tbl">
+        <div class="pb"><table class="hz-tbl" id="hz-tbl">
           <tr><td colspan="5" style="padding:20px;text-align:center;color:var(--text3);font-size:12px">Complete an HVC assessment to see your hazard risk profile.</td></tr>
         </table></div>
       </div>
