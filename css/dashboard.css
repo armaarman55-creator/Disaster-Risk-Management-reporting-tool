@@ -12,7 +12,6 @@
 .body-grid{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,.8fr);gap:18px}
 .right-col{display:flex;flex-direction:column;gap:16px}
 .hz-tbl{width:100%;border-collapse:collapse;margin-top:8px}
-.hz-scroll{max-height:420px;overflow:auto}
 .hz-tr{border-bottom:1px solid rgba(48,54,61,.5)}
 .hz-tr:last-child{border-bottom:none}
 .hz-tr:hover td{background:var(--bg3)}
