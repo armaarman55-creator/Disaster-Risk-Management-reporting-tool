@@ -93,6 +93,10 @@ let _customHazards = [];
 let _hvcWardSelections = {};
 // Track which hazard pickers have been initialised
 const _hvcPickerInited = new Set();
+// Draft assessment ID — set when auto-save creates a draft record
+let _draftId = null;
+// Auto-save debounce timer
+let _autoSaveTimer = null;
 
 // ── HVC WARD PICKER ───────────────────────────────────────
 function initHvcWardPicker(hazardId, existingWards = []) {
@@ -252,6 +256,86 @@ async function renderHVCPage() {
     .eq('municipality_id', _muniId)
     .order('created_at', { ascending: false });
 
+  // If there's an active draft in progress, restore the form instead of showing list
+  if (_draftId) {
+    const draft = (assessments || []).find(a => a.id === _draftId);
+    if (draft) {
+      page.innerHTML = `
+        <div style="display:flex;flex-direction:column;height:100%;overflow:hidden">
+          <div style="padding:12px 20px;background:var(--bg2);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0">
+            <div>
+              <div style="font-size:15px;font-weight:800;color:var(--text)">HVC Assessment Tool</div>
+              <div style="font-size:11px;color:var(--text3);margin-top:1px">Hazard · Vulnerability · Capacity — DMA Act 57 of 2002 · Annexure 3</div>
+            </div>
+            <div style="display:flex;gap:8px">
+              <button class="btn btn-sm" id="hvc-ref-btn">Risk reference</button>
+              <button class="btn btn-sm btn-red" id="hvc-new-btn">+ New assessment</button>
+            </div>
+          </div>
+          <div style="flex:1;overflow-y:auto" id="hvc-content">
+            ${renderNewForm()}
+          </div>
+        </div>`;
+
+      document.getElementById('hvc-new-btn')?.addEventListener('click', () => {
+        _draftId = null;
+        _customHazards = [];
+        Object.keys(_scores).forEach(k => delete _scores[k]);
+        _hvcWardSelections = {};
+        _hvcPickerInited.clear();
+        document.getElementById('hvc-content').innerHTML = renderNewForm();
+        bindFormEvents();
+      });
+      document.getElementById('hvc-ref-btn')?.addEventListener('click', () => showReferenceModal());
+
+      // Restore form field values from _scores in memory
+      const labelEl = document.getElementById('a-label');
+      if (labelEl && draft.label) labelEl.value = draft.label;
+      const seasonEl = document.getElementById('a-season');
+      if (seasonEl && draft.season) seasonEl.value = draft.season;
+      const yearEl = document.getElementById('a-year');
+      if (yearEl && draft.year) yearEl.value = draft.year;
+
+      // Re-tick and restore scored hazards from _scores memory
+      Object.entries(_scores).forEach(([hid, s]) => {
+        const cb = document.querySelector(`.hvc-applicable[data-hazard="${hid}"]`);
+        if (cb) {
+          cb.checked = true;
+          const body = document.getElementById(`hbody-${hid}`);
+          if (body) body.style.display = 'block';
+        }
+        const fields = {
+          [`${hid}_aa`]: s.aa, [`${hid}_pb`]: s.pb,
+          [`${hid}_fr`]: s.fr, [`${hid}_pr`]: s.pr,
+          [`${hid}_vp`]: s.vp, [`${hid}_ve`]: s.ve,
+          [`${hid}_vs`]: s.vs, [`${hid}_vt`]: s.vt,
+          [`${hid}_vn`]: s.vn, [`${hid}_ci`]: s.ci,
+          [`${hid}_cp`]: s.cp, [`${hid}_cq`]: s.cq,
+          [`${hid}_cf`]: s.cf, [`${hid}_ch`]: s.ch,
+          [`${hid}_cs`]: s.cs, [`${hid}_pi`]: s.pi,
+          [`${hid}_pu`]: s.pu, [`${hid}_pg`]: s.pg,
+        };
+        Object.entries(fields).forEach(([key, val]) => {
+          if (val == null) return;
+          const sel = document.querySelector(`[data-key="${key}"]`);
+          if (sel) { sel.value = String(val); window.hvcScoreChanged(sel); }
+        });
+        if (s.wards?.length) {
+          _hvcWardSelections[hid] = s.wards;
+          _hvcPickerInited.add(hid);
+          requestAnimationFrame(() => initHvcWardPicker(hid, s.wards));
+        }
+      });
+
+      bindFormEvents();
+      showToast('✓ Draft restored — your progress is still here.');
+      return;
+    } else {
+      // Draft ID exists but record not found — clear stale state
+      _draftId = null;
+    }
+  }
+
   page.innerHTML = `
     <div style="display:flex;flex-direction:column;height:100%;overflow:hidden">
       <div style="padding:12px 20px;background:var(--bg2);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0">
@@ -270,10 +354,9 @@ async function renderHVCPage() {
     </div>`;
 
   document.getElementById('hvc-new-btn')?.addEventListener('click', () => {
+    _draftId = null;
     _customHazards = [];
-    // Clear stale scores from previous session
     Object.keys(_scores).forEach(k => delete _scores[k]);
-    // Reset ward selections and picker tracking
     _hvcWardSelections = {};
     _hvcPickerInited.clear();
     document.getElementById('hvc-content').innerHTML = renderNewForm();
@@ -674,6 +757,9 @@ window.recalcHazard = function(id) {
   _scores[id] = { hScore, vScore, cScore, resilience, riskRating, pIdx,
     aa,pb,fr,pr, vp,ve,vs,vt,vn, ci,cp,cq,cf,ch,cs, pi,pu,pg, wards };
 
+  // Trigger debounced auto-save on every score change
+  scheduleAutoSave();
+
   setTxt(`hs-${id}`,    hScore    !== null ? hScore.toFixed(2)     : '—');
   setTxt(`vs-${id}`,    vScore    !== null ? vScore.toFixed(2)     : '—');
   setTxt(`cs-${id}`,    cScore    !== null ? cScore.toFixed(2)     : '—');
@@ -781,6 +867,11 @@ function renderRefTable(title, colour, rows) {
 
 // ── BIND FORM EVENTS ──────────────────────────────────────
 function bindFormEvents() {
+  // Auto-save when header fields change
+  ['a-label','a-season','a-year','a-lead'].forEach(id => {
+    document.getElementById(id)?.addEventListener('input', scheduleAutoSave);
+    document.getElementById(id)?.addEventListener('change', scheduleAutoSave);
+  });
   // Tab switching
   document.querySelectorAll('.hvc-tab').forEach(tab => {
     tab.addEventListener('click', () => {
@@ -823,8 +914,40 @@ function bindFormEvents() {
   document.getElementById('save-hvc-btn')?.addEventListener('click', saveAssessment);
 }
 
+// ── AUTO-SAVE ─────────────────────────────────────────────
+async function autoSaveDraft() {
+  if (!_muniId) return;
+  const label = document.getElementById('a-label')?.value.trim() || 'Untitled draft';
+
+  const meta = {
+    municipality_id: _muniId,
+    label,
+    season:       document.getElementById('a-season')?.value || '',
+    year:         parseInt(document.getElementById('a-year')?.value) || new Date().getFullYear(),
+    lead_assessor:document.getElementById('a-lead')?.value || '',
+    hazard_count: Object.keys(_scores).length,
+    status:       'draft'
+  };
+
+  if (_draftId) {
+    // Update existing draft record
+    await supabase.from('hvc_assessments').update(meta).eq('id', _draftId);
+  } else {
+    // Create new draft record and store its ID
+    const { data } = await supabase.from('hvc_assessments').insert(meta).select().single();
+    if (data?.id) {
+      _draftId = data.id;
+      console.log('[HVC] Draft created:', _draftId);
+    }
+  }
+}
+
+function scheduleAutoSave() {
+  clearTimeout(_autoSaveTimer);
+  _autoSaveTimer = setTimeout(() => autoSaveDraft(), 2000); // debounce 2s
+}
+
 // ── SAVE ─────────────────────────────────────────────────
-// Prevent double-save
 let _assessmentSaving = false;
 
 async function saveAssessment() {
@@ -834,11 +957,10 @@ async function saveAssessment() {
 
   _assessmentSaving = true;
   const btn = document.getElementById('save-hvc-btn');
-  if (btn) { btn.textContent='Saving…'; btn.disabled=true; }
+  if (btn) { btn.textContent = 'Saving…'; btn.disabled = true; }
 
   const rows = [];
 
-  // Standard hazards — only those with checkbox ticked
   Object.entries(HAZARD_CATEGORIES).forEach(([cat, hazards]) => {
     hazards.forEach(hazard => {
       const id = slug(hazard);
@@ -850,7 +972,6 @@ async function saveAssessment() {
     });
   });
 
-  // Custom hazards
   _customHazards.forEach(({ name, cat }) => {
     const id = slug(name);
     const cb = document.querySelector(`.hvc-applicable[data-hazard="${id}"]`);
@@ -860,49 +981,74 @@ async function saveAssessment() {
     rows.push(buildRow(id, name, cat, s));
   });
 
-  const { data: assessment, error } = await supabase
-    .from('hvc_assessments')
-    .insert({
-      municipality_id: _muniId,
-      label, season: document.getElementById('a-season')?.value,
-      year: parseInt(document.getElementById('a-year')?.value),
-      lead_assessor: document.getElementById('a-lead')?.value,
-      hazard_count: rows.length, status: 'complete'
-    }).select().single();
+  const meta = {
+    municipality_id: _muniId,
+    label,
+    season:        document.getElementById('a-season')?.value,
+    year:          parseInt(document.getElementById('a-year')?.value),
+    lead_assessor: document.getElementById('a-lead')?.value,
+    hazard_count:  rows.length,
+    status:        'complete'
+  };
 
-  if (error) { alert('Error: ' + error.message); _assessmentSaving = false; if(btn){btn.textContent='Save assessment';btn.disabled=false;} return; }
+  let assessmentId = _draftId;
+
+  if (assessmentId) {
+    // Promote the existing draft to complete
+    const { error } = await supabase
+      .from('hvc_assessments')
+      .update(meta)
+      .eq('id', assessmentId);
+    if (error) {
+      alert('Error saving: ' + error.message);
+      _assessmentSaving = false;
+      if (btn) { btn.textContent = 'Save assessment'; btn.disabled = false; }
+      return;
+    }
+  } else {
+    // No draft yet — insert fresh
+    const { data, error } = await supabase
+      .from('hvc_assessments')
+      .insert(meta)
+      .select().single();
+    if (error) {
+      alert('Error: ' + error.message);
+      _assessmentSaving = false;
+      if (btn) { btn.textContent = 'Save assessment'; btn.disabled = false; }
+      return;
+    }
+    assessmentId = data.id;
+  }
+
+  // Delete any existing scores for this assessment then insert fresh
+  await supabase.from('hvc_hazard_scores').delete().eq('assessment_id', assessmentId);
 
   if (rows.length) {
-    const { error: scErr } = await supabase.from('hvc_hazard_scores').insert(rows.map(r=>({...r, assessment_id: assessment.id})));
+    const { error: scErr } = await supabase
+      .from('hvc_hazard_scores')
+      .insert(rows.map(r => ({ ...r, assessment_id: assessmentId })));
     if (scErr) {
       showToast('Warning: assessment saved but hazard scores failed — ' + scErr.message, true);
       console.error('hvc_hazard_scores insert error:', scErr);
     }
   }
 
-  // Update ward dominant_risk based on new hazard scores
+  // Clear draft state now that it's been promoted to complete
+  _draftId = null;
+  clearTimeout(_autoSaveTimer);
+
   try {
     await supabase.rpc('update_ward_dominant_risk', { p_municipality_id: _muniId });
-    console.log('Ward dominant_risk updated');
-  } catch(e) {
-    console.warn('Ward risk update failed:', e.message);
-  }
+  } catch(e) { console.warn('Ward risk update failed:', e.message); }
 
-  // Write audit trail
   await writeAudit(
-    'create',
-    'hvc_assessment',
-    assessment.id,
+    'create', 'hvc_assessment', assessmentId,
     `HVC Assessment: ${label} (${rows.length} hazards scored)`,
     null,
     { label, hazard_count: rows.length, status: 'complete' }
   );
 
-  const msg = document.getElementById('hvc-save-msg');
-  if (msg) msg.style.display = 'inline';
-  if (btn) { btn.textContent='Save assessment'; btn.disabled=false; }
-
-  // Show success toast
+  if (btn) { btn.textContent = 'Save assessment'; btn.disabled = false; }
   showToast('✓ Assessment saved! Dashboard will update automatically.');
   setTimeout(async () => {
     await renderHVCPage();
@@ -1045,6 +1191,10 @@ async function editAssessment(id) {
       wards: s.affected_wards || []
     };
   });
+
+  // Clear any in-progress new draft — we're now editing an existing record
+  _draftId = null;
+  clearTimeout(_autoSaveTimer);
 
   // Render the new form with pre-filled values
   _customHazards = [];
