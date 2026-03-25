@@ -14,7 +14,7 @@ const CHIP_CLASS   = {
 };
 const CHIP_LABEL   = {
   'Extremely High':'EXTR HIGH','Extremely high':'EXTR HIGH',
-  'High':'HIGH','TOLERABLE':'TOLERABLE','Low':'LOW','Negligible':'NEGLIGIBLE'
+  'High':'HIGH','Tolerable':'TOLERABLE','Low':'LOW','Negligible':'NEGLIGIBLE'
 };
 
 let _assessmentData = null;
@@ -28,6 +28,8 @@ let _map = null;
 let _mapMode = 'hazard';
 let _mapHandlersBound = false;
 let _shelterClickBound = false;
+let _projectsClickBound = false;
+let _isAddingProjectMarker = false;
 let _trendSelectedIndex = 0;
 
 export async function initDashboard(user) {
@@ -272,6 +274,7 @@ async function renderWardMap(neutralMode = false) {
         properties: {
           ...props,
           ward_number: wNum,
+          area_name_label: pickAreaNameLabel(props),
           risk_band: risk,
           peak_band: peakBand || null,
           fill_color: RISK_COLOURS[risk] || '#6e7681'
@@ -285,6 +288,8 @@ async function renderWardMap(neutralMode = false) {
   updateMapLegend();
   if (_mapMode === 'shelters') {
     await renderSheltersOnMap();
+  } else if (_mapMode === 'projects') {
+    await renderProjectsOnMap();
   }
   window._drmsaZoomToWard = zoomToWard;
 }
@@ -318,23 +323,13 @@ async function fetchMdbWards() {
     nameFields.forEach(f => { if (muniName) attempts.push(`${f} LIKE '%${muniName}%'`); });
 
     for (const where of attempts) {
-      const allFeatures = [];
-      let offset = 0;
-      let keepPaging = true;
-      while (keepPaging) {
-        const url = `${BASE}?where=${encodeURIComponent(where)}&outFields=*&outSR=4326&f=geojson&resultRecordCount=1000&resultOffset=${offset}&returnGeometry=true`;
-        const res = await fetch(url);
-        if (!res.ok) break;
-        const data = await res.json();
-        const chunk = data?.features || [];
-        allFeatures.push(...chunk);
-        keepPaging = !!data?.properties?.exceededTransferLimit || chunk.length === 1000;
-        offset += chunk.length;
-        if (!chunk.length || offset > 10000) keepPaging = false;
-      }
-      if (allFeatures.length) {
+      const url = `${BASE}?where=${encodeURIComponent(where)}&outFields=*&outSR=4326&f=geojson&resultRecordCount=200&returnGeometry=true`;
+      const res = await fetch(url);
+      if (!res.ok) continue;
+      const data = await res.json();
+      if (data?.features?.length) {
         _mdbWardNumField = wardNumField;
-        return allFeatures;
+        return data.features;
       }
     }
   } catch (e) {
@@ -388,6 +383,7 @@ async function renderWardLayers(featureCollection) {
   });
   window._drmsaWardCentroids = _wardCentroids;
 
+  if (_map.getLayer('area-label')) _map.removeLayer('area-label');
   if (_map.getLayer('ward-label')) _map.removeLayer('ward-label');
   if (_map.getLayer('ward-outline')) _map.removeLayer('ward-outline');
   if (_map.getLayer('ward-fill')) _map.removeLayer('ward-fill');
@@ -423,6 +419,22 @@ async function renderWardLayers(featureCollection) {
       'text-halo-width': 1
     }
   });
+  _map.addLayer({
+    id: 'area-label',
+    type: 'symbol',
+    source: 'ward-source',
+    minzoom: 8,
+    layout: {
+      'text-field': ['coalesce', ['get', 'area_name_label'], ''],
+      'text-size': 11,
+      'text-offset': [0, -1.2]
+    },
+    paint: {
+      'text-color': '#dbe7ff',
+      'text-halo-color': '#0d1117',
+      'text-halo-width': 1
+    }
+  });
 
   if (_mapBounds) {
     _map.fitBounds([[ _mapBounds.minX, _mapBounds.minY ], [ _mapBounds.maxX, _mapBounds.maxY ]], { padding: 30, maxZoom: 12 });
@@ -449,6 +461,12 @@ async function renderWardLayers(featureCollection) {
       const feature = e.features?.[0];
       if (!feature) return;
       const wardNum = parseInt(feature.properties?.ward_number);
+      if (_isAddingProjectMarker) {
+        _isAddingProjectMarker = false;
+        _map.getCanvas().style.cursor = '';
+        saveProjectMarkerAt(e.lngLat, wardNum);
+        return;
+      }
       const risk = normalizeRiskBand(feature.properties?.risk_band);
       const wrap = document.getElementById('map-canvas-wrap');
       const rect = wrap ? wrap.getBoundingClientRect() : { left: 0, top: 0 };
@@ -522,12 +540,130 @@ function updateMapLegend() {
 function setMapMode(mode) {
   _mapMode = mode;
   if (!_map) return;
-  const hazardVisible = mode !== 'shelters';
-  if (_map.getLayer('ward-fill')) _map.setLayoutProperty('ward-fill', 'visibility', hazardVisible ? 'visible' : 'none');
-  if (_map.getLayer('ward-outline')) _map.setLayoutProperty('ward-outline', 'visibility', hazardVisible ? 'visible' : 'none');
-  if (_map.getLayer('ward-label')) _map.setLayoutProperty('ward-label', 'visibility', hazardVisible ? 'visible' : 'none');
-  if (_map.getLayer('shelter-circle')) _map.setLayoutProperty('shelter-circle', 'visibility', hazardVisible ? 'none' : 'visible');
-  if (_map.getLayer('shelter-label')) _map.setLayoutProperty('shelter-label', 'visibility', hazardVisible ? 'none' : 'visible');
+  const hazardVisible = mode === 'hazard';
+  const sheltersVisible = mode === 'shelters';
+  const projectsVisible = mode === 'projects';
+  if (_map.getLayer('ward-fill')) _map.setLayoutProperty('ward-fill', 'visibility', (hazardVisible || projectsVisible) ? 'visible' : 'none');
+  if (_map.getLayer('ward-outline')) _map.setLayoutProperty('ward-outline', 'visibility', (hazardVisible || projectsVisible) ? 'visible' : 'none');
+  if (_map.getLayer('ward-label')) _map.setLayoutProperty('ward-label', 'visibility', (hazardVisible || projectsVisible) ? 'visible' : 'none');
+  if (_map.getLayer('area-label')) _map.setLayoutProperty('area-label', 'visibility', (hazardVisible || projectsVisible) ? 'visible' : 'none');
+  if (_map.getLayer('shelter-circle')) _map.setLayoutProperty('shelter-circle', 'visibility', sheltersVisible ? 'visible' : 'none');
+  if (_map.getLayer('shelter-label')) _map.setLayoutProperty('shelter-label', 'visibility', sheltersVisible ? 'visible' : 'none');
+  if (_map.getLayer('project-circle')) _map.setLayoutProperty('project-circle', 'visibility', projectsVisible ? 'visible' : 'none');
+  if (_map.getLayer('project-label')) _map.setLayoutProperty('project-label', 'visibility', projectsVisible ? 'visible' : 'none');
+}
+
+function pickAreaNameLabel(props = {}) {
+  const candidates = [
+    'SUBURB_NAME','SUBURB','TOWN_NAME','CITY_NAME','PLACE_NAME','MAIN_PLACE','MUNICNAME',
+    'MUNI_NAME','LOCAL_MUNI','NAME','WARD_NAME'
+  ];
+  for (const key of candidates) {
+    const value = props[key] ?? props[key.toLowerCase()];
+    if (value && String(value).trim()) return String(value).trim();
+  }
+  return '';
+}
+
+async function renderProjectsOnMap() {
+  if (!_map || !_muniId) return;
+
+  const { data: mits } = await supabase
+    .from('mitigations')
+    .select('id,hazard_name,description,specific_location,affected_wards,idp_status,cost_estimate,responsible_owner,timeframe')
+    .eq('municipality_id', _muniId)
+    .eq('is_library', false);
+
+  const linked = (mits || []).map((m, idx) => {
+    const ward = Array.isArray(m.affected_wards) && m.affected_wards.length ? parseInt(m.affected_wards[0]) : null;
+    const coordsFromLocation = parseMarkerCoords(m.specific_location);
+    const point = coordsFromLocation || resolveWardPoint(ward) || mapCenterPoint();
+    const isManual = !!coordsFromLocation;
+    return {
+      type: 'Feature',
+      id: `idp-${m.id || idx}`,
+      properties: {
+        name: m.hazard_name || 'IDP project',
+        description: m.description || '',
+        ward_number: ward || '',
+        project_type: isManual ? 'Manual marker' : 'IDP-linked',
+        status: m.idp_status || 'proposed',
+        owner: m.responsible_owner || '',
+        timeframe: m.timeframe || '',
+        cost_estimate: m.cost_estimate || '',
+        linked_idp: !isManual
+      },
+      geometry: { type: 'Point', coordinates: point }
+    };
+  });
+  const features = linked;
+  if (_map.getLayer('project-label')) _map.removeLayer('project-label');
+  if (_map.getLayer('project-circle')) _map.removeLayer('project-circle');
+  if (_map.getSource('project-source')) _map.removeSource('project-source');
+
+  _map.addSource('project-source', {
+    type: 'geojson',
+    data: { type: 'FeatureCollection', features }
+  });
+  _map.addLayer({
+    id: 'project-circle',
+    type: 'circle',
+    source: 'project-source',
+    paint: {
+      'circle-radius': 7,
+      'circle-color': [
+        'match', ['get', 'status'],
+        'linked-funded', '#3fb950',
+        'linked-awaiting', '#d29922',
+        'proposed', '#58a6ff',
+        'in-progress', '#d29922',
+        'completed', '#3fb950',
+        '#58a6ff'
+      ],
+      'circle-stroke-width': 1.4,
+      'circle-stroke-color': ['case', ['boolean', ['get', 'linked_idp'], false], '#ffffff', '#0d1117']
+    },
+    layout: { visibility: 'none' }
+  });
+  _map.addLayer({
+    id: 'project-label',
+    type: 'symbol',
+    source: 'project-source',
+    layout: {
+      'text-field': ['coalesce', ['get', 'name'], 'Project'],
+      'text-size': 9,
+      'text-offset': [0, 1.3]
+    },
+    paint: {
+      'text-color': '#e6edf3',
+      'text-halo-color': '#0d1117',
+      'text-halo-width': 1
+    },
+    minzoom: 10
+  });
+
+  if (!_projectsClickBound) {
+    _map.on('click', 'project-circle', e => {
+      const p = e.features?.[0]?.properties;
+      if (!p) return;
+      showProjectTooltip(p, e.point?.x, e.point?.y);
+    });
+    _projectsClickBound = true;
+  }
+
+  const legend = document.getElementById('map-legend-bar');
+  if (legend) {
+    legend.innerHTML = [
+      ['#3fb950', 'Linked funded'],
+      ['#d29922', 'Linked awaiting / In progress'],
+      ['#58a6ff', 'Proposed / Planned'],
+      ['#ffffff', 'White ring = IDP linked']
+    ].map(([col, label]) =>
+      `<div style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text3)"><span style="width:10px;height:10px;border-radius:50%;display:inline-block;background:${col}"></span>${label}</div>`
+    ).join('');
+  }
+
+  setMapMode('projects');
 }
 
 function showWardInfo(wid, risk, wardNum, clickX, clickY) {
@@ -564,12 +700,24 @@ function showWardInfo(wid, risk, wardNum, clickX, clickY) {
     'pointer-events:auto'
   ].join(';');
 
-  const hazardRows = wardHazards.map(h =>
+  // Keep tooltip inside the map canvas
+  const wW = wrap.offsetWidth  || 900;
+  const wH = wrap.offsetHeight || 380;
+  const tipX = clickX !== undefined ? Math.min(Math.max(clickX + 12, 8), wW - 270) : 12;
+  const tipY = clickY !== undefined ? Math.min(Math.max(clickY - 10, 8), wH - 220) : 12;
+  tooltip.style.left = tipX + 'px';
+  tooltip.style.top  = tipY + 'px';
+
+  const hazardRows = wardHazards.slice(0,6).map(h =>
     '<div style="display:flex;justify-content:space-between;align-items:center;padding:3px 0;border-bottom:1px solid rgba(48,54,61,.3)">' +
     '<span style="font-size:11px;color:var(--text2)">' + h.hazard_name + '</span>' +
     '<span style="font-size:10px;font-weight:700;color:' + (BAND_COL[h.risk_band]||'#6e7681') + '">' + (h.risk_band||'?') + '</span>' +
     '</div>'
   ).join('');
+
+  const extra = wardHazards.length > 6
+    ? '<div style="font-size:10px;color:var(--text3);margin-top:4px">+' + (wardHazards.length-6) + ' more hazards</div>'
+    : '';
 
   const noHazards = wardHazards.length === 0
     ? '<div style="font-size:11px;color:var(--text3);line-height:1.6">No hazards scored for this ward yet.<br><span style="font-size:10px">Complete an HVC assessment and select this ward.</span></div>'
@@ -583,12 +731,9 @@ function showWardInfo(wid, risk, wardNum, clickX, clickY) {
     '<div style="display:inline-block;background:' + bandCol + '22;border:1px solid ' + bandCol + '55;border-radius:4px;padding:2px 8px;font-size:10px;font-weight:700;color:' + bandCol + ';margin-bottom:8px;letter-spacing:.04em">' +
       risk.toUpperCase() +
     '</div>' +
-    '<div style="max-height:170px;overflow:auto;padding-right:4px">' +
-    (wardHazards.length ? '<div style="font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--text3);margin-bottom:5px">Hazards in ward</div>' + hazardRows : noHazards) +
-    '</div>';
+    (wardHazards.length ? '<div style="font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--text3);margin-bottom:5px">Hazards in ward</div>' + hazardRows + extra : noHazards);
 
   wrap.appendChild(tooltip);
-  positionTooltipInWrap(tooltip, wrap, clickX, clickY);
 
   document.getElementById('wtt-close')?.addEventListener('click', e => {
     e.stopPropagation();
@@ -634,9 +779,8 @@ function syncTrendSelector() {
 function renderTrend(hazardIdx) {
   const body = document.getElementById('trend-body');
   if (!body) return;
-  const idx = Number.isFinite(hazardIdx) ? hazardIdx : 0;
   const hazards = _assessmentData?.hazards || [];
-  const h = hazards[idx];
+  const h = hazards[hazardIdx];
   if (!h) { body.innerHTML = '<div style="color:var(--text3);font-size:12px;padding:8px">No trend data available yet.</div>'; return; }
 
   const seasons = [
@@ -845,6 +989,11 @@ function showShelterTooltip(s, clickX, clickY) {
   tooltip.id = 'ward-tooltip';
   tooltip.style.cssText = 'position:absolute;background:var(--bg2);border:1px solid var(--border2);border-left:3px solid '+col+';border-radius:8px;padding:12px 14px;min-width:190px;max-width:240px;box-shadow:0 4px 20px rgba(0,0,0,.45);z-index:100;font-family:Inter,system-ui,sans-serif';
 
+  const wW = wrap.offsetWidth || 900;
+  const wH = wrap.offsetHeight || 380;
+  tooltip.style.left = Math.min(Math.max(clickX+12, 8), wW-250) + 'px';
+  tooltip.style.top  = Math.min(Math.max(clickY-10, 8), wH-180) + 'px';
+
   tooltip.innerHTML =
     '<div style="display:flex;justify-content:space-between;margin-bottom:8px">' +
       '<div style="font-size:13px;font-weight:700;color:var(--text)">' + s.name + '</div>' +
@@ -862,7 +1011,6 @@ function showShelterTooltip(s, clickX, clickY) {
     '</div>';
 
   wrap.appendChild(tooltip);
-  positionTooltipInWrap(tooltip, wrap, clickX, clickY);
   document.getElementById('wtt-close')?.addEventListener('click', e => { e.stopPropagation(); tooltip.remove(); });
   setTimeout(() => {
     document.addEventListener('click', function h(e) { if (!tooltip.contains(e.target)) { tooltip.remove(); document.removeEventListener('click',h); } });
@@ -872,8 +1020,7 @@ function showShelterTooltip(s, clickX, clickY) {
 function initDashboardEvents() {
   document.getElementById('assess-sel-top')?.addEventListener('change', e => selectAssessment(e.target.value));
   document.getElementById('assess-map')?.addEventListener('change', e => selectAssessment(e.target.value));
-  const trendSel = document.getElementById('trend-sel');
-  trendSel?.addEventListener('change', e => {
+  document.getElementById('trend-sel')?.addEventListener('change', e => {
     _trendSelectedIndex = parseInt(e.target.value, 10) || 0;
     renderTrend(_trendSelectedIndex);
   });
@@ -925,7 +1072,12 @@ function initDashboardEvents() {
       mapDd.style.display = 'none';
     });
   }
-  // Layer toggle — Hazard shows risk colours, Shelters shows shelter dots
+  document.getElementById('map-add-project')?.addEventListener('click', async () => {
+    setMapMode('projects');
+    await renderProjectsOnMap();
+    await startAddProjectMode();
+  });
+  // Layer toggle — Hazard shows risk colours, Shelters/Projects show other layers
   document.querySelectorAll('.lyr').forEach(btn => {
     btn.addEventListener('click', async () => {
       document.querySelectorAll('.lyr').forEach(b => b.classList.remove('on'));
@@ -933,6 +1085,8 @@ function initDashboardEvents() {
       const layer = btn.textContent.trim().toLowerCase();
       if (layer === 'shelters') {
         await renderSheltersOnMap();
+      } else if (layer === 'projects') {
+        await renderProjectsOnMap();
       } else {
         setMapMode('hazard');
         updateMapLegend();
@@ -946,26 +1100,95 @@ function initDashboardEvents() {
 
 async function selectAssessment(id) {
   const { data } = await supabase.from('hvc_hazard_scores').select('*').eq('assessment_id', id).order('risk_rating', { ascending: false });
-  if (data) { _assessmentData.hazards = data; renderHazardTable(); syncTrendSelector(); await renderWardMap(_mapMode === 'shelters'); }
+  if (data) { _assessmentData.hazards = data; renderHazardTable(); syncTrendSelector(); await renderWardMap(_mapMode !== 'hazard'); }
 }
 
-function positionTooltipInWrap(tooltip, wrap, clickX, clickY) {
-  const margin = 8;
-  const wrapW = wrap.offsetWidth || 900;
-  const wrapH = wrap.offsetHeight || 380;
+function resolveWardPoint(wardNum) {
+  const entry = _wardFeatureIndex[parseInt(wardNum)];
+  return entry ? [entry.centroid.cx, entry.centroid.cy] : null;
+}
+
+function mapCenterPoint() {
+  if (_mapBounds) return [(_mapBounds.minX + _mapBounds.maxX) / 2, (_mapBounds.minY + _mapBounds.maxY) / 2];
+  return [27.9, -26.1];
+}
+
+function parseMarkerCoords(locationText) {
+  if (!locationText || typeof locationText !== 'string') return null;
+  const m = locationText.match(/^@map:\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)/i);
+  if (!m) return null;
+  const lat = parseFloat(m[1]);
+  const lng = parseFloat(m[2]);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  return [lng, lat];
+}
+
+function showProjectTooltip(p, clickX, clickY) {
+  document.getElementById('ward-tooltip')?.remove();
+  const wrap = document.getElementById('map-canvas-wrap');
+  if (!wrap) return;
+  const linked = String(p.linked_idp) === 'true' || p.linked_idp === true;
+  const tooltip = document.createElement('div');
+  tooltip.id = 'ward-tooltip';
+  tooltip.style.cssText = `position:absolute;background:var(--bg2);border:1px solid var(--border2);border-left:3px solid ${linked ? '#ffffff' : '#58a6ff'};border-radius:8px;padding:12px 14px;min-width:230px;max-width:280px;box-shadow:0 4px 20px rgba(0,0,0,.45);z-index:100;font-family:Inter,system-ui,sans-serif`;
+  tooltip.innerHTML = `
+    <div style="display:flex;justify-content:space-between;margin-bottom:6px">
+      <div style="font-size:13px;font-weight:700;color:var(--text)">${p.name || 'Project'}</div>
+      <button id="wtt-close" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:18px;line-height:1">×</button>
+    </div>
+    <div style="font-size:11px;color:var(--text3);line-height:1.6;max-height:180px;overflow:auto;padding-right:4px">
+      <div><strong style="color:var(--text2)">Ward:</strong> ${p.ward_number || '—'}</div>
+      <div><strong style="color:var(--text2)">Type:</strong> ${p.project_type || '—'}</div>
+      <div><strong style="color:var(--text2)">Status:</strong> ${p.status || '—'}</div>
+      ${p.owner ? `<div><strong style="color:var(--text2)">Owner:</strong> ${p.owner}</div>` : ''}
+      ${p.timeframe ? `<div><strong style="color:var(--text2)">Timeframe:</strong> ${p.timeframe}</div>` : ''}
+      ${p.cost_estimate ? `<div><strong style="color:var(--text2)">Cost:</strong> ${p.cost_estimate}</div>` : ''}
+      ${p.description ? `<div style="margin-top:6px">${p.description}</div>` : ''}
+      <div style="margin-top:6px;color:${linked ? '#e6edf3' : '#58a6ff'}">${linked ? '🔗 IDP linked project' : '📍 Manual project marker'}</div>
+    </div>`;
+  wrap.appendChild(tooltip);
+  const wW = wrap.offsetWidth || 900;
+  const wH = wrap.offsetHeight || 380;
   const tipW = tooltip.offsetWidth || 250;
   const tipH = tooltip.offsetHeight || 200;
+  const x = Math.min(Math.max((clickX || 20) + 12, 8), wW - tipW - 8);
+  const y = Math.min(Math.max((clickY || 20) - 10, 8), wH - tipH - 8);
+  tooltip.style.left = `${x}px`;
+  tooltip.style.top = `${y}px`;
+  document.getElementById('wtt-close')?.addEventListener('click', e => { e.stopPropagation(); tooltip.remove(); });
+}
 
-  let x = (clickX ?? margin) + 12;
-  let y = (clickY ?? margin) - 10;
+async function startAddProjectMode() {
+  if (!_map) return;
+  _isAddingProjectMarker = true;
+  _map.getCanvas().style.cursor = 'crosshair';
+  showToast('Click anywhere inside a ward polygon to place the project marker.');
+}
 
-  if (x + tipW > wrapW - margin) x = wrapW - tipW - margin;
-  if (x < margin) x = margin;
-  if (y + tipH > wrapH - margin) y = (clickY ?? margin) - tipH - 12;
-  if (y < margin) y = margin;
-
-  tooltip.style.left = `${Math.round(x)}px`;
-  tooltip.style.top = `${Math.round(y)}px`;
+async function saveProjectMarkerAt(lngLat, wardNumFromClick) {
+  const name = prompt('Project name');
+  if (!name) return;
+  const status = prompt('Project status (planned / in-progress / completed)', 'planned') || 'planned';
+  const wardInput = prompt('Ward number', wardNumFromClick ? String(wardNumFromClick) : '') || '';
+  const description = prompt('Short project description', '') || '';
+  const wardNum = parseInt(wardInput, 10);
+  const payload = {
+    municipality_id: _muniId,
+    hazard_name: name.trim(),
+    description: description.trim(),
+    affected_wards: Number.isFinite(wardNum) ? [wardNum] : [],
+    specific_location: `@map:${lngLat.lat},${lngLat.lng}`,
+    idp_status: status.trim().toLowerCase(),
+    mitigation_type: 'Policy/Plan',
+    is_library: false
+  };
+  const { error } = await supabase.from('mitigations').insert(payload);
+  if (error) {
+    showToast(`Could not save marker to backend: ${error.message}`, true);
+    return;
+  }
+  showToast('Project marker saved and shared with your municipality team.');
+  await renderProjectsOnMap();
 }
 
 function setEl(id, val) {
