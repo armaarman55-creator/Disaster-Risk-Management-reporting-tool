@@ -552,12 +552,175 @@ window.toggleAction = async function(idx) {
 window.generateSitrepPDF = function() {
   const muniName = _user?.municipalities?.name || 'Municipality';
   if (!_currentSitrep) return;
+  const s = _currentSitrep;
   const { shelters, closures } = window._sitrepLinkedData || { shelters: [], closures: [] };
-  const text = getSitrepText(_currentSitrep, shelters, closures, muniName);
-  const num = String(_currentSitrep.sitrep_number).padStart(2,'0');
+  const num = String(s.sitrep_number).padStart(2,'00');
+
+  const linkedShelters = shelters.filter(sh => (s.linked_shelters||[]).includes(sh.id));
+  const linkedClosures = closures.filter(rc => (s.linked_closures||[]).includes(rc.id));
+
+  const fmt = (d) => d ? new Date(d).toLocaleString('en-ZA', {day:'numeric',month:'long',year:'numeric',hour:'2-digit',minute:'2-digit'}) : '—';
+  const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-ZA', {day:'numeric',month:'long',year:'numeric'}) : '—';
+
+  const STATUS_COL = { active:'#f85149', contained:'#d29922', resolved:'#3fb950' };
+  const statusCol  = STATUS_COL[s.status] || '#6e7681';
+  const statusPill = `<span style="background:${statusCol}20;border:1px solid ${statusCol};color:${statusCol};padding:3px 10px;border-radius:4px;font-size:10pt;font-weight:700;letter-spacing:.06em">${(s.status||'DRAFT').toUpperCase()}</span>`;
+
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>SITREP-${num} — ${s.incident_name||''}</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:Arial,Helvetica,sans-serif;font-size:11pt;color:#1a1a2e;background:#fff}
+  @media screen{body{max-width:800px;margin:0 auto;padding:30px 20px}}
+  @media print{body{padding:0}@page{margin:18mm 15mm}}
+
+  .doc-header{background:#1a3a6b;color:#fff;padding:22px 28px 18px;display:flex;justify-content:space-between;align-items:flex-start}
+  .doc-header-left h1{font-size:18pt;font-weight:700;letter-spacing:-.01em;margin-bottom:4px}
+  .doc-header-left .sub{font-size:10pt;opacity:.8;margin-bottom:2px}
+  .doc-header-right{text-align:right;font-size:9pt;opacity:.85;line-height:1.8}
+  .doc-num{font-size:22pt;font-weight:800;letter-spacing:.04em;color:#fff;opacity:.25;margin-top:4px}
+
+  .status-bar{background:#f0f4f8;border-bottom:3px solid ${statusCol};padding:10px 28px;display:flex;align-items:center;gap:14px;font-size:10pt;flex-wrap:wrap}
+  .status-bar .meta{margin-left:auto;color:#666;font-size:9pt}
+
+  .doc-body{padding:22px 28px}
+
+  .sec{margin-bottom:22px;page-break-inside:avoid}
+  .sec-title{font-size:9pt;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#1a3a6b;border-bottom:1.5px solid #1a3a6b;padding-bottom:4px;margin-bottom:12px}
+
+  .stat-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-bottom:12px}
+  .stat-box{border:1px solid #e0e6ed;border-radius:6px;padding:10px 6px;text-align:center}
+  .stat-box .val{font-size:18pt;font-weight:800;color:#1a3a6b;line-height:1}
+  .stat-box .val.red{color:#c0392b}
+  .stat-box .val.amber{color:#e67e22}
+  .stat-box .val.blue{color:#2980b9}
+  .stat-box .lbl{font-size:8pt;color:#888;margin-top:3px;text-transform:uppercase;letter-spacing:.04em}
+
+  table{width:100%;border-collapse:collapse;font-size:10pt;margin-bottom:8px}
+  th{background:#1a3a6b;color:#fff;padding:6px 10px;text-align:left;font-size:9pt;font-weight:600}
+  td{padding:5px 10px;border-bottom:1px solid #eef0f3}
+  tr:nth-child(even) td{background:#f7f9fc}
+
+  .field-row{display:flex;gap:0;border-bottom:1px solid #eef0f3;padding:5px 0}
+  .field-key{width:38%;font-size:9.5pt;color:#666;font-weight:600}
+  .field-val{flex:1;font-size:9.5pt;color:#1a1a2e}
+
+  .narrative{background:#f7f9fc;border-left:3px solid #1a3a6b;padding:10px 14px;font-size:10pt;line-height:1.7;border-radius:0 4px 4px 0}
+
+  .doc-footer{background:#f0f4f8;border-top:2px solid #1a3a6b;padding:10px 28px;font-size:8pt;color:#888;display:flex;justify-content:space-between}
+
+  @media screen{
+    .print-btn{display:block;margin:20px auto;padding:12px 32px;background:#1a3a6b;color:#fff;border:none;border-radius:6px;font-size:13px;font-weight:700;cursor:pointer;letter-spacing:.04em}
+    .print-btn:hover{background:#16305a}
+  }
+  @media print{.print-btn{display:none}}
+</style>
+</head>
+<body>
+
+<button class="print-btn" onclick="window.print()">⬇ Save as PDF / Print</button>
+
+<div class="doc-header">
+  <div class="doc-header-left">
+    <h1>Situation Report</h1>
+    <div class="sub">${muniName} · Disaster Management Centre</div>
+    <div class="sub">${s.incident_name || 'Incident situation update'}</div>
+  </div>
+  <div class="doc-header-right">
+    <div class="doc-num">SITREP-${num}</div>
+    <div>Issued: ${fmt(s.issued_at)}</div>
+    <div>Hazard: ${s.hazard_type || '—'}</div>
+    <div>Wards: ${Array.isArray(s.affected_wards) ? s.affected_wards.join(', ') : (s.affected_wards||'—')}</div>
+  </div>
+</div>
+
+<div class="status-bar">
+  ${statusPill}
+  <strong>${s.incident_name || '—'}</strong>
+  <span class="meta">
+    Next SitRep due: <strong>${s.next_due ? fmtDate(s.next_due) : 'TBC'}</strong>
+    &nbsp;·&nbsp; Authorised by: <strong>${s.issued_by || '—'}</strong>
+  </span>
+</div>
+
+<div class="doc-body">
+
+  <!-- Current Situation -->
+  <div class="sec">
+    <div class="sec-title">Current Situation</div>
+    <div class="stat-grid">
+      <div class="stat-box"><div class="val amber">${s.displaced_persons||0}</div><div class="lbl">Displaced</div></div>
+      <div class="stat-box"><div class="val amber">${s.injuries||0}</div><div class="lbl">Injuries</div></div>
+      <div class="stat-box"><div class="val red">${s.fatalities||0}</div><div class="lbl">Fatalities</div></div>
+      <div class="stat-box"><div class="val amber">${s.properties_damaged||0}</div><div class="lbl">Properties Damaged</div></div>
+      <div class="stat-box"><div class="val blue">${s.persons_sheltered||0}</div><div class="lbl">Sheltered</div></div>
+      <div class="stat-box"><div class="val amber">${s.roads_closed||0}</div><div class="lbl">Roads Closed</div></div>
+    </div>
+  </div>
+
+  <!-- Narrative -->
+  ${s.narrative ? `
+  <div class="sec">
+    <div class="sec-title">Situation Narrative</div>
+    <div class="narrative">${s.narrative}</div>
+  </div>` : ''}
+
+  <!-- Linked Shelters -->
+  ${linkedShelters.length ? `
+  <div class="sec">
+    <div class="sec-title">Linked Shelters</div>
+    <table>
+      <tr><th>Shelter</th><th>Ward</th><th>Occupancy</th><th>Status</th></tr>
+      ${linkedShelters.map(sh=>`
+        <tr>
+          <td>${sh.name}</td>
+          <td>${sh.ward_number||'—'}</td>
+          <td>${sh.current_occupancy||0} / ${sh.capacity||0}</td>
+          <td>${(sh.status||'').toUpperCase()}</td>
+        </tr>`).join('')}
+    </table>
+  </div>` : ''}
+
+  <!-- Linked Road Closures -->
+  ${linkedClosures.length ? `
+  <div class="sec">
+    <div class="sec-title">Linked Road Closures</div>
+    <table>
+      <tr><th>Road</th><th>Reason</th><th>Status</th></tr>
+      ${linkedClosures.map(rc=>`
+        <tr>
+          <td>${rc.road_name}</td>
+          <td>${rc.reason||'—'}</td>
+          <td>${(rc.status||'').toUpperCase()}</td>
+        </tr>`).join('')}
+    </table>
+  </div>` : ''}
+
+  <!-- Authorisation -->
+  <div class="sec">
+    <div class="sec-title">Authorisation</div>
+    <div class="field-row"><span class="field-key">Issued by</span><span class="field-val">${s.issued_by||'—'}</span></div>
+    <div class="field-row"><span class="field-key">Issued at</span><span class="field-val">${fmt(s.issued_at)}</span></div>
+    <div class="field-row"><span class="field-key">Next SitRep due</span><span class="field-val">${s.next_due ? fmt(s.next_due) : 'TBC'}</span></div>
+    <div class="field-row"><span class="field-key">Published</span><span class="field-val">${s.is_published ? 'Yes — live on public portal' : 'No — draft'}</span></div>
+  </div>
+
+</div>
+
+<div class="doc-footer">
+  <span>SITREP-${num} · ${muniName} Disaster Management Centre · DRMSA Platform</span>
+  <span>Generated ${new Date().toLocaleString('en-ZA')}</span>
+</div>
+
+</body>
+</html>`;
+
   const win = window.open('', '_blank');
-  win.document.write(`<html><head><title>SITREP-${num}</title><style>body{font-family:Arial,sans-serif;padding:40px;max-width:700px;margin:0 auto;font-size:12px;line-height:1.7}h1{font-size:18px;color:#1a3a6b}pre{white-space:pre-wrap;font-family:Arial,sans-serif}footer{margin-top:40px;font-size:10px;color:#888;border-top:1px solid #eee;padding-top:12px}</style></head><body><h1>SITREP-${num} — ${_currentSitrep.incident_name||''}</h1><pre>${text}</pre><footer>DRMSA · ${muniName} Disaster Management Centre · Apache 2.0</footer></body></html>`);
-  win.print();
+  win.document.write(html);
+  win.document.close();
 };
  
 function showToast(msg, isError = false) {
