@@ -283,7 +283,7 @@ function showResetPasswordScreen() {
       return;
     }
 
-    location.reload();
+    window.location.replace(window.location.pathname);
   });
 }
 
@@ -302,5 +302,7 @@ function hideAuth() {
 
 export async function signOut() {
   await supabase.auth.signOut();
-  window.location.reload();
+  // location.replace() forces a full navigation, busting the ES module cache.
+  // reload() only does a soft reload and can leave stale module closures in memory.
+  window.location.replace(window.location.pathname);
 }
