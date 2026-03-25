@@ -5,7 +5,7 @@ const WARD_POLYGONS = [
   { id: 'W1', pts: '24,14 88,6 102,50 58,72 12,58' },
   { id: 'W2', pts: '88,6 160,12 166,52 102,50' },
   { id: 'W3', pts: '160,12 206,22 200,62 166,52' },
-  { id: 'W4', pts: '12,58 58,72 66,118 18,130 5,96' },
+  { id: 'W4', pts: '5,96 12,58 58,72 66,118 18,130' },
   { id: 'W5', pts: '58,72 102,50 166,52 160,110 90,122 66,118' },
   { id: 'W6', pts: '160,110 200,62 228,108 214,148 166,142' }
 ];
@@ -207,10 +207,11 @@ async function renderWardMap(neutralMode = false) {
     const rating = h.risk_rating ?? null;
     const band   = h.risk_band || ratingToBand(rating);
     if (!band) return;
-    h.affected_wards.forEach(wNum => {
+    h.affected_wards.forEach(wRaw => {
+      const wNum = parseInt(wRaw); // normalise — DB may store as string or int
+      if (isNaN(wNum)) return;
       if (!wardRatings[wNum]) wardRatings[wNum] = [];
       if (rating !== null) wardRatings[wNum].push(rating);
-      // Track peak band per ward
       const cur = wardPeak[wNum];
       if (!cur || RISK_ORDER.indexOf(band) < RISK_ORDER.indexOf(cur)) {
         wardPeak[wNum] = band;
@@ -313,40 +314,50 @@ async function renderWardMap(neutralMode = false) {
 
     mdbWards.forEach(f => {
       const props  = f.properties || {};
-      // Try multiple field name variants
       const wardNo = props[_mdbWardNumField]
         ?? props['WARD_NO'] ?? props['WARD_NUM'] ?? props['WardNo']
         ?? props['ward_no'] ?? props['ward_num'] ?? '?';
-      const rawRisk2 = wardRisk[parseInt(wardNo)] || 'Negligible';
-      const risk   = Object.keys(RISK_COLOURS).find(k => k.toLowerCase() === rawRisk2.toLowerCase()) || rawRisk2;
-      const fill   = RISK_COLOURS[risk] || '#6e7681';
-      const peakBand = wardPeak[parseInt(wardNo)];
-      const strokeCol = peakBand && peakBand !== risk
-        ? (RISK_COLOURS[peakBand] || fill)
-        : fill;
-      const strokeW = peakBand && peakBand !== risk ? '2' : '0.6';
-      const geom   = f.geometry;
+      // Normalise to string for consistent lookup against wardRisk keys
+      const wardNoStr = String(wardNo);
+      const wardNoInt = parseInt(wardNo);
+      const rawRisk2  = wardRisk[wardNoInt] || wardRisk[wardNoStr] || 'Negligible';
+      const risk      = Object.keys(RISK_COLOURS).find(k => k.toLowerCase() === rawRisk2.toLowerCase()) || rawRisk2;
+      const fill      = RISK_COLOURS[risk] || '#6e7681';
+      const peakBand  = wardPeak[wardNoInt] || wardPeak[wardNoStr];
+      const strokeCol = peakBand && peakBand !== risk ? (RISK_COLOURS[peakBand] || fill) : fill;
+      const strokeW   = peakBand && peakBand !== risk ? '2' : '0.6';
+      const geom      = f.geometry;
       if (!geom) return;
-      const rings  = geom.type==='MultiPolygon' ? geom.coordinates.flat(1) : geom.coordinates;
 
-      rings.forEach(ring => {
-        const pts = ring.map(coord => project(coord).map(v=>v.toFixed(1)).join(',')).join(' ');
-        const poly = document.createElementNS('http://www.w3.org/2000/svg','polygon');
-        poly.setAttribute('points', pts);
-        poly.setAttribute('fill', fill);
-        poly.setAttribute('fill-opacity','0.45');
-        poly.setAttribute('stroke', strokeCol);
-        poly.setAttribute('stroke-width', strokeW);
-        poly.style.cursor = 'pointer';
-        poly.addEventListener('mouseenter', function(){ this.setAttribute('fill-opacity','0.75'); });
-        poly.addEventListener('mouseleave', function(){ this.setAttribute('fill-opacity','0.45'); });
-        poly.addEventListener('click', (e) => {
-          const wrap = document.getElementById('map-canvas-wrap');
-          const rect = wrap ? wrap.getBoundingClientRect() : {left:0,top:0};
-          showWardInfo(wardNo, risk, wardNo, e.clientX - rect.left, e.clientY - rect.top);
-        });
-        g.appendChild(poly);
+      // Build rings array — handle both Polygon and MultiPolygon
+      const rings = geom.type === 'MultiPolygon'
+        ? geom.coordinates.flat(1)
+        : geom.coordinates;
+
+      // Combine all rings into a single SVG path with evenodd fill rule
+      // This correctly renders ward holes and prevents tangled edges on complex wards
+      const d = rings.map(ring => {
+        const projected = ring.map(coord => project(coord).map(v => v.toFixed(1)).join(','));
+        return 'M ' + projected.join(' L ') + ' Z';
+      }).join(' ');
+
+      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      path.setAttribute('d', d);
+      path.setAttribute('fill-rule', 'evenodd');
+      path.setAttribute('fill', fill);
+      path.setAttribute('fill-opacity', '0.45');
+      path.setAttribute('stroke', strokeCol);
+      path.setAttribute('stroke-width', strokeW);
+      path.setAttribute('stroke-linejoin', 'round');
+      path.style.cursor = 'pointer';
+      path.addEventListener('mouseenter', function() { this.setAttribute('fill-opacity', '0.75'); });
+      path.addEventListener('mouseleave', function() { this.setAttribute('fill-opacity', '0.45'); });
+      path.addEventListener('click', (e) => {
+        const wrap = document.getElementById('map-canvas-wrap');
+        const rect = wrap ? wrap.getBoundingClientRect() : { left: 0, top: 0 };
+        showWardInfo(wardNo, risk, wardNoInt, e.clientX - rect.left, e.clientY - rect.top);
       });
+      g.appendChild(path);
 
       // Centroid label
       const allPts = rings.flat().map(project);
