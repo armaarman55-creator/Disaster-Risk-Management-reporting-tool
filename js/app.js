@@ -165,9 +165,9 @@ async function loadPageModule(pageId) {
       case 'sitrep':       { const m = await import('./sitrep.js');       m.initSitrep(_user);       break; }
       case 'mopup':        { const m = await import('./mopup.js');        m.initMopup(_user);        break; }
       case 'stakeholders': { const m = await import('./stakeholders.js'); m.initStakeholders(_user); break; }
-      case 'hvc':          { const m = await import('./hvc.js?v=20260325b'); m.initHVC(_user);      break; }
+      case 'hvc':          { const m = await import('./hvc.js?v=20260325c'); m.initHVC(_user);      break; }
       case 'idp':          { const m = await import('./idp.js');          m.initIDP(_user);          break; }
-      case 'admin':        { const m = await import('./admin.js?v=20260325b'); m.initAdmin(_user);   break; }
+      case 'admin':        { const m = await import('./admin_v2.js?v=20260325c'); m.initAdmin(_user); break; }
       case 'profile':      { const m = await import('./profile.js');      m.initProfile(_user);      break; }
       case 'risk-map':    renderPlaceholder('risk-map',    'Risk map',          'Complete HVC assessments to generate a full risk map.');    break;
       case 'history':     renderPlaceholder('history',     'Assessment history','All completed HVC assessments will appear here.');           break;
