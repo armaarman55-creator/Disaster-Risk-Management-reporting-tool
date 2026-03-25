@@ -155,20 +155,21 @@ export function navigateTo(pageId, navItem) {
 
   loadPageModule(pageId);
 }
+const _v = Date.now(); // cache-bust token — changes every full page navigation
 
 async function loadPageModule(pageId) {
   try {
     switch (pageId) {
-      case 'dashboard':    { const m = await import('./dashboard.js');    m.initDashboard(_user);    break; }
-      case 'community':    { const m = await import('./community.js');    m.initCommunity(_user);    break; }
-      case 'routes':       { const m = await import('./routes.js');       m.initRoutes(_user);       break; }
-      case 'sitrep':       { const m = await import('./sitrep.js');       m.initSitrep(_user);       break; }
-      case 'mopup':        { const m = await import('./mopup.js');        m.initMopup(_user);        break; }
-      case 'stakeholders': { const m = await import('./stakeholders.js'); m.initStakeholders(_user); break; }
-      case 'hvc':          { const m = await import('./hvc.js');          m.initHVC(_user);          break; }
-      case 'idp':          { const m = await import('./idp.js');          m.initIDP(_user);          break; }
-      case 'admin':        { const m = await import('./admin.js');        m.initAdmin(_user);        break; }
-      case 'profile':      { const m = await import('./profile.js');      m.initProfile(_user);      break; }
+      case 'dashboard':    { const m = await import(`./dashboard.js?v=${_v}`);    m.initDashboard(_user);    break; }
+      case 'community':    { const m = await import(`./community.js?v=${_v}`);    m.initCommunity(_user);    break; }
+      case 'routes':       { const m = await import(`./routes.js?v=${_v}`);       m.initRoutes(_user);       break; }
+      case 'sitrep':       { const m = await import(`./sitrep.js?v=${_v}`);       m.initSitrep(_user);       break; }
+      case 'mopup':        { const m = await import(`./mopup.js?v=${_v}`);        m.initMopup(_user);        break; }
+      case 'stakeholders': { const m = await import(`./stakeholders.js?v=${_v}`); m.initStakeholders(_user); break; }
+      case 'hvc':          { const m = await import(`./hvc.js?v=${_v}`);          m.initHVC(_user);          break; }
+      case 'idp':          { const m = await import(`./idp.js?v=${_v}`);          m.initIDP(_user);          break; }
+      case 'admin':        { const m = await import(`./admin.js?v=${_v}`);        m.initAdmin(_user);        break; }
+      case 'profile':      { const m = await import(`./profile.js?v=${_v}`);      m.initProfile(_user);      break; }
       case 'risk-map':    renderPlaceholder('risk-map',    'Risk map',          'Complete HVC assessments to generate a full risk map.');    break;
       case 'history':     renderPlaceholder('history',     'Assessment history','All completed HVC assessments will appear here.');           break;
       case 'mitigations': renderPlaceholder('mitigations', 'Mitigation library','Pre-built mitigations from the hazard library.');            break;
