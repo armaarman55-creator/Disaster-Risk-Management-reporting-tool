@@ -75,7 +75,7 @@ function showOnboarding(user, muniId) {
           .eq('id', muniId);
         overlay.remove();
         // Navigate to dashboard
-        const { navigateTo } = await import('./app.js?v=20260325c');
+        const { navigateTo } = await import('./app_core.js?v=20260325d');
         navigateTo('dashboard');
       } else {
         // Save step 1 municipality details if on that step
