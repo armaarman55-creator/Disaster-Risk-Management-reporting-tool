@@ -14,7 +14,7 @@ const CHIP_CLASS   = {
 };
 const CHIP_LABEL   = {
   'Extremely High':'EXTR HIGH','Extremely high':'EXTR HIGH',
-  'High':'HIGH','Tolerable':'TOLERABLE','Low':'LOW','Negligible':'NEGLIGIBLE'
+  'High':'HIGH','TOLERABLE':'TOLERABLE','Low':'LOW','Negligible':'NEGLIGIBLE'
 };
 
 let _assessmentData = null;
@@ -28,6 +28,7 @@ let _map = null;
 let _mapMode = 'hazard';
 let _mapHandlersBound = false;
 let _shelterClickBound = false;
+let _trendSelectedIndex = 0;
 
 export async function initDashboard(user) {
   _muniId = user?.municipality_id;
@@ -58,8 +59,8 @@ export async function initDashboard(user) {
     await loadAssessmentData();
     await renderKPIs();
     renderHazardTable();
+    syncTrendSelector();
     await renderWardMap();
-    renderTrend(0);
     await renderIDPSummary();
     initDashboardEvents();
     initRealtimeRefresh();
@@ -317,13 +318,23 @@ async function fetchMdbWards() {
     nameFields.forEach(f => { if (muniName) attempts.push(`${f} LIKE '%${muniName}%'`); });
 
     for (const where of attempts) {
-      const url = `${BASE}?where=${encodeURIComponent(where)}&outFields=*&outSR=4326&f=geojson&resultRecordCount=200&returnGeometry=true`;
-      const res = await fetch(url);
-      if (!res.ok) continue;
-      const data = await res.json();
-      if (data?.features?.length) {
+      const allFeatures = [];
+      let offset = 0;
+      let keepPaging = true;
+      while (keepPaging) {
+        const url = `${BASE}?where=${encodeURIComponent(where)}&outFields=*&outSR=4326&f=geojson&resultRecordCount=1000&resultOffset=${offset}&returnGeometry=true`;
+        const res = await fetch(url);
+        if (!res.ok) break;
+        const data = await res.json();
+        const chunk = data?.features || [];
+        allFeatures.push(...chunk);
+        keepPaging = !!data?.properties?.exceededTransferLimit || chunk.length === 1000;
+        offset += chunk.length;
+        if (!chunk.length || offset > 10000) keepPaging = false;
+      }
+      if (allFeatures.length) {
         _mdbWardNumField = wardNumField;
-        return data.features;
+        return allFeatures;
       }
     }
   } catch (e) {
@@ -553,24 +564,12 @@ function showWardInfo(wid, risk, wardNum, clickX, clickY) {
     'pointer-events:auto'
   ].join(';');
 
-  // Keep tooltip inside the map canvas
-  const wW = wrap.offsetWidth  || 900;
-  const wH = wrap.offsetHeight || 380;
-  const tipX = clickX !== undefined ? Math.min(Math.max(clickX + 12, 8), wW - 270) : 12;
-  const tipY = clickY !== undefined ? Math.min(Math.max(clickY - 10, 8), wH - 220) : 12;
-  tooltip.style.left = tipX + 'px';
-  tooltip.style.top  = tipY + 'px';
-
-  const hazardRows = wardHazards.slice(0,6).map(h =>
+  const hazardRows = wardHazards.map(h =>
     '<div style="display:flex;justify-content:space-between;align-items:center;padding:3px 0;border-bottom:1px solid rgba(48,54,61,.3)">' +
     '<span style="font-size:11px;color:var(--text2)">' + h.hazard_name + '</span>' +
     '<span style="font-size:10px;font-weight:700;color:' + (BAND_COL[h.risk_band]||'#6e7681') + '">' + (h.risk_band||'?') + '</span>' +
     '</div>'
   ).join('');
-
-  const extra = wardHazards.length > 6
-    ? '<div style="font-size:10px;color:var(--text3);margin-top:4px">+' + (wardHazards.length-6) + ' more hazards</div>'
-    : '';
 
   const noHazards = wardHazards.length === 0
     ? '<div style="font-size:11px;color:var(--text3);line-height:1.6">No hazards scored for this ward yet.<br><span style="font-size:10px">Complete an HVC assessment and select this ward.</span></div>'
@@ -584,9 +583,12 @@ function showWardInfo(wid, risk, wardNum, clickX, clickY) {
     '<div style="display:inline-block;background:' + bandCol + '22;border:1px solid ' + bandCol + '55;border-radius:4px;padding:2px 8px;font-size:10px;font-weight:700;color:' + bandCol + ';margin-bottom:8px;letter-spacing:.04em">' +
       risk.toUpperCase() +
     '</div>' +
-    (wardHazards.length ? '<div style="font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--text3);margin-bottom:5px">Hazards in ward</div>' + hazardRows + extra : noHazards);
+    '<div style="max-height:170px;overflow:auto;padding-right:4px">' +
+    (wardHazards.length ? '<div style="font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--text3);margin-bottom:5px">Hazards in ward</div>' + hazardRows : noHazards) +
+    '</div>';
 
   wrap.appendChild(tooltip);
+  positionTooltipInWrap(tooltip, wrap, clickX, clickY);
 
   document.getElementById('wtt-close')?.addEventListener('click', e => {
     e.stopPropagation();
@@ -605,11 +607,36 @@ function showWardInfo(wid, risk, wardNum, clickX, clickY) {
 }
 
 
+function syncTrendSelector() {
+  const sel = document.getElementById('trend-sel');
+  if (!sel) return;
+
+  const hazards = _assessmentData?.hazards || [];
+  if (!hazards.length) {
+    sel.disabled = true;
+    sel.innerHTML = '<option value="0">No data</option>';
+    _trendSelectedIndex = 0;
+    renderTrend(0);
+    return;
+  }
+
+  sel.disabled = false;
+  sel.innerHTML = hazards.slice(0, 25).map((h, idx) =>
+    `<option value="${idx}">${h.hazard_name || `Hazard ${idx + 1}`}</option>`
+  ).join('');
+
+  const idx = Number.isFinite(_trendSelectedIndex) && _trendSelectedIndex >= 0 && _trendSelectedIndex < hazards.length ? _trendSelectedIndex : 0;
+  sel.value = String(idx);
+  _trendSelectedIndex = idx;
+  renderTrend(idx);
+}
+
 function renderTrend(hazardIdx) {
   const body = document.getElementById('trend-body');
   if (!body) return;
+  const idx = Number.isFinite(hazardIdx) ? hazardIdx : 0;
   const hazards = _assessmentData?.hazards || [];
-  const h = hazards[hazardIdx];
+  const h = hazards[idx];
   if (!h) { body.innerHTML = '<div style="color:var(--text3);font-size:12px;padding:8px">No trend data available yet.</div>'; return; }
 
   const seasons = [
@@ -694,6 +721,7 @@ function initRealtimeRefresh() {
       await loadAssessmentData();
       await renderKPIs();
       renderHazardTable();
+      syncTrendSelector();
       renderWardMap();
       await renderIDPSummary();
     })
@@ -817,11 +845,6 @@ function showShelterTooltip(s, clickX, clickY) {
   tooltip.id = 'ward-tooltip';
   tooltip.style.cssText = 'position:absolute;background:var(--bg2);border:1px solid var(--border2);border-left:3px solid '+col+';border-radius:8px;padding:12px 14px;min-width:190px;max-width:240px;box-shadow:0 4px 20px rgba(0,0,0,.45);z-index:100;font-family:Inter,system-ui,sans-serif';
 
-  const wW = wrap.offsetWidth || 900;
-  const wH = wrap.offsetHeight || 380;
-  tooltip.style.left = Math.min(Math.max(clickX+12, 8), wW-250) + 'px';
-  tooltip.style.top  = Math.min(Math.max(clickY-10, 8), wH-180) + 'px';
-
   tooltip.innerHTML =
     '<div style="display:flex;justify-content:space-between;margin-bottom:8px">' +
       '<div style="font-size:13px;font-weight:700;color:var(--text)">' + s.name + '</div>' +
@@ -839,6 +862,7 @@ function showShelterTooltip(s, clickX, clickY) {
     '</div>';
 
   wrap.appendChild(tooltip);
+  positionTooltipInWrap(tooltip, wrap, clickX, clickY);
   document.getElementById('wtt-close')?.addEventListener('click', e => { e.stopPropagation(); tooltip.remove(); });
   setTimeout(() => {
     document.addEventListener('click', function h(e) { if (!tooltip.contains(e.target)) { tooltip.remove(); document.removeEventListener('click',h); } });
@@ -848,7 +872,11 @@ function showShelterTooltip(s, clickX, clickY) {
 function initDashboardEvents() {
   document.getElementById('assess-sel-top')?.addEventListener('change', e => selectAssessment(e.target.value));
   document.getElementById('assess-map')?.addEventListener('change', e => selectAssessment(e.target.value));
-  document.getElementById('trend-sel')?.addEventListener('change', e => renderTrend(parseInt(e.target.value)));
+  const trendSel = document.getElementById('trend-sel');
+  trendSel?.addEventListener('change', e => {
+    _trendSelectedIndex = parseInt(e.target.value, 10) || 0;
+    renderTrend(_trendSelectedIndex);
+  });
 
   // Ward search on hazard map — init here so app is loaded and elements are visible
   const mapSearch = document.getElementById('map-ward-search');
@@ -858,14 +886,14 @@ function initDashboardEvents() {
     mapSearch.addEventListener('input', () => {
       const q = mapSearch.value.trim().toLowerCase();
       if (!q) { mapDd.style.display = 'none'; return; }
-      const centroids = _wardCentroids;
-      const nums = Object.keys(centroids).map(Number);
+      const nums = Object.keys(_wardFeatureIndex).map(Number).sort((a, b) => a - b);
       if (!nums.length) {
         mapDd.innerHTML = '<div style="padding:8px 12px;font-size:11px;color:var(--text3)">Map not loaded yet — complete an HVC assessment first</div>';
         mapDd.style.display = 'block';
         return;
       }
-      const matches = nums.filter(w => String(w).includes(q)).slice(0, 12);
+      const needle = q.replace(/[^\d]/g, '');
+      const matches = nums.filter(w => String(w).includes(needle || q)).slice(0, 50);
       if (!matches.length) { mapDd.style.display = 'none'; return; }
       mapDd.innerHTML = matches.map(w =>
         `<div data-ward="${w}"
@@ -874,6 +902,8 @@ function initDashboardEvents() {
           onmouseleave="this.style.background=''">Ward ${w}</div>`
       ).join('');
       mapDd.style.display = 'block';
+      mapDd.style.maxHeight = '220px';
+      mapDd.style.overflowY = 'auto';
       mapDd.querySelectorAll('[data-ward]').forEach(item => {
         item.addEventListener('mousedown', e => {
           e.preventDefault();
@@ -885,6 +915,14 @@ function initDashboardEvents() {
     });
     mapSearch.addEventListener('blur', () => {
       setTimeout(() => { mapDd.style.display = 'none'; }, 150);
+    });
+    mapSearch.addEventListener('keydown', e => {
+      if (e.key !== 'Enter') return;
+      const wardNum = parseInt((mapSearch.value || '').replace(/[^\d]/g, ''), 10);
+      if (!Number.isFinite(wardNum)) return;
+      e.preventDefault();
+      zoomToWard(wardNum);
+      mapDd.style.display = 'none';
     });
   }
   // Layer toggle — Hazard shows risk colours, Shelters shows shelter dots
@@ -908,7 +946,26 @@ function initDashboardEvents() {
 
 async function selectAssessment(id) {
   const { data } = await supabase.from('hvc_hazard_scores').select('*').eq('assessment_id', id).order('risk_rating', { ascending: false });
-  if (data) { _assessmentData.hazards = data; renderHazardTable(); await renderWardMap(_mapMode === 'shelters'); }
+  if (data) { _assessmentData.hazards = data; renderHazardTable(); syncTrendSelector(); await renderWardMap(_mapMode === 'shelters'); }
+}
+
+function positionTooltipInWrap(tooltip, wrap, clickX, clickY) {
+  const margin = 8;
+  const wrapW = wrap.offsetWidth || 900;
+  const wrapH = wrap.offsetHeight || 380;
+  const tipW = tooltip.offsetWidth || 250;
+  const tipH = tooltip.offsetHeight || 200;
+
+  let x = (clickX ?? margin) + 12;
+  let y = (clickY ?? margin) - 10;
+
+  if (x + tipW > wrapW - margin) x = wrapW - tipW - margin;
+  if (x < margin) x = margin;
+  if (y + tipH > wrapH - margin) y = (clickY ?? margin) - tipH - 12;
+  if (y < margin) y = margin;
+
+  tooltip.style.left = `${Math.round(x)}px`;
+  tooltip.style.top = `${Math.round(y)}px`;
 }
 
 function setEl(id, val) {
