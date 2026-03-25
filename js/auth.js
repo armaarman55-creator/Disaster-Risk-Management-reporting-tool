@@ -301,8 +301,11 @@ function hideAuth() {
 }
 
 export async function signOut() {
-  await supabase.auth.signOut();
-  // location.replace() forces a full navigation, busting the ES module cache.
-  // reload() only does a soft reload and can leave stale module closures in memory.
+  // Remove only the Supabase session token — preserve theme + weather settings
+  Object.keys(localStorage)
+    .filter(k => k.startsWith('sb-'))
+    .forEach(k => localStorage.removeItem(k));
+
   window.location.replace(window.location.pathname);
+  supabase.auth.signOut().catch(console.error);
 }
