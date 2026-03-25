@@ -1,15 +1,6 @@
 // js/dashboard.js
 import { supabase } from './supabase.js';
 
-const WARD_POLYGONS = [
-  { id: 'W1', pts: '24,14 88,6 102,50 58,72 12,58' },
-  { id: 'W2', pts: '88,6 160,12 166,52 102,50' },
-  { id: 'W3', pts: '160,12 206,22 200,62 166,52' },
-  { id: 'W4', pts: '12,58 58,72 66,118 18,130 5,96' },
-  { id: 'W5', pts: '58,72 102,50 166,52 160,110 90,122 66,118' },
-  { id: 'W6', pts: '160,110 200,62 228,108 214,148 166,142' }
-];
-
 const RISK_COLOURS = {
   'Extremely High': '#f85149', 'Extremely high': '#f85149',
   'High':           '#d29922',
@@ -29,6 +20,14 @@ const CHIP_LABEL   = {
 let _assessmentData = null;
 let _wardData = [];
 let _muniId = null;
+let _mdbWardNumField = 'WARD_NO';
+let _wardCentroids = {};
+let _wardFeatureIndex = {};
+let _mapBounds = null;
+let _map = null;
+let _mapMode = 'hazard';
+let _mapHandlersBound = false;
+let _shelterClickBound = false;
 
 export async function initDashboard(user) {
   _muniId = user?.municipality_id;
@@ -187,24 +186,19 @@ function ratingToBand(r) {
 }
 
 async function renderWardMap(neutralMode = false) {
-  const g = document.getElementById('ward-g');
-  if (!g) return;
-
-  g.innerHTML = '<text x="155" y="95" text-anchor="middle" font-size="10" fill="var(--text3)" font-family="monospace">Loading ward boundaries…</text>';
+  const mapContainer = document.getElementById('maplibre-map');
+  if (!mapContainer) return;
 
   const wardRisk = {};
   const wardPeak = {};
   const hazards  = neutralMode ? [] : (_assessmentData?.hazards || []);
-
   const RISK_ORDER = ['Extremely High','High','Tolerable','Low','Negligible'];
 
   if (!neutralMode && hazards.length > 0) {
     const allWardNums = _wardData.map(w => parseInt(w.ward_number)).filter(Boolean);
-    const wardRatings = {}; // wardNum → [riskRating, ...]
+    const wardRatings = {};
     allWardNums.forEach(n => { wardRatings[n] = []; });
 
-    // ── STEP 1: Explicit ward selections (user tagged wards in HVC picker)
-    // If any hazard has affected_wards filled in, use those directly.
     let hasExplicitWards = false;
     hazards.forEach(h => {
       const rating = h.risk_rating ?? null;
@@ -217,264 +211,313 @@ async function renderWardMap(neutralMode = false) {
           if (isNaN(wNum) || !wardRatings[wNum]) return;
           wardRatings[wNum].push(rating);
           const cur = wardPeak[wNum];
-          if (!cur || RISK_ORDER.indexOf(band) < RISK_ORDER.indexOf(cur)) {
-            wardPeak[wNum] = band;
-          }
+          if (!cur || RISK_ORDER.indexOf(band) < RISK_ORDER.indexOf(cur)) wardPeak[wNum] = band;
         });
       }
     });
 
-    // ── STEP 2: Proxy ward distribution using affected_area score
-    // When users haven't tagged wards, use affected_area to infer which
-    // wards a hazard reaches. affected_area 1–5 maps to % of wards covered:
-    //   1 = ~20% (lowest ward numbers)
-    //   2 = ~40%
-    //   3 = ~60%
-    //   4 = ~80%
-    //   5 = 100% (all wards)
-    // Wards are sorted so higher-numbered wards are excluded first for
-    // lower area scores — this gives meaningful differentiation across the map.
     if (!hasExplicitWards) {
       const sortedWards = [...allWardNums].sort((a, b) => a - b);
       hazards.forEach(h => {
         const rating = h.risk_rating ?? null;
         if (rating === null) return;
-        const band      = h.risk_band || ratingToBand(rating);
-        const areaPct   = Math.min(5, Math.max(1, h.affected_area || 3));
-        // How many wards this hazard reaches (20% per point, min 1 ward)
+        const band = h.risk_band || ratingToBand(rating);
+        const areaPct = Math.min(5, Math.max(1, h.affected_area || 3));
         const coverCount = Math.max(1, Math.round((areaPct / 5) * sortedWards.length));
-        // Take the first N wards — lower ward numbers are more central/urban
-        // and more likely to be affected; adjust as needed per municipality
-        const affectedWards = sortedWards.slice(0, coverCount);
-        affectedWards.forEach(wNum => {
+        sortedWards.slice(0, coverCount).forEach(wNum => {
           wardRatings[wNum].push(rating);
           const cur = wardPeak[wNum];
-          if (!cur || RISK_ORDER.indexOf(band) < RISK_ORDER.indexOf(cur)) {
-            wardPeak[wNum] = band;
-          }
+          if (!cur || RISK_ORDER.indexOf(band) < RISK_ORDER.indexOf(cur)) wardPeak[wNum] = band;
         });
       });
-      console.log('[Dashboard] Using affected_area proxy for ward distribution');
     }
 
-    // ── STEP 3: Compute composite colour per ward
-    // Formula: avg + 0.2 × (peak − avg)
-    // Weights overall hazard profile while nudging toward worst hazard.
     allWardNums.forEach(wNum => {
       const ratings = wardRatings[wNum];
       if (!ratings.length) return;
-      const avg       = ratings.reduce((a, b) => a + b, 0) / ratings.length;
-      const peak      = Math.max(...ratings);
-      const composite = avg + 0.2 * (peak - avg);
-      wardRisk[wNum]  = ratingToBand(composite);
+      const avg = ratings.reduce((a, b) => a + b, 0) / ratings.length;
+      const peak = Math.max(...ratings);
+      wardRisk[wNum] = ratingToBand(avg + 0.2 * (peak - avg));
     });
 
-    // ── STEP 4: Any ward still uncoloured → use wards.dominant_risk from DB
-    // Only fires for wards genuinely absent from all hazard score data.
     _wardData.forEach(w => {
       const wNum = parseInt(w.ward_number);
-      if (w.dominant_risk && !wardRisk[wNum]) {
-        wardRisk[wNum] = w.dominant_risk;
-      }
+      if (w.dominant_risk && !wardRisk[wNum]) wardRisk[wNum] = w.dominant_risk;
     });
 
     console.log('[Dashboard] Per-ward risk computed:', wardRisk);
   }
 
-  const muniCode = window._drmsaUser?.municipalities?.code;
-  const rawName  = window._drmsaUser?.municipalities?.name || '';
-  const muniName = rawName.replace(' LM','').replace(' DM','').replace(' Metropolitan Municipality','').trim();
-  let mdbWards = null;
-
-  if (muniCode) {
-    try {
-      const BASE = 'https://services7.arcgis.com/oeoyTUJC8HEeYsRB/arcgis/rest/services/MDB_Wards_2020/FeatureServer/0/query';
-
-      // Probe one record to discover field names
-      const probeRes  = await fetch(`${BASE}?where=1%3D1&outFields=*&f=json&resultRecordCount=1`);
-      const probeData = await probeRes.json();
-      const fields    = (probeData.fields || []).map(f => f.name);
-      const sample    = probeData.features?.[0]?.attributes || {};
-      console.log('MDB fields:', fields);
-      console.log('MDB sample:', sample);
-
-      // Detect ward number field
-      const wardNumField = fields.find(f => /ward.?n(o|um)/i.test(f)) || 'WARD_NO';
-      // Detect municipality code/name field
-      const codeFields = fields.filter(f => /cat_b|lb_|muni.*c/i.test(f));
-      const nameFields = fields.filter(f => /muni.*name|municname/i.test(f));
-
-      console.log('Ward num field:', wardNumField, 'Code fields:', codeFields, 'Name fields:', nameFields);
-
-      // Build query attempts — code match first, then name
-      const attempts = [];
-      codeFields.forEach(f => attempts.push(`${f}='${muniCode}'`));
-      nameFields.forEach(f => { if (muniName) attempts.push(`${f} LIKE '%${muniName}%'`); });
-
-      for (const where of attempts) {
-        const url  = `${BASE}?where=${encodeURIComponent(where)}&outFields=*&outSR=4326&f=geojson&resultRecordCount=200&returnGeometry=true`;
-        const res  = await fetch(url);
-        if (!res.ok) continue;
-        const data = await res.json();
-        const n    = data?.features?.length || 0;
-        console.log(`MDB "${where}" → ${n} features`);
-        if (n > 0) { mdbWards = data.features; _mdbWardNumField = wardNumField; break; }
-      }
-    } catch(e) { console.warn('MDB API failed:', e.message); }
+  const mdbWards = await fetchMdbWards();
+  if (!mdbWards?.length) {
+    mapContainer.innerHTML = '<div style="height:100%;display:flex;align-items:center;justify-content:center;color:var(--text3);font-size:12px">Ward boundaries unavailable for this municipality.</div>';
+    return;
   }
 
-  g.innerHTML = '';
-
-  if (mdbWards?.length) {
-    // Project GeoJSON to SVG 0 0 310 200
-    const allCoords = mdbWards.flatMap(f => {
-      const geom = f.geometry;
-      if (!geom) return [];
-      const rings = geom.type === 'MultiPolygon' ? geom.coordinates.flat(1) : geom.coordinates;
-      return rings.flat();
-    });
-    const lngs = allCoords.map(c => c[0]), lats = allCoords.map(c => c[1]);
-    const minLng=Math.min(...lngs), maxLng=Math.max(...lngs);
-    const minLat=Math.min(...lats), maxLat=Math.max(...lats);
-    // Project to 900x380 viewBox with 20px padding each side
-    const W = 860, H = 340, padX = 20, padY = 20;
-    const project = ([lng,lat]) => [
-      ((lng-minLng)/(maxLng-minLng))*W + padX,
-      ((maxLat-lat)/(maxLat-minLat))*H + padY
-    ];
-
-    mdbWards.forEach(f => {
-      const props  = f.properties || {};
-      // Try multiple field name variants
+  const featureCollection = {
+    type: 'FeatureCollection',
+    features: mdbWards.map((f, idx) => {
+      const props = f.properties || {};
       const wardNo = props[_mdbWardNumField]
         ?? props['WARD_NO'] ?? props['WARD_NUM'] ?? props['WardNo']
-        ?? props['ward_no'] ?? props['ward_num'] ?? '?';
-      const rawRisk2 = wardRisk[parseInt(wardNo)] || 'Negligible';
-      const risk   = Object.keys(RISK_COLOURS).find(k => k.toLowerCase() === rawRisk2.toLowerCase()) || rawRisk2;
-      const fill   = RISK_COLOURS[risk] || '#6e7681';
-      const peakBand = wardPeak[parseInt(wardNo)];
-      const strokeCol = peakBand && peakBand !== risk
-        ? (RISK_COLOURS[peakBand] || fill)
-        : fill;
-      const strokeW = peakBand && peakBand !== risk ? '2' : '0.6';
-      const geom   = f.geometry;
-      if (!geom) return;
-      const rings  = geom.type==='MultiPolygon' ? geom.coordinates.flat(1) : geom.coordinates;
+        ?? props['ward_no'] ?? props['ward_num'] ?? null;
+      const wNum = parseInt(wardNo);
+      const rawRisk = wardRisk[wNum] || 'Negligible';
+      const risk = normalizeRiskBand(rawRisk);
+      const peakBand = normalizeRiskBand(wardPeak[wNum]);
+      return {
+        ...f,
+        id: idx + 1,
+        properties: {
+          ...props,
+          ward_number: wNum,
+          risk_band: risk,
+          peak_band: peakBand || null,
+          fill_color: RISK_COLOURS[risk] || '#6e7681'
+        }
+      };
+    }).filter(f => Number.isFinite(f.properties.ward_number))
+  };
 
-      rings.forEach(ring => {
-        const pts = ring.map(coord => project(coord).map(v=>v.toFixed(1)).join(',')).join(' ');
-        const poly = document.createElementNS('http://www.w3.org/2000/svg','polygon');
-        poly.setAttribute('points', pts);
-        poly.setAttribute('fill', fill);
-        poly.setAttribute('fill-opacity','0.45');
-        poly.setAttribute('stroke', strokeCol);
-        poly.setAttribute('stroke-width', strokeW);
-        poly.style.cursor = 'pointer';
-        poly.addEventListener('mouseenter', function(){ this.setAttribute('fill-opacity','0.75'); });
-        poly.addEventListener('mouseleave', function(){ this.setAttribute('fill-opacity','0.45'); });
-        poly.addEventListener('click', (e) => {
-          const wrap = document.getElementById('map-canvas-wrap');
-          const rect = wrap ? wrap.getBoundingClientRect() : {left:0,top:0};
-          showWardInfo(wardNo, risk, wardNo, e.clientX - rect.left, e.clientY - rect.top);
-        });
-        g.appendChild(poly);
-      });
-
-      // Centroid label
-      const allPts = rings.flat().map(project);
-      const cx = allPts.reduce((s,p)=>s+p[0],0)/allPts.length;
-      const cy = allPts.reduce((s,p)=>s+p[1],0)/allPts.length;
-      // Store centroid for ward search zoom
-      _wardCentroids[parseInt(wardNo)] = { cx, cy };
-      // Keep global in sync immediately after each ward
-      window._drmsaWardCentroids = _wardCentroids;
-      const t  = document.createElementNS('http://www.w3.org/2000/svg','text');
-      t.setAttribute('x', cx.toFixed(1)); t.setAttribute('y', cy.toFixed(1));
-      t.setAttribute('text-anchor','middle'); t.setAttribute('dominant-baseline','central');
-      t.setAttribute('font-size','9'); t.setAttribute('fill','rgba(230,237,243,0.9)');
-      t.setAttribute('font-weight','700'); t.setAttribute('font-family','monospace');
-      t.setAttribute('pointer-events','none');
-      t.setAttribute('class','ward-label');
-      t.textContent = `W${wardNo}`;
-      g.appendChild(t);
-    });
-
-  } else {
-    // Fallback placeholder polygons
-    WARD_POLYGONS.forEach((wp, idx) => {
-      const rawRisk = wardRisk[idx+1] || 'Negligible';
-      const risk = Object.keys(RISK_COLOURS).find(k => k.toLowerCase() === rawRisk.toLowerCase()) || rawRisk;
-      const fill = RISK_COLOURS[risk] || '#6e7681';
-      const peakBand = wardPeak[idx+1];
-      const strokeCol = peakBand && peakBand !== risk ? (RISK_COLOURS[peakBand] || fill) : fill;
-      const strokeW   = peakBand && peakBand !== risk ? '2' : '1.2';
-      const poly = document.createElementNS('http://www.w3.org/2000/svg','polygon');
-      poly.setAttribute('points',wp.pts); poly.setAttribute('fill',fill);
-      poly.setAttribute('fill-opacity','0.42');
-      poly.setAttribute('stroke', strokeCol);
-      poly.setAttribute('stroke-width', strokeW);
-      poly.style.cursor='pointer';
-      poly.addEventListener('mouseenter',function(){this.setAttribute('fill-opacity','0.68');});
-      poly.addEventListener('mouseleave',function(){this.setAttribute('fill-opacity','0.42');});
-      poly.addEventListener('click',(e)=>{
-        const wrap = document.getElementById('map-canvas-wrap');
-        const rect = wrap ? wrap.getBoundingClientRect() : {left:0,top:0};
-        showWardInfo(wp.id,risk,idx+1,e.clientX-rect.left,e.clientY-rect.top);
-      });
-      g.appendChild(poly);
-      const pts=wp.pts.split(' ').map(p=>p.split(',').map(Number));
-      const cx=pts.reduce((s,p)=>s+p[0],0)/pts.length;
-      const cy=pts.reduce((s,p)=>s+p[1],0)/pts.length;
-      _wardCentroids[idx+1] = { cx, cy };
-      window._drmsaWardCentroids = _wardCentroids;
-      const t=document.createElementNS('http://www.w3.org/2000/svg','text');
-      t.setAttribute('x',cx.toFixed(1)); t.setAttribute('y',cy.toFixed(1));
-      t.setAttribute('text-anchor','middle'); t.setAttribute('dominant-baseline','central');
-      t.setAttribute('font-size','8'); t.setAttribute('fill','rgba(230,237,243,0.9)');
-      t.setAttribute('font-weight','700'); t.setAttribute('font-family','monospace');
-      t.setAttribute('pointer-events','none');
-      t.setAttribute('class','ward-label');
-      t.textContent = wp.id;
-      g.appendChild(t);
-    });
-    const note=document.createElementNS('http://www.w3.org/2000/svg','text');
-    note.setAttribute('x','155'); note.setAttribute('y','195');
-    note.setAttribute('text-anchor','middle'); note.setAttribute('font-size','8');
-    note.setAttribute('fill','var(--text3)'); note.setAttribute('font-family','monospace');
-    note.textContent='Showing placeholder — MDB API unavailable or municipality not found';
-    g.appendChild(note);
+  await ensureMapInitialized();
+  await renderWardLayers(featureCollection);
+  updateMapLegend();
+  if (_mapMode === 'shelters') {
+    await renderSheltersOnMap();
   }
-
-  // Expose centroids globally for map ward search
-  window._drmsaWardCentroids = _wardCentroids;
-  // Init zoom after rendering
-  initMapZoom();
-  // Expose zoom function globally for ward search input
   window._drmsaZoomToWard = zoomToWard;
 }
 
-// Track MDB ward number field globally
-let _mdbWardNumField = 'WARD_NO';
-let _wardCentroids = {}; // wardNum → {cx, cy}
+function normalizeRiskBand(rawRisk) {
+  if (!rawRisk) return 'Negligible';
+  const risk = String(rawRisk).trim().toLowerCase();
+  if (risk === 'extremely high' || risk === 'extremelyhigh') return 'Extremely High';
+  if (risk === 'high') return 'High';
+  if (risk === 'tolerable') return 'Tolerable';
+  if (risk === 'low') return 'Low';
+  return 'Negligible';
+}
+
+async function fetchMdbWards() {
+  const muniCode = window._drmsaUser?.municipalities?.code;
+  const rawName = window._drmsaUser?.municipalities?.name || '';
+  const muniName = rawName.replace(' LM','').replace(' DM','').replace(' Metropolitan Municipality','').trim();
+  if (!muniCode && !muniName) return null;
+  try {
+    const BASE = 'https://services7.arcgis.com/oeoyTUJC8HEeYsRB/arcgis/rest/services/MDB_Wards_2020/FeatureServer/0/query';
+    const probeRes = await fetch(`${BASE}?where=1%3D1&outFields=*&f=json&resultRecordCount=1`);
+    const probeData = await probeRes.json();
+    const fields = (probeData.fields || []).map(f => f.name);
+    const wardNumField = fields.find(f => /ward.?n(o|um)/i.test(f)) || 'WARD_NO';
+    const codeFields = fields.filter(f => /cat_b|lb_|muni.*c/i.test(f));
+    const nameFields = fields.filter(f => /muni.*name|municname/i.test(f));
+
+    const attempts = [];
+    codeFields.forEach(f => { if (muniCode) attempts.push(`${f}='${muniCode}'`); });
+    nameFields.forEach(f => { if (muniName) attempts.push(`${f} LIKE '%${muniName}%'`); });
+
+    for (const where of attempts) {
+      const url = `${BASE}?where=${encodeURIComponent(where)}&outFields=*&outSR=4326&f=geojson&resultRecordCount=200&returnGeometry=true`;
+      const res = await fetch(url);
+      if (!res.ok) continue;
+      const data = await res.json();
+      if (data?.features?.length) {
+        _mdbWardNumField = wardNumField;
+        return data.features;
+      }
+    }
+  } catch (e) {
+    console.warn('MDB API failed:', e.message);
+  }
+  return null;
+}
+
+async function ensureMapInitialized() {
+  if (_map) return;
+  if (!window.maplibregl) {
+    throw new Error('MapLibre GL not loaded on page');
+  }
+  _map = new window.maplibregl.Map({
+    container: 'maplibre-map',
+    style: {
+      version: 8,
+      sources: {
+        satellite: {
+          type: 'raster',
+          tiles: ['https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
+          tileSize: 256,
+          attribution: 'Esri'
+        }
+      },
+      layers: [{ id: 'satellite-base', type: 'raster', source: 'satellite' }]
+    },
+    center: [27.9, -26.1],
+    zoom: 7
+  });
+
+  await new Promise(resolve => _map.once('load', resolve));
+  bindMapControls();
+}
+
+async function renderWardLayers(featureCollection) {
+  _wardCentroids = {};
+  _wardFeatureIndex = {};
+  _mapBounds = null;
+
+  featureCollection.features.forEach(f => {
+    const wNum = parseInt(f.properties.ward_number);
+    if (!Number.isFinite(wNum)) return;
+    const coords = flattenCoords(f.geometry);
+    if (!coords.length) return;
+    const bbox = boundsFromCoords(coords);
+    const centroid = { cx: (bbox.minX + bbox.maxX) / 2, cy: (bbox.minY + bbox.maxY) / 2 };
+    _wardCentroids[wNum] = centroid;
+    _wardFeatureIndex[wNum] = { bbox, centroid, properties: f.properties };
+    _mapBounds = _mapBounds ? extendBounds(_mapBounds, bbox) : { ...bbox };
+  });
+  window._drmsaWardCentroids = _wardCentroids;
+
+  if (_map.getLayer('ward-label')) _map.removeLayer('ward-label');
+  if (_map.getLayer('ward-outline')) _map.removeLayer('ward-outline');
+  if (_map.getLayer('ward-fill')) _map.removeLayer('ward-fill');
+  if (_map.getSource('ward-source')) _map.removeSource('ward-source');
+
+  _map.addSource('ward-source', { type: 'geojson', data: featureCollection });
+  _map.addLayer({
+    id: 'ward-fill',
+    type: 'fill',
+    source: 'ward-source',
+    paint: {
+      'fill-color': ['coalesce', ['get', 'fill_color'], '#6e7681'],
+      'fill-opacity': ['case', ['boolean', ['feature-state', 'hover'], false], 0.75, 0.45]
+    }
+  });
+  _map.addLayer({
+    id: 'ward-outline',
+    type: 'line',
+    source: 'ward-source',
+    paint: { 'line-color': '#ffffff', 'line-opacity': 0.9, 'line-width': 1.1 }
+  });
+  _map.addLayer({
+    id: 'ward-label',
+    type: 'symbol',
+    source: 'ward-source',
+    layout: {
+      'text-field': ['concat', 'W', ['to-string', ['get', 'ward_number']]],
+      'text-size': 10
+    },
+    paint: {
+      'text-color': '#ffffff',
+      'text-halo-color': '#000000',
+      'text-halo-width': 1
+    }
+  });
+
+  if (_mapBounds) {
+    _map.fitBounds([[ _mapBounds.minX, _mapBounds.minY ], [ _mapBounds.maxX, _mapBounds.maxY ]], { padding: 30, maxZoom: 12 });
+  }
+
+  if (!_mapHandlersBound) {
+    let hoveredId = null;
+    _map.on('mousemove', 'ward-fill', e => {
+      _map.getCanvas().style.cursor = 'pointer';
+      if (hoveredId !== null) _map.setFeatureState({ source: 'ward-source', id: hoveredId }, { hover: false });
+      const nextId = e.features?.[0]?.id;
+      if (nextId !== undefined) {
+        hoveredId = nextId;
+        _map.setFeatureState({ source: 'ward-source', id: hoveredId }, { hover: true });
+      }
+    });
+    _map.on('mouseleave', 'ward-fill', () => {
+      _map.getCanvas().style.cursor = '';
+      if (hoveredId !== null) _map.setFeatureState({ source: 'ward-source', id: hoveredId }, { hover: false });
+      hoveredId = null;
+    });
+
+    _map.on('click', 'ward-fill', e => {
+      const feature = e.features?.[0];
+      if (!feature) return;
+      const wardNum = parseInt(feature.properties?.ward_number);
+      const risk = normalizeRiskBand(feature.properties?.risk_band);
+      const wrap = document.getElementById('map-canvas-wrap');
+      const rect = wrap ? wrap.getBoundingClientRect() : { left: 0, top: 0 };
+      const clickX = e.point?.x ?? (e.originalEvent?.clientX - rect.left);
+      const clickY = e.point?.y ?? (e.originalEvent?.clientY - rect.top);
+      showWardInfo(wardNum, risk, wardNum, clickX, clickY);
+    });
+    _mapHandlersBound = true;
+  }
+
+  setMapMode(_mapMode);
+}
+
+function flattenCoords(geometry) {
+  if (!geometry) return [];
+  if (geometry.type === 'Polygon') return geometry.coordinates.flat();
+  if (geometry.type === 'MultiPolygon') return geometry.coordinates.flat(2);
+  return [];
+}
+
+function boundsFromCoords(coords) {
+  const lons = coords.map(c => c[0]);
+  const lats = coords.map(c => c[1]);
+  return {
+    minX: Math.min(...lons),
+    minY: Math.min(...lats),
+    maxX: Math.max(...lons),
+    maxY: Math.max(...lats)
+  };
+}
+
+function extendBounds(a, b) {
+  return {
+    minX: Math.min(a.minX, b.minX),
+    minY: Math.min(a.minY, b.minY),
+    maxX: Math.max(a.maxX, b.maxX),
+    maxY: Math.max(a.maxY, b.maxY)
+  };
+}
 
 function zoomToWard(wardNum) {
-  const c = _wardCentroids[parseInt(wardNum)];
-  if (!c) { showToast('Ward ' + wardNum + ' not found on map', true); return; }
-  const svg = document.getElementById('ward-svg');
-  const g   = document.getElementById('ward-g');
-  if (!svg || !g) return;
-  const W = svg.viewBox?.baseVal?.width  || 900;
-  const H = svg.viewBox?.baseVal?.height || 380;
-  const scale = 4;
-  const tx = (W / 2) - c.cx * scale;
-  const ty = (H / 2) - c.cy * scale;
-  g.setAttribute('transform', `translate(${tx},${ty}) scale(${scale})`);
-  const baseSize = 9;
-  g.querySelectorAll('text.ward-label').forEach(t => {
-    t.setAttribute('font-size', (baseSize / scale).toFixed(2));
+  const entry = _wardFeatureIndex[parseInt(wardNum)];
+  if (!entry || !_map) {
+    showToast('Ward ' + wardNum + ' not found on map', true);
+    return;
+  }
+  _map.fitBounds([[entry.bbox.minX, entry.bbox.minY], [entry.bbox.maxX, entry.bbox.maxY]], {
+    padding: 70,
+    maxZoom: 13
   });
 }
 
+function bindMapControls() {
+  document.getElementById('map-zoom-in')?.addEventListener('click', () => _map?.zoomIn());
+  document.getElementById('map-zoom-out')?.addEventListener('click', () => _map?.zoomOut());
+  document.getElementById('map-zoom-reset')?.addEventListener('click', () => {
+    if (_map && _mapBounds) {
+      _map.fitBounds([[ _mapBounds.minX, _mapBounds.minY ], [ _mapBounds.maxX, _mapBounds.maxY ]], { padding: 30, maxZoom: 12 });
+    }
+  });
+}
+
+function updateMapLegend() {
+  const legend = document.getElementById('map-legend-bar');
+  if (!legend || _mapMode !== 'hazard') return;
+  legend.innerHTML = [
+    ['#f85149','Extremely high'],['#d29922','High'],['#3fb950','Tolerable'],['#58a6ff','Low'],['#6e7681','Unscored']
+  ].map(([col,lbl]) => '<div style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text3)"><span style="width:10px;height:10px;border-radius:2px;background:'+col+';display:inline-block"></span>'+lbl+'</div>').join('');
+}
+
+function setMapMode(mode) {
+  _mapMode = mode;
+  if (!_map) return;
+  const hazardVisible = mode !== 'shelters';
+  if (_map.getLayer('ward-fill')) _map.setLayoutProperty('ward-fill', 'visibility', hazardVisible ? 'visible' : 'none');
+  if (_map.getLayer('ward-outline')) _map.setLayoutProperty('ward-outline', 'visibility', hazardVisible ? 'visible' : 'none');
+  if (_map.getLayer('ward-label')) _map.setLayoutProperty('ward-label', 'visibility', hazardVisible ? 'visible' : 'none');
+  if (_map.getLayer('shelter-circle')) _map.setLayoutProperty('shelter-circle', 'visibility', hazardVisible ? 'none' : 'visible');
+  if (_map.getLayer('shelter-label')) _map.setLayoutProperty('shelter-label', 'visibility', hazardVisible ? 'none' : 'visible');
+}
 
 function showWardInfo(wid, risk, wardNum, clickX, clickY) {
   const BAND_COL = {
@@ -632,102 +675,6 @@ async function renderIDPSummary() {
   }
 }
 
-function initMapZoom() {
-  const svg     = document.getElementById('ward-svg');
-  const g       = document.getElementById('ward-g');
-  const canvas  = svg?.closest('#map-canvas-wrap') || svg?.parentElement;
-  if (!svg || !g) return;
-
-  let scale=1, tx=0, ty=0, dragging=false, startX=0, startY=0, lastTx=0, lastTy=0;
-
-  function applyTransform() {
-    g.setAttribute('transform', `translate(${tx},${ty}) scale(${scale})`);
-    // Inverse-scale all ward labels so they stay constant visual size
-    const baseSize = 9;
-    g.querySelectorAll('text.ward-label').forEach(t => {
-      t.setAttribute('font-size', (baseSize / scale).toFixed(2));
-    });
-  }
-
-  // Zoom buttons
-  document.getElementById('map-zoom-in')?.addEventListener('click', () => {
-    scale = Math.min(scale * 1.4, 12);
-    applyTransform();
-  });
-  document.getElementById('map-zoom-out')?.addEventListener('click', () => {
-    scale = Math.max(scale / 1.4, 0.8);
-    applyTransform();
-  });
-  document.getElementById('map-zoom-reset')?.addEventListener('click', () => {
-    scale=1; tx=0; ty=0; applyTransform();
-  });
-
-  // Scroll wheel zoom (desktop)
-  svg.addEventListener('wheel', e => {
-    e.preventDefault();
-    const rect = svg.getBoundingClientRect();
-    const mx   = e.clientX - rect.left;
-    const my   = e.clientY - rect.top;
-    const delta = e.deltaY < 0 ? 1.15 : 0.87;
-    const newScale = Math.max(0.8, Math.min(12, scale * delta));
-    tx = mx - (mx - tx) * (newScale / scale);
-    ty = my - (my - ty) * (newScale / scale);
-    scale = newScale;
-    applyTransform();
-  }, { passive: false });
-
-  // Mouse drag (desktop)
-  svg.addEventListener('mousedown', e => {
-    dragging=true; startX=e.clientX-tx; startY=e.clientY-ty;
-    svg.style.cursor='grabbing';
-  });
-  window.addEventListener('mousemove', e => {
-    if (!dragging) return;
-    tx=e.clientX-startX; ty=e.clientY-startY;
-    applyTransform();
-  });
-  window.addEventListener('mouseup', () => {
-    dragging=false; svg.style.cursor='crosshair';
-  });
-
-  // Touch pinch zoom + drag (mobile)
-  let lastDist=0, lastMidX=0, lastMidY=0;
-  svg.addEventListener('touchstart', e => {
-    if (e.touches.length === 2) {
-      const t1=e.touches[0], t2=e.touches[1];
-      lastDist = Math.hypot(t2.clientX-t1.clientX, t2.clientY-t1.clientY);
-      lastMidX = (t1.clientX+t2.clientX)/2;
-      lastMidY = (t1.clientY+t2.clientY)/2;
-    } else if (e.touches.length === 1) {
-      startX=e.touches[0].clientX-tx;
-      startY=e.touches[0].clientY-ty;
-    }
-    e.preventDefault();
-  }, { passive: false });
-
-  svg.addEventListener('touchmove', e => {
-    e.preventDefault();
-    const rect = svg.getBoundingClientRect();
-    if (e.touches.length === 2) {
-      const t1=e.touches[0], t2=e.touches[1];
-      const dist = Math.hypot(t2.clientX-t1.clientX, t2.clientY-t1.clientY);
-      const midX = (t1.clientX+t2.clientX)/2 - rect.left;
-      const midY = (t1.clientY+t2.clientY)/2 - rect.top;
-      const ratio = dist / lastDist;
-      const newScale = Math.max(0.8, Math.min(12, scale * ratio));
-      tx = midX - (midX - tx) * (newScale / scale);
-      ty = midY - (midY - ty) * (newScale / scale);
-      scale = newScale;
-      lastDist=dist; lastMidX=midX; lastMidY=midY;
-      applyTransform();
-    } else if (e.touches.length === 1) {
-      tx=e.touches[0].clientX-startX;
-      ty=e.touches[0].clientY-startY;
-      applyTransform();
-    }
-  }, { passive: false });
-}
-
 function initRealtimeRefresh() {
   if (!_muniId) return;
   // Unsubscribe any existing channel first
@@ -763,111 +710,98 @@ function initRealtimeRefresh() {
 }
 
 async function renderSheltersOnMap() {
-  const g   = document.getElementById('ward-g');
-  const svg = document.getElementById('ward-svg');
-  if (!g || !svg) return;
-
-  // First render the ward map in grey (no risk colours)
-  await renderWardMap(true);  // pass flag for neutral mode
-
-  if (!_muniId) return;
+  if (!_map || !_muniId) return;
 
   const { data: shelters } = await supabase
     .from('shelters')
     .select('name,ward_number,status,current_occupancy,capacity,gps_lat,gps_lng')
     .eq('municipality_id', _muniId);
 
-  if (!shelters?.length) {
-    const note = document.createElementNS('http://www.w3.org/2000/svg','text');
-    note.setAttribute('x','450'); note.setAttribute('y','370');
-    note.setAttribute('text-anchor','middle'); note.setAttribute('font-size','11');
-    note.setAttribute('fill','var(--text3)'); note.setAttribute('font-family','monospace');
-    note.textContent = 'No shelters registered';
-    g.appendChild(note);
-    return;
+  const features = (shelters || []).map((s, idx) => {
+    const entry = _wardFeatureIndex[parseInt(s.ward_number)];
+    const coords = entry
+      ? [entry.centroid.cx, entry.centroid.cy]
+      : (_mapBounds ? [(_mapBounds.minX + _mapBounds.maxX) / 2, (_mapBounds.minY + _mapBounds.maxY) / 2] : [27.9, -26.1]);
+    return {
+      type: 'Feature',
+      id: idx + 1,
+      properties: {
+        ...s,
+        occ_pct: s.capacity ? Math.round(((s.current_occupancy || 0) / s.capacity) * 100) : 0
+      },
+      geometry: { type: 'Point', coordinates: coords }
+    };
+  });
+
+  if (_map.getLayer('shelter-label')) _map.removeLayer('shelter-label');
+  if (_map.getLayer('shelter-circle')) _map.removeLayer('shelter-circle');
+  if (_map.getSource('shelter-source')) _map.removeSource('shelter-source');
+
+  _map.addSource('shelter-source', {
+    type: 'geojson',
+    data: { type: 'FeatureCollection', features }
+  });
+
+  _map.addLayer({
+    id: 'shelter-circle',
+    type: 'circle',
+    source: 'shelter-source',
+    paint: {
+      'circle-radius': 7,
+      'circle-opacity': 0.95,
+      'circle-stroke-color': '#ffffff',
+      'circle-stroke-width': 1.4,
+      'circle-color': [
+        'match', ['get', 'status'],
+        'open', '#3fb950',
+        'partial', '#d29922',
+        'at-capacity', '#f85149',
+        'closed', '#6e7681',
+        '#6e7681'
+      ]
+    }
+  });
+
+  _map.addLayer({
+    id: 'shelter-label',
+    type: 'symbol',
+    source: 'shelter-source',
+    layout: {
+      'text-field': ['coalesce', ['get', 'name'], 'Shelter'],
+      'text-size': 9,
+      'text-offset': [0, 1.3]
+    },
+    paint: {
+      'text-color': '#e6edf3',
+      'text-halo-color': '#0d1117',
+      'text-halo-width': 1
+    }
+  });
+
+  if (!_shelterClickBound) {
+    _map.on('click', 'shelter-circle', e => {
+      const s = e.features?.[0]?.properties;
+      if (!s) return;
+      const wrap = document.getElementById('map-canvas-wrap');
+      const rect = wrap ? wrap.getBoundingClientRect() : { left: 0, top: 0 };
+      const clickX = e.point?.x ?? (e.originalEvent?.clientX - rect.left);
+      const clickY = e.point?.y ?? (e.originalEvent?.clientY - rect.top);
+      showShelterTooltip(s, clickX, clickY);
+    });
+    _shelterClickBound = true;
   }
 
-  // Get map bounds from current polygons
-  const allPts = [];
-  g.querySelectorAll('polygon').forEach(poly => {
-    const pts = poly.getAttribute('points');
-    if (!pts) return;
-    pts.split(' ').forEach(pt => {
-      const [x,y] = pt.split(',').map(Number);
-      if (!isNaN(x) && !isNaN(y)) allPts.push([x,y]);
-    });
-  });
-
-  if (!allPts.length) return;
-
-  const minX = Math.min(...allPts.map(p=>p[0]));
-  const maxX = Math.max(...allPts.map(p=>p[0]));
-  const minY = Math.min(...allPts.map(p=>p[1]));
-  const maxY = Math.max(...allPts.map(p=>p[1]));
-  const W    = maxX - minX || 860;
-  const H    = maxY - minY || 340;
-
-  // Get ward centroids for positioning shelter dots
-  const wardCentroids = {};
-  g.querySelectorAll('text.ward-label').forEach(t => {
-    const wNum = parseInt((t.textContent||'').replace('W',''));
-    if (wNum) wardCentroids[wNum] = { x: parseFloat(t.getAttribute('x')), y: parseFloat(t.getAttribute('y')) };
-  });
-
-  shelters.forEach(s => {
-    // Use ward centroid for position, or centre of map if no ward match
-    const pos = wardCentroids[s.ward_number] || { x: (minX+maxX)/2, y: (minY+maxY)/2 };
-    const STATUS_COL = { open:'#3fb950', 'at-capacity':'#f85149', closed:'#6e7681', partial:'#d29922' };
-    const col = STATUS_COL[s.status] || '#6e7681';
-    const pct = s.capacity ? Math.round(((s.current_occupancy||0)/s.capacity)*100) : 0;
-
-    // Dot with pulse if open
-    const g2 = document.createElementNS('http://www.w3.org/2000/svg','g');
-    g2.style.cursor = 'pointer';
-
-    const circle = document.createElementNS('http://www.w3.org/2000/svg','circle');
-    circle.setAttribute('cx', pos.x); circle.setAttribute('cy', pos.y);
-    circle.setAttribute('r','8'); circle.setAttribute('fill', col);
-    circle.setAttribute('fill-opacity','0.9'); circle.setAttribute('stroke','white');
-    circle.setAttribute('stroke-width','1.5');
-    g2.appendChild(circle);
-
-    const label = document.createElementNS('http://www.w3.org/2000/svg','text');
-    label.setAttribute('x', pos.x); label.setAttribute('y', pos.y + 3);
-    label.setAttribute('text-anchor','middle'); label.setAttribute('font-size','7');
-    label.setAttribute('fill','white'); label.setAttribute('font-weight','700');
-    label.setAttribute('font-family','monospace'); label.setAttribute('pointer-events','none');
-    label.textContent = pct + '%';
-    g2.appendChild(label);
-
-    // Shelter name below dot
-    const nameT = document.createElementNS('http://www.w3.org/2000/svg','text');
-    nameT.setAttribute('x', pos.x); nameT.setAttribute('y', pos.y + 16);
-    nameT.setAttribute('text-anchor','middle'); nameT.setAttribute('font-size','6');
-    nameT.setAttribute('fill','rgba(230,237,243,0.8)'); nameT.setAttribute('font-weight','600');
-    nameT.setAttribute('font-family','monospace'); nameT.setAttribute('pointer-events','none');
-    nameT.setAttribute('class','ward-label');
-    nameT.textContent = s.name.length > 14 ? s.name.slice(0,12)+'…' : s.name;
-    g2.appendChild(nameT);
-
-    g2.addEventListener('click', e => {
-      const wrap = document.getElementById('map-canvas-wrap');
-      const rect = wrap ? wrap.getBoundingClientRect() : {left:0,top:0};
-      showShelterTooltip(s, e.clientX-rect.left, e.clientY-rect.top);
-    });
-    g.appendChild(g2);
-  });
-
-  // Legend update
   const legend = document.getElementById('map-legend-bar');
   if (legend) {
     legend.innerHTML = [
       ['#3fb950','Open'],['#d29922','Partial'],['#f85149','At capacity'],['#6e7681','Closed']
     ].map(([col,lbl]) =>
       '<div style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text3)">' +
-      '<circle cx="5" cy="5" r="5" style="width:10px;height:10px;border-radius:50%;background:'+col+';display:inline-block;flex-shrink:0"></circle>'+lbl+'</div>'
+      '<span style="width:10px;height:10px;border-radius:50%;background:'+col+';display:inline-block;flex-shrink:0"></span>'+lbl+'</div>'
     ).join('');
   }
+
+  setMapMode('shelters');
 }
 
 function showShelterTooltip(s, clickX, clickY) {
@@ -962,7 +896,8 @@ function initDashboardEvents() {
       if (layer === 'shelters') {
         await renderSheltersOnMap();
       } else {
-        await renderWardMap();  // back to hazard colours
+        setMapMode('hazard');
+        updateMapLegend();
       }
     });
   });
@@ -973,7 +908,7 @@ function initDashboardEvents() {
 
 async function selectAssessment(id) {
   const { data } = await supabase.from('hvc_hazard_scores').select('*').eq('assessment_id', id).order('risk_rating', { ascending: false });
-  if (data) { _assessmentData.hazards = data; renderHazardTable(); renderWardMap(); }
+  if (data) { _assessmentData.hazards = data; renderHazardTable(); await renderWardMap(_mapMode === 'shelters'); }
 }
 
 function setEl(id, val) {
