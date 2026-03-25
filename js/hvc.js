@@ -1,6 +1,6 @@
 // js/hvc.js — Full HVC Assessment Tool (Annexure 3 intact)
 import { supabase } from './supabase.js';
-import { writeAudit } from './audit_v2.js?v=20260325c';
+import { writeAudit } from './audit.js';
 import { showDownloadMenu, docHeader } from './download.js';
 
 function showToast(msg, isError=false) {

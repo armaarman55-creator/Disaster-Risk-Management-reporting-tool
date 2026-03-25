@@ -1,6 +1,6 @@
 // js/admin.js
 import { supabase } from './supabase.js';
-import { writeAudit } from './audit.js?v=20260325b';
+import { writeAudit } from './audit.js';
 
 let _user = null;
 

@@ -1,6 +1,6 @@
 // js/auth.js
 import { supabase, getCurrentUser } from './supabase.js';
-import { initApp } from './app_core.js?v=20260325f';
+import { initApp } from './app.js';
 
 export async function initAuth() {
   // ── INTERCEPT PASSWORD RESET LINK ────────────────────────
