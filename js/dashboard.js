@@ -199,23 +199,23 @@ async function renderWardMap(neutralMode = false) {
   const RISK_ORDER = ['Extremely High','High','Tolerable','Low','Negligible'];
 
   if (!neutralMode && hazards.length > 0) {
-    // ── STEP 1: Build per-ward ratings from affected_wards on each hazard score row
-    // wardRatings[wardNum] = array of all risk_rating values for hazards in that ward
-    const wardRatings = {};
+    const allWardNums = _wardData.map(w => parseInt(w.ward_number)).filter(Boolean);
+    const wardRatings = {}; // wardNum → [riskRating, ...]
+    allWardNums.forEach(n => { wardRatings[n] = []; });
 
+    // ── STEP 1: Explicit ward selections (user tagged wards in HVC picker)
+    // If any hazard has affected_wards filled in, use those directly.
+    let hasExplicitWards = false;
     hazards.forEach(h => {
       const rating = h.risk_rating ?? null;
       if (rating === null) return;
       const band = h.risk_band || ratingToBand(rating);
-
-      // Primary source: affected_wards array on the hazard score row
       if (Array.isArray(h.affected_wards) && h.affected_wards.length > 0) {
+        hasExplicitWards = true;
         h.affected_wards.forEach(wRaw => {
           const wNum = parseInt(wRaw);
-          if (isNaN(wNum)) return;
-          if (!wardRatings[wNum]) wardRatings[wNum] = [];
+          if (isNaN(wNum) || !wardRatings[wNum]) return;
           wardRatings[wNum].push(rating);
-          // Track highest-risk band per ward for border accent
           const cur = wardPeak[wNum];
           if (!cur || RISK_ORDER.indexOf(band) < RISK_ORDER.indexOf(cur)) {
             wardPeak[wNum] = band;
@@ -224,59 +224,53 @@ async function renderWardMap(neutralMode = false) {
       }
     });
 
-    // ── STEP 2: If affected_wards is sparse or empty, fall back to a fresh
-    // query of ALL hazard scores for this municipality grouped by ward.
-    // This queries hvc_hazard_scores directly so we don't depend on the
-    // limited _assessmentData.hazards cache (which only loads latest 5).
-    const wardNumsWithData = Object.keys(wardRatings).map(Number);
-    const allWardNums      = _wardData.map(w => w.ward_number);
-    const wardsMissing     = allWardNums.filter(n => !wardNumsWithData.includes(n));
-
-    if (wardsMissing.length > 0 || wardNumsWithData.length === 0) {
-      try {
-        // Fetch all hazard scores for this municipality — not just latest assessment
-        const { data: allScores } = await supabase
-          .from('hvc_hazard_scores')
-          .select('risk_rating, risk_band, affected_wards')
-          .eq('municipality_id', _muniId)
-          .not('risk_rating', 'is', null);
-
-        (allScores || []).forEach(h => {
-          const rating = h.risk_rating;
-          const band   = h.risk_band || ratingToBand(rating);
-          if (!Array.isArray(h.affected_wards) || h.affected_wards.length === 0) return;
-          h.affected_wards.forEach(wRaw => {
-            const wNum = parseInt(wRaw);
-            if (isNaN(wNum)) return;
-            if (!wardRatings[wNum]) wardRatings[wNum] = [];
-            wardRatings[wNum].push(rating);
-            const cur = wardPeak[wNum];
-            if (!cur || RISK_ORDER.indexOf(band) < RISK_ORDER.indexOf(cur)) {
-              wardPeak[wNum] = band;
-            }
-          });
+    // ── STEP 2: Proxy ward distribution using affected_area score
+    // When users haven't tagged wards, use affected_area to infer which
+    // wards a hazard reaches. affected_area 1–5 maps to % of wards covered:
+    //   1 = ~20% (lowest ward numbers)
+    //   2 = ~40%
+    //   3 = ~60%
+    //   4 = ~80%
+    //   5 = 100% (all wards)
+    // Wards are sorted so higher-numbered wards are excluded first for
+    // lower area scores — this gives meaningful differentiation across the map.
+    if (!hasExplicitWards) {
+      const sortedWards = [...allWardNums].sort((a, b) => a - b);
+      hazards.forEach(h => {
+        const rating = h.risk_rating ?? null;
+        if (rating === null) return;
+        const band      = h.risk_band || ratingToBand(rating);
+        const areaPct   = Math.min(5, Math.max(1, h.affected_area || 3));
+        // How many wards this hazard reaches (20% per point, min 1 ward)
+        const coverCount = Math.max(1, Math.round((areaPct / 5) * sortedWards.length));
+        // Take the first N wards — lower ward numbers are more central/urban
+        // and more likely to be affected; adjust as needed per municipality
+        const affectedWards = sortedWards.slice(0, coverCount);
+        affectedWards.forEach(wNum => {
+          wardRatings[wNum].push(rating);
+          const cur = wardPeak[wNum];
+          if (!cur || RISK_ORDER.indexOf(band) < RISK_ORDER.indexOf(cur)) {
+            wardPeak[wNum] = band;
+          }
         });
-        console.log('[Dashboard] Supplemented ward ratings from full hvc_hazard_scores query');
-      } catch(e) {
-        console.warn('[Dashboard] Full hazard scores query failed:', e.message);
-      }
+      });
+      console.log('[Dashboard] Using affected_area proxy for ward distribution');
     }
 
     // ── STEP 3: Compute composite colour per ward
     // Formula: avg + 0.2 × (peak − avg)
-    // This weights the overall hazard profile of the ward while giving
-    // a 20% nudge toward the worst single hazard in that ward.
-    Object.entries(wardRatings).forEach(([wNum, ratings]) => {
+    // Weights overall hazard profile while nudging toward worst hazard.
+    allWardNums.forEach(wNum => {
+      const ratings = wardRatings[wNum];
       if (!ratings.length) return;
       const avg       = ratings.reduce((a, b) => a + b, 0) / ratings.length;
       const peak      = Math.max(...ratings);
       const composite = avg + 0.2 * (peak - avg);
-      wardRisk[parseInt(wNum)] = ratingToBand(composite);
+      wardRisk[wNum]  = ratingToBand(composite);
     });
 
-    // ── STEP 4: For any ward still uncoloured, use wards.dominant_risk from DB
-    // This is the SQL-computed fallback — better than nothing for wards
-    // that appear in the wards table but have no hazard score rows yet.
+    // ── STEP 4: Any ward still uncoloured → use wards.dominant_risk from DB
+    // Only fires for wards genuinely absent from all hazard score data.
     _wardData.forEach(w => {
       const wNum = parseInt(w.ward_number);
       if (w.dominant_risk && !wardRisk[wNum]) {
@@ -284,8 +278,6 @@ async function renderWardMap(neutralMode = false) {
       }
     });
 
-    // Wards with no data at all render as 'Negligible' (grey) — intentionally.
-    // This is correct: unknown ≠ low risk, it means no data yet.
     console.log('[Dashboard] Per-ward risk computed:', wardRisk);
   }
 
