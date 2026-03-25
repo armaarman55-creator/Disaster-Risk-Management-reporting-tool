@@ -40,7 +40,22 @@ async function renderMopupList() {
 
   document.getElementById('new-mopup-btn')?.addEventListener('click', () => createMopup());
   page.querySelectorAll('.mopup-list-item').forEach(item => {
-    item.addEventListener('click', () => openMopup(item.dataset.id));
+    item.addEventListener('click', (e) => {
+      if (e.target.closest('.mu-delete-btn')) return;
+      openMopup(item.dataset.id);
+    });
+  });
+
+  page.querySelectorAll('.mu-delete-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const id  = btn.dataset.id;
+      const num = btn.dataset.num;
+      if (!confirm(`Delete MOPUP-${num}? This cannot be undone.`)) return;
+      const { error } = await supabase.from('mopup_reports').delete().eq('id', id);
+      if (error) { alert('Delete failed: ' + error.message); return; }
+      await renderMopupList();
+    });
   });
 }
 
@@ -59,6 +74,7 @@ function renderMopupListItem(r) {
           <span class="badge ${r.is_authorised ? 'b-green' : 'b-amber'}">${r.is_authorised ? 'AUTHORISED' : 'DRAFT'}</span>
           <span class="badge ${r.is_published ? 'b-green' : 'b-gray'}">${r.is_published ? 'PUBLISHED' : 'UNPUBLISHED'}</span>
         </div>
+        <button class="btn btn-sm btn-red mu-delete-btn" data-id="${r.id}" data-num="${String(r.report_number).padStart(2,'0')}" style="margin-left:6px;flex-shrink:0" title="Delete report">✕</button>
       </div>
     </div>`;
 }
@@ -166,7 +182,8 @@ async function openMopup(id) {
       filename: `MOPUP-${num}-${muniName.replace(/\s+/g,'-')}`,
       getPDF: () => generateMopupPDF(),
       getCSVRows: () => getMopupCSVRows(r),
-      getDocHTML: () => getMopupDocHTML(r, muniName)
+      getDocHTML: () => getMopupDocHTML(r, muniName),
+      dropup: true
     });
   });
 
