@@ -49,13 +49,19 @@ export function showDownloadMenu(btn, options) {
 
   document.body.appendChild(menu);
 
-  // Position below the button
-  const rect = btn.getBoundingClientRect();
+  // Position the menu — above the button when dropup:true, below otherwise
+  const rect  = btn.getBoundingClientRect();
   const menuW = 180;
   let left = rect.left;
   if (left + menuW > window.innerWidth) left = rect.right - menuW;
   menu.style.left = left + 'px';
-  menu.style.top  = (rect.bottom + 6) + 'px';
+
+  if (options.dropup) {
+    const menuH = menu.offsetHeight;
+    menu.style.top = (rect.top - menuH - 6) + 'px';
+  } else {
+    menu.style.top = (rect.bottom + 6) + 'px';
+  }
 
   // Bind item clicks
   menu.querySelectorAll('.drmsa-dl-item').forEach(el => {
