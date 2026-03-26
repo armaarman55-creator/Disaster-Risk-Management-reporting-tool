@@ -37,6 +37,9 @@ let _osmPlacesInFlight = false;
 let _osmPlacesLastFetchAt = 0;
 let _osmPlacesDebounceTimer = null;
 let _osmEndpointCooldownUntil = {};
+let _osmPlacesAbortController = null;
+let _osmPlacesFailureBackoffUntil = 0;
+let _osmPlacesLastWarnAt = 0;
 let _isAddingProjectMarker = false;
 let _selectedProjectForPlacement = null;
 let _wardFillVisible = true;
@@ -255,7 +258,7 @@ async function renderWardMap(neutralMode = false) {
     }
         allWardNums.forEach(wNum => {
       const ratings = wardRatings[wNum];
-      if (!ratings.length) return;
+                if (!ratings.length) return;
       const avg = ratings.reduce((a, b) => a + b, 0) / ratings.length;
       const peak = Math.max(...ratings);
       wardRisk[wNum] = ratingToBand(avg + 0.2 * (peak - avg));
@@ -367,7 +370,7 @@ async function ensureMapInitialized() {
     preserveDrawingBuffer: true,
     style: {
       version: 8,
-      glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
+      glyphs: 'https://cdn.jsdelivr.net/gh/openmaptiles/fonts/{fontstack}/{range}.pbf',
       sources: {
         satellite: {
           type: 'raster',
@@ -515,7 +518,7 @@ async function renderWardLayers(featureCollection) {
       _map.getCanvas().style.cursor = '';
       await saveProjectMarkerAt(e.lngLat, wardNum, _selectedProjectForPlacement.id);
       _selectedProjectForPlacement = null;
-      hideProjectPlacementForm();
+                hideProjectPlacementForm();
     });
     _mapHandlersBound = true;
   }
@@ -682,6 +685,7 @@ function pickAreaNameLabel(props = {}) {
 async function renderBackgroundPlaceNames() {
   if (!_map || !_mapBounds) return;
   if ((_map.getZoom?.() || 0) < 8) return;
+  if (Date.now() < _osmPlacesFailureBackoffUntil) return;
   if (_osmPlacesInFlight) return;
   const now = Date.now();
   if (now - _osmPlacesLastFetchAt < 5000) return;
@@ -703,18 +707,24 @@ async function renderBackgroundPlaceNames() {
     bbox.south < bbox.north &&
     bbox.west < bbox.east;
   if (!hasValidBbox) return;
+  const bboxArea = (bbox.north - bbox.south) * (bbox.east - bbox.west);
+  if (bboxArea > 2.5) return;
   const cacheKey = `${bbox.south.toFixed(3)},${bbox.west.toFixed(3)},${bbox.north.toFixed(3)},${bbox.east.toFixed(3)}`;
   if (_osmPlacesCacheKey === cacheKey && _map.getSource('osm-place-source')) return;
   _osmPlacesCacheKey = cacheKey;
   _osmPlacesInFlight = true;
   _osmPlacesLastFetchAt = now;
+  const zoom = _map.getZoom?.() || 8;
+  const placeTypes = zoom >= 10
+    ? 'city|town|suburb|neighbourhood|village|hamlet'
+    : 'city|town|suburb|village';
 
   const query = `
     [out:json][timeout:25];
     (
-      node["place"~"city|town|suburb|neighbourhood|village|hamlet"](${bbox.south},${bbox.west},${bbox.north},${bbox.east});
-      way["place"~"city|town|suburb|neighbourhood|village|hamlet"](${bbox.south},${bbox.west},${bbox.north},${bbox.east});
-      relation["place"~"city|town|suburb|neighbourhood|village|hamlet"](${bbox.south},${bbox.west},${bbox.north},${bbox.east});
+      node["place"~"${placeTypes}"](${bbox.south},${bbox.west},${bbox.north},${bbox.east});
+      way["place"~"${placeTypes}"](${bbox.south},${bbox.west},${bbox.north},${bbox.east});
+      relation["place"~"${placeTypes}"](${bbox.south},${bbox.west},${bbox.north},${bbox.east});
     );
     out center tags;
   `;
@@ -730,8 +740,10 @@ async function renderBackgroundPlaceNames() {
       const cooldownUntil = _osmEndpointCooldownUntil[endpoint] || 0;
       if (Date.now() < cooldownUntil) continue;
       try {
+        if (_osmPlacesAbortController) _osmPlacesAbortController.abort();
         const ctl = new AbortController();
-        const t = setTimeout(() => ctl.abort(), 9000);
+        _osmPlacesAbortController = ctl;
+        const t = setTimeout(() => ctl.abort(), 12000);
         const r = await fetch(endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
@@ -766,7 +778,7 @@ async function renderBackgroundPlaceNames() {
         type: 'Feature',
         id: `osm-${el.id}`,
         properties: {
-          name,
+                    name,
                     place: el.tags?.place || 'locality'
         },
         geometry: { type: 'Point', coordinates: [lon, lat] }
@@ -807,9 +819,16 @@ async function renderBackgroundPlaceNames() {
         'text-halo-width': 1
       }
     });
+    _osmPlacesFailureBackoffUntil = 0;
   } catch (e) {
-    console.warn('OSM place labels unavailable:', e.message);
+    _osmPlacesFailureBackoffUntil = Date.now() + 60000;
+    const shouldWarn = (Date.now() - _osmPlacesLastWarnAt) > 30000;
+    if (shouldWarn) {
+      _osmPlacesLastWarnAt = Date.now();
+      console.warn('OSM place labels unavailable:', e.message);
+    }
   } finally {
+    _osmPlacesAbortController = null;
     _osmPlacesInFlight = false;
   }
 }
@@ -1129,7 +1148,7 @@ async function renderSheltersOnMap() {
         ...s,
         occ_pct: s.capacity ? Math.round(((s.current_occupancy || 0) / s.capacity) * 100) : 0
       },
-      geometry: { type: 'Point', coordinates: coords }
+            geometry: { type: 'Point', coordinates: coords }
     };
   });
 
