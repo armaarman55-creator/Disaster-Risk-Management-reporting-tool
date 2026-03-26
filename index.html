@@ -48,7 +48,7 @@
       <div class="auth-tab" data-tab="reset" id="tab-reset" style="display:none">Reset</div>
     </div>
 
-    <!-- ── PANEL: SIGN IN ── -->
+    <!-- ─ PANEL: SIGN IN ── -->
     <div id="panel-login">
       <div class="auth-heading">Welcome back</div>
       <div class="auth-sub">Sign in to your municipality's disaster risk management dashboard.</div>
@@ -294,9 +294,26 @@
           <div class="lyr" style="padding:4px 10px;font-size:11px;cursor:pointer">Projects</div>
         </div>
         <button id="map-add-project" class="btn btn-sm" style="padding:4px 10px;font-size:11px">+ Project marker</button>
+        <button id="map-toggle-fill" class="btn btn-sm" style="padding:4px 10px;font-size:11px">Hide ward fill</button>
         <button id="map-zoom-in"  class="btn btn-sm" style="padding:4px 10px;font-size:15px;font-weight:700;line-height:1">+</button>
         <button id="map-zoom-out" class="btn btn-sm" style="padding:4px 10px;font-size:15px;font-weight:700;line-height:1">−</button>
         <button id="map-zoom-reset" class="btn btn-sm" style="padding:4px 10px;font-size:11px">Reset</button>
+        <select id="map-download-scope" style="font-size:11px;background:var(--bg3);border:1px solid var(--border);border-radius:5px;padding:4px 8px;color:var(--text);outline:none">
+          <option value="current">Zoomed view</option>
+          <option value="full">Full map</option>
+        </select>
+        <button id="map-download" class="btn btn-sm" style="padding:4px 10px;font-size:11px">Download map</button>
+      </div>
+    </div>
+
+    <div id="map-project-form" style="display:none;padding:10px 14px;border-top:1px solid var(--border);background:var(--bg2)">
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <select id="map-project-select" style="font-size:11px;background:var(--bg3);border:1px solid var(--border);border-radius:5px;padding:5px 8px;color:var(--text);min-width:240px">
+          <option value="">Select IDP project…</option>
+        </select>
+        <button id="map-project-place" class="btn btn-sm" style="padding:5px 10px;font-size:11px">Place on map</button>
+        <button id="map-project-cancel" class="btn btn-sm" style="padding:5px 10px;font-size:11px">Cancel</button>
+        <span id="map-project-hint" style="font-size:11px;color:var(--text3)">Pick an IDP project, then click anywhere inside a ward.</span>
       </div>
     </div>
 
