@@ -1,4 +1,3 @@
-// PART 1/3
 // js/dashboard.js
 import { supabase } from './supabase.js';
 import { parseMarkerCoords, getWardAtLngLat } from './dashboard-map.js';
@@ -258,8 +257,7 @@ async function renderWardMap(neutralMode = false) {
       const peak = Math.max(...ratings);
       wardRisk[wNum] = ratingToBand(avg + 0.2 * (peak - avg));
     });
-
-    _wardData.forEach(w => {
+        _wardData.forEach(w => {
       const wNum = parseInt(w.ward_number);
       if (w.dominant_risk && !wardRisk[wNum]) wardRisk[wNum] = w.dominant_risk;
     });
@@ -450,7 +448,6 @@ async function renderWardLayers(featureCollection) {
       'text-size': 11,
       'text-offset': [0, -1.2]
     },
-    // PART 2/3
     paint: {
       'text-color': '#dbe7ff',
       'text-halo-color': '#0d1117',
@@ -520,7 +517,7 @@ function flattenCoords(geometry) {
   if (!geometry) return [];
   if (geometry.type === 'Polygon') return geometry.coordinates.flat();
   if (geometry.type === 'MultiPolygon') return geometry.coordinates.flat(2);
-  return [];
+    return [];
 }
 
 function boundsFromCoords(coords) {
@@ -669,11 +666,18 @@ function pickAreaNameLabel(props = {}) {
 
 async function renderBackgroundPlaceNames() {
   if (!_map || !_mapBounds) return;
+  const view = _map.getBounds?.();
+  const viewBox = view ? {
+    south: view.getSouth(),
+    west: view.getWest(),
+    north: view.getNorth(),
+    east: view.getEast()
+  } : null;
   const bbox = {
-    south: _mapBounds.minY,
-    west: _mapBounds.minX,
-    north: _mapBounds.maxY,
-    east: _mapBounds.maxX
+    south: Math.max(_mapBounds.minY, viewBox?.south ?? _mapBounds.minY),
+    west: Math.max(_mapBounds.minX, viewBox?.west ?? _mapBounds.minX),
+    north: Math.min(_mapBounds.maxY, viewBox?.north ?? _mapBounds.maxY),
+    east: Math.min(_mapBounds.maxX, viewBox?.east ?? _mapBounds.maxX)
   };
   const cacheKey = `${bbox.south.toFixed(3)},${bbox.west.toFixed(3)},${bbox.north.toFixed(3)},${bbox.east.toFixed(3)}`;
   if (_osmPlacesCacheKey === cacheKey && _map.getSource('osm-place-source')) return;
@@ -687,15 +691,27 @@ async function renderBackgroundPlaceNames() {
     out body;
   `;
   try {
-    const ctl = new AbortController();
-    const t = setTimeout(() => ctl.abort(), 12000);
-    const res = await fetch('https://overpass-api.de/api/interpreter', {
-      method: 'POST',
-      body: query,
-      signal: ctl.signal
-    });
-    clearTimeout(t);
-    if (!res.ok) throw new Error(`OSM places HTTP ${res.status}`);
+    const OVERPASS_ENDPOINTS = [
+      'https://overpass-api.de/api/interpreter',
+      'https://overpass.kumi.systems/api/interpreter',
+      'https://overpass.openstreetmap.ru/api/interpreter'
+    ];
+    let res = null;
+    let lastErr = null;
+    for (const endpoint of OVERPASS_ENDPOINTS) {
+      try {
+        const ctl = new AbortController();
+        const t = setTimeout(() => ctl.abort(), 9000);
+        const r = await fetch(endpoint, { method: 'POST', body: query, signal: ctl.signal });
+        clearTimeout(t);
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        res = r;
+        break;
+      } catch (e) {
+        lastErr = e;
+      }
+    }
+    if (!res) throw new Error(lastErr?.message || 'All Overpass endpoints failed');
     const data = await res.json();
     const features = (data.elements || []).map(el => {
       const name = el.tags?.name || el.tags?.['name:en'];
@@ -823,7 +839,7 @@ async function renderProjectsOnMap({ switchMode = true } = {}) {
 
   if (switchMode) setMapMode('projects');
 }
-// PART 3/3
+
 function showWardInfo(wid, risk, wardNum, clickX, clickY) {
   const BAND_COL = {
     'Extremely High':'#f85149','High':'#d29922',
@@ -1021,7 +1037,7 @@ function initRealtimeRefresh() {
       table: 'hvc_assessments',
       filter: `municipality_id=eq.${_muniId}`
     }, async () => {
-      console.log('HVC assessment changed — refreshing dashboard');
+            console.log('HVC assessment changed — refreshing dashboard');
       await loadAssessmentData();
       await renderKPIs();
       renderHazardTable();
@@ -1301,7 +1317,7 @@ function showProjectTooltip(p, clickX, clickY) {
   const tooltip = document.createElement('div');
   tooltip.id = 'ward-tooltip';
   tooltip.style.cssText = `position:absolute;background:var(--bg2);border:1px solid var(--border2);border-left:3px solid ${linked ? '#ffffff' : '#58a6ff'};border-radius:8px;padding:12px 14px;min-width:230px;max-width:280px;box-shadow:0 4px 20px rgba(0,0,0,.45);z-index:100;font-family:Inter,system-ui,sans-serif`;
-  tooltip.innerHTML = `
+    tooltip.innerHTML = `
     <div style="display:flex;justify-content:space-between;margin-bottom:6px">
       <div style="font-size:13px;font-weight:700;color:var(--text)">${p.name || 'Project'}</div>
       <button id="wtt-close" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:18px;line-height:1">×</button>
