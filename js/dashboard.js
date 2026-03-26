@@ -1,3 +1,4 @@
+// PART 1/3
 // js/dashboard.js
 import { supabase } from './supabase.js';
 import { parseMarkerCoords, getWardAtLngLat } from './dashboard-map.js';
@@ -86,7 +87,370 @@ export async function initDashboard(user) {
   }
 }
 
-/* ... keep this section exactly as in your current file up to renderWardLayers ... */
+async function loadAssessmentData() {
+  if (!_muniId) return;
+
+  // Load latest assessment
+  const { data: assessments } = await supabase
+    .from('hvc_assessments')
+    .select('*')
+    .eq('municipality_id', _muniId)
+    .order('created_at', { ascending: false })
+    .limit(5);
+
+  const { data: hazards } = await supabase
+    .from('hvc_hazard_scores')
+    .select('*')
+    .eq('municipality_id', _muniId)
+    .order('risk_rating', { ascending: false });
+
+  const { data: wards } = await supabase
+    .from('wards')
+    .select('*')
+    .eq('municipality_id', _muniId);
+
+  _assessmentData = { assessments: assessments || [], hazards: hazards || [] };
+  _wardData = wards || [];
+
+  // Diagnostic console output — open F12 to see
+  console.log('[Dashboard] DB data loaded:');
+  console.log('  Assessments:', (assessments||[]).length);
+  console.log('  Hazard scores:', (hazards||[]).length);
+  console.log('  Ward rows:', (wards||[]).length);
+  if ((hazards||[]).length) {
+    const bands = [...new Set((hazards||[]).map(h => h.risk_band))];
+    console.log('  Unique risk_band values in DB:', bands);
+    console.log('  Sample hazards:', (hazards||[]).slice(0,3).map(h => h.hazard_name + ' → ' + h.risk_band + ' (' + h.risk_rating + ')'));
+  } else {
+    console.warn('  No hazard scores found — complete an HVC assessment first');
+  }
+  if ((wards||[]).length) {
+    const risks = [...new Set((wards||[]).map(w => w.dominant_risk))];
+    console.log('  Unique dominant_risk values:', risks);
+    if (risks.every(r => !r) && (assessments||[]).length > 0) {
+      console.warn('  All dominant_risk values are NULL — run SQL 18_fix_ward_risk_fallback.sql');
+    }
+  }
+
+  // Populate assessment selector
+  const sel = document.getElementById('assess-sel-top');
+  const mapSel = document.getElementById('assess-map');
+  if (sel && assessments?.length) {
+    sel.innerHTML = assessments.map(a => `<option value="${a.id}">${a.label}</option>`).join('');
+    if (mapSel) mapSel.innerHTML = sel.innerHTML;
+  }
+}
+
+async function renderKPIs() {
+  const hazards = _assessmentData?.hazards || [];
+
+  // Use risk_rating threshold as primary — works even when risk_band is null
+  const xh  = hazards.filter(h => (h.risk_rating > 20) ||
+    (h.risk_band||'').toLowerCase().replace(/\s/g,'') === 'extremelyhigh').length;
+  const high = hazards.filter(h => (h.risk_rating > 15 && h.risk_rating <= 20) ||
+    (h.risk_band||'').toLowerCase() === 'high').length;
+
+  setEl('kpi-xh', xh || (hazards.length ? xh : '—'));
+  setEl('kpi-h',  high || (hazards.length ? high : '—'));
+
+  // Active shelters count
+  if (_muniId) {
+    try {
+      const { count: shelterCount } = await supabase
+        .from('shelters')
+        .select('id', { count: 'exact', head: true })
+        .eq('municipality_id', _muniId)
+        .eq('status', 'open');
+      setEl('kpi-shelters', shelterCount || 0);
+    } catch(e) {}
+
+    // Funded mitigations count
+    try {
+      const { count: idpCount } = await supabase
+        .from('mitigations')
+        .select('id', { count: 'exact', head: true })
+        .eq('municipality_id', _muniId)
+        .eq('idp_status', 'linked-funded')
+        .eq('is_library', false);
+      setEl('kpi-idp', idpCount || 0);
+    } catch(e) {}
+  }
+}
+
+function renderHazardTable() {
+  const hazards = _assessmentData?.hazards || [];
+  const tbl = document.getElementById('hz-tbl');
+  if (!tbl) return;
+  if (!hazards.length) {
+    tbl.innerHTML = `<tr><td colspan="5" style="padding:16px;text-align:center;color:var(--text3);font-size:12px">No assessment data yet. Complete your first HVC assessment.</td></tr>`;
+    return;
+  }
+  tbl.innerHTML = hazards.slice(0, 10).map((h, i) => `
+    <tr class="hz-tr">
+      <td class="hz-td hz-rank">${String(i + 1).padStart(2, '0')}</td>
+      <td class="hz-td hz-name">${h.hazard_name}</td>
+      <td class="hz-td hz-score">${(h.risk_rating || 0).toFixed(1)}</td>
+      <td class="hz-td hz-bar-w"><div class="hz-bar-bg"><div class="hz-bar-fg" style="width:${Math.round((h.risk_rating / 25) * 100)}%;background:${RISK_COLOURS[h.risk_band] || '#6e7681'}"></div></div></td>
+      <td class="hz-td"><span class="hz-chip ${CHIP_CLASS[h.risk_band] || CHIP_CLASS[h.risk_band?.replace(/high$/i,'High')] || 'c-n'}">${CHIP_LABEL[h.risk_band] || CHIP_LABEL[h.risk_band?.replace(/high$/i,'High')] || (h.risk_band||'N/A').toUpperCase()}</span></td>
+    </tr>`).join('');
+}
+
+function ratingToBand(r) {
+  if (r == null) return null;
+  if (r <= 5)  return 'Negligible';
+  if (r <= 10) return 'Low';
+  if (r <= 15) return 'Tolerable';
+  if (r <= 20) return 'High';
+  return 'Extremely High';
+}
+
+async function renderWardMap(neutralMode = false) {
+  const mapContainer = document.getElementById('maplibre-map');
+  if (!mapContainer) return;
+
+  const wardRisk = {};
+  const wardPeak = {};
+  const hazards  = neutralMode ? [] : (_assessmentData?.hazards || []);
+  const RISK_ORDER = ['Extremely High','High','Tolerable','Low','Negligible'];
+
+  if (!neutralMode && hazards.length > 0) {
+    const allWardNums = _wardData.map(w => parseInt(w.ward_number)).filter(Boolean);
+    const wardRatings = {};
+    allWardNums.forEach(n => { wardRatings[n] = []; });
+
+    let hasExplicitWards = false;
+    hazards.forEach(h => {
+      const rating = h.risk_rating ?? null;
+      if (rating === null) return;
+      const band = h.risk_band || ratingToBand(rating);
+      if (Array.isArray(h.affected_wards) && h.affected_wards.length > 0) {
+        hasExplicitWards = true;
+        h.affected_wards.forEach(wRaw => {
+          const wNum = parseInt(wRaw);
+          if (isNaN(wNum) || !wardRatings[wNum]) return;
+          wardRatings[wNum].push(rating);
+          const cur = wardPeak[wNum];
+          if (!cur || RISK_ORDER.indexOf(band) < RISK_ORDER.indexOf(cur)) wardPeak[wNum] = band;
+        });
+      }
+    });
+
+    if (!hasExplicitWards) {
+      const sortedWards = [...allWardNums].sort((a, b) => a - b);
+      hazards.forEach(h => {
+        const rating = h.risk_rating ?? null;
+        if (rating === null) return;
+        const band = h.risk_band || ratingToBand(rating);
+        const areaPct = Math.min(5, Math.max(1, h.affected_area || 3));
+        const coverCount = Math.max(1, Math.round((areaPct / 5) * sortedWards.length));
+        sortedWards.slice(0, coverCount).forEach(wNum => {
+          wardRatings[wNum].push(rating);
+          const cur = wardPeak[wNum];
+          if (!cur || RISK_ORDER.indexOf(band) < RISK_ORDER.indexOf(cur)) wardPeak[wNum] = band;
+        });
+      });
+    }
+
+    allWardNums.forEach(wNum => {
+      const ratings = wardRatings[wNum];
+      if (!ratings.length) return;
+      const avg = ratings.reduce((a, b) => a + b, 0) / ratings.length;
+      const peak = Math.max(...ratings);
+      wardRisk[wNum] = ratingToBand(avg + 0.2 * (peak - avg));
+    });
+
+    _wardData.forEach(w => {
+      const wNum = parseInt(w.ward_number);
+      if (w.dominant_risk && !wardRisk[wNum]) wardRisk[wNum] = w.dominant_risk;
+    });
+
+    console.log('[Dashboard] Per-ward risk computed:', wardRisk);
+  }
+
+  const mdbWards = await fetchMdbWards();
+  if (!mdbWards?.length) {
+    mapContainer.innerHTML = '<div style="height:100%;display:flex;align-items:center;justify-content:center;color:var(--text3);font-size:12px">Ward boundaries unavailable for this municipality.</div>';
+    return;
+  }
+
+  const featureCollection = {
+    type: 'FeatureCollection',
+    features: mdbWards.map((f, idx) => {
+      const props = f.properties || {};
+      const wardNo = props[_mdbWardNumField]
+        ?? props['WARD_NO'] ?? props['WARD_NUM'] ?? props['WardNo']
+        ?? props['ward_no'] ?? props['ward_num'] ?? null;
+      const wNum = parseInt(wardNo);
+      const rawRisk = wardRisk[wNum] || 'Negligible';
+      const risk = normalizeRiskBand(rawRisk);
+      const peakBand = normalizeRiskBand(wardPeak[wNum]);
+      return {
+        ...f,
+        id: idx + 1,
+        properties: {
+          ...props,
+          ward_number: wNum,
+          area_name_label: pickAreaNameLabel(props),
+          risk_band: risk,
+          peak_band: peakBand || null,
+          fill_color: RISK_COLOURS[risk] || '#6e7681'
+        }
+      };
+    }).filter(f => Number.isFinite(f.properties.ward_number))
+  };
+
+  await ensureMapInitialized();
+  await renderWardLayers(featureCollection);
+  await renderBackgroundPlaceNames();
+  updateMapLegend();
+  if (_mapMode === 'shelters') {
+    await renderSheltersOnMap();
+  } else if (_mapMode === 'projects') {
+    await renderProjectsOnMap();
+  }
+  window._drmsaZoomToWard = zoomToWard;
+}
+
+function normalizeRiskBand(rawRisk) {
+  if (!rawRisk) return 'Negligible';
+  const risk = String(rawRisk).trim().toLowerCase();
+  if (risk === 'extremely high' || risk === 'extremelyhigh') return 'Extremely High';
+  if (risk === 'high') return 'High';
+  if (risk === 'tolerable') return 'Tolerable';
+  if (risk === 'low') return 'Low';
+  return 'Negligible';
+}
+
+async function fetchMdbWards() {
+  const muniCode = window._drmsaUser?.municipalities?.code;
+  const rawName = window._drmsaUser?.municipalities?.name || '';
+  const muniName = rawName.replace(' LM','').replace(' DM','').replace(' Metropolitan Municipality','').trim();
+  if (!muniCode && !muniName) return null;
+  try {
+    const BASE = 'https://services7.arcgis.com/oeoyTUJC8HEeYsRB/arcgis/rest/services/MDB_Wards_2020/FeatureServer/0/query';
+    const probeRes = await fetch(`${BASE}?where=1%3D1&outFields=*&f=json&resultRecordCount=1`);
+    const probeData = await probeRes.json();
+    const fields = (probeData.fields || []).map(f => f.name);
+    const wardNumField = fields.find(f => /ward.?n(o|um)/i.test(f)) || 'WARD_NO';
+    const codeFields = fields.filter(f => /cat_b|lb_|muni.*c/i.test(f));
+    const nameFields = fields.filter(f => /muni.*name|municname/i.test(f));
+
+    const attempts = [];
+    codeFields.forEach(f => { if (muniCode) attempts.push(`${f}='${muniCode}'`); });
+    nameFields.forEach(f => { if (muniName) attempts.push(`${f} LIKE '%${muniName}%'`); });
+
+    for (const where of attempts) {
+      const url = `${BASE}?where=${encodeURIComponent(where)}&outFields=*&outSR=4326&f=geojson&resultRecordCount=200&returnGeometry=true`;
+      const res = await fetch(url);
+      if (!res.ok) continue;
+      const data = await res.json();
+      if (data?.features?.length) {
+        _mdbWardNumField = wardNumField;
+        return data.features;
+      }
+    }
+  } catch (e) {
+    console.warn('MDB API failed:', e.message);
+  }
+  return null;
+}
+
+async function ensureMapInitialized() {
+  if (_map) return;
+  if (!window.maplibregl) {
+    throw new Error('MapLibre GL not loaded on page');
+  }
+  _map = new window.maplibregl.Map({
+    container: 'maplibre-map',
+    preserveDrawingBuffer: true,
+    style: {
+      version: 8,
+      glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
+      sources: {
+        satellite: {
+          type: 'raster',
+          tiles: ['https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
+          tileSize: 256,
+          attribution: 'Esri'
+        }
+      },
+      layers: [{ id: 'satellite-base', type: 'raster', source: 'satellite' }]
+    },
+    center: [27.9, -26.1],
+    zoom: 7
+  });
+
+  await new Promise(resolve => _map.once('load', resolve));
+  bindMapControls();
+}
+
+async function renderWardLayers(featureCollection) {
+  _wardCentroids = {};
+  _wardFeatureIndex = {};
+  _mapBounds = null;
+  _wardFeatures = featureCollection?.features || [];
+
+  featureCollection.features.forEach(f => {
+    const wNum = parseInt(f.properties.ward_number);
+    if (!Number.isFinite(wNum)) return;
+    const coords = flattenCoords(f.geometry);
+    if (!coords.length) return;
+    const bbox = boundsFromCoords(coords);
+    const centroid = { cx: (bbox.minX + bbox.maxX) / 2, cy: (bbox.minY + bbox.maxY) / 2 };
+    _wardCentroids[wNum] = centroid;
+    _wardFeatureIndex[wNum] = { bbox, centroid, properties: f.properties };
+    _mapBounds = _mapBounds ? extendBounds(_mapBounds, bbox) : { ...bbox };
+  });
+  window._drmsaWardCentroids = _wardCentroids;
+
+  if (_map.getLayer('area-label')) _map.removeLayer('area-label');
+  if (_map.getLayer('ward-label')) _map.removeLayer('ward-label');
+  if (_map.getLayer('ward-outline')) _map.removeLayer('ward-outline');
+  if (_map.getLayer('ward-fill')) _map.removeLayer('ward-fill');
+  if (_map.getSource('ward-source')) _map.removeSource('ward-source');
+
+  _map.addSource('ward-source', { type: 'geojson', data: featureCollection });
+  _map.addLayer({
+    id: 'ward-fill',
+    type: 'fill',
+    source: 'ward-source',
+    paint: {
+      'fill-color': ['coalesce', ['get', 'fill_color'], '#6e7681'],
+      'fill-opacity': ['case', ['boolean', ['feature-state', 'hover'], false], 0.75, 0.45]
+    }
+  });
+  _map.addLayer({
+    id: 'ward-outline',
+    type: 'line',
+    source: 'ward-source',
+    paint: { 'line-color': '#ffffff', 'line-opacity': 0.9, 'line-width': 1.1 }
+  });
+  _map.addLayer({
+    id: 'ward-label',
+    type: 'symbol',
+    source: 'ward-source',
+    minzoom: 9,
+    layout: {
+      'text-field': ['concat', 'W', ['to-string', ['get', 'ward_number']]],
+      'text-size': ['interpolate', ['linear'], ['zoom'], 9, 9, 12, 12]
+    },
+    paint: {
+      'text-color': '#ffffff',
+      'text-halo-color': '#000000',
+      'text-halo-width': 1
+    }
+  });
+  _map.addLayer({
+    id: 'area-label',
+    type: 'symbol',
+    source: 'ward-source',
+    minzoom: 10,
+    layout: {
+      'text-field': ['coalesce', ['get', 'area_name_label'], ''],
+      'text-size': 11,
+      'text-offset': [0, -1.2]
+    },
+    // PART 2/3
     paint: {
       'text-color': '#dbe7ff',
       'text-halo-color': '#0d1117',
@@ -300,7 +664,7 @@ function pickAreaNameLabel(props = {}) {
     const value = props[key];
     if (value && String(value).trim()) return String(value).trim();
   }
-  return 'Ward';
+  return '';
 }
 
 async function renderBackgroundPlaceNames() {
@@ -368,8 +732,7 @@ async function renderBackgroundPlaceNames() {
           'village', 11,
           'neighbourhood', 10,
           10
-        ],
-        'text-font': ['Open Sans Semibold', 'Arial Unicode MS Bold']
+        ]
       },
       paint: {
         'text-color': '#c9d6ea',
@@ -460,6 +823,7 @@ async function renderProjectsOnMap({ switchMode = true } = {}) {
 
   if (switchMode) setMapMode('projects');
 }
+// PART 3/3
 function showWardInfo(wid, risk, wardNum, clickX, clickY) {
   const BAND_COL = {
     'Extremely High':'#f85149','High':'#d29922',
