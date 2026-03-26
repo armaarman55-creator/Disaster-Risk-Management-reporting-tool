@@ -1,3 +1,4 @@
+// PART 1/3 (lines 1–500)
 // js/dashboard.js
 import { supabase } from './supabase.js';
 
@@ -498,6 +499,7 @@ async function renderWardLayers(featureCollection) {
 
   setMapMode(_mapMode);
 }
+// PART 2/3 (lines 501–1000)
 
 function flattenCoords(geometry) {
   if (!geometry) return [];
@@ -652,28 +654,34 @@ async function renderProjectsOnMap({ switchMode = true } = {}) {
     .eq('municipality_id', _muniId)
     .eq('is_library', false);
 
-  const linked = (mits || []).map((m, idx) => {
+  const linked = (mits || []).flatMap((m, idx) => {
     const ward = Array.isArray(m.affected_wards) && m.affected_wards.length ? parseInt(m.affected_wards[0]) : null;
-    const coordsFromLocation = parseMarkerCoords(m.specific_location);
-    if (!coordsFromLocation) return null;
-    return {
-      type: 'Feature',
-      id: `idp-${m.id || idx}`,
-      properties: {
-        mitigation_id: m.id,
-        name: m.hazard_name || 'IDP project',
-        description: m.description || '',
-        ward_number: ward || '',
-        project_type: 'IDP-linked',
-        status: m.idp_status || 'proposed',
-        owner: m.responsible_owner || '',
-        timeframe: m.timeframe || '',
-        cost_estimate: m.cost_estimate || '',
-        linked_idp: true
-      },
-      geometry: { type: 'Point', coordinates: coordsFromLocation }
-    };
-  }).filter(Boolean);
+    const coordsList = parseMarkerCoordsList(m.specific_location);
+    if (!coordsList.length) return [];
+    return coordsList.map((coordsFromLocation, markerIdx) => {
+      const baseName = m.hazard_name || 'IDP project';
+      const markerName = coordsList.length > 1 ? `${baseName} #${markerIdx + 1}` : baseName;
+      return {
+        type: 'Feature',
+        id: `idp-${m.id || idx}-${markerIdx + 1}`,
+        properties: {
+          mitigation_id: m.id,
+          name: markerName,
+          base_name: baseName,
+          marker_index: markerIdx + 1,
+          description: m.description || '',
+          ward_number: ward || '',
+          project_type: 'IDP-linked',
+          status: m.idp_status || 'proposed',
+          owner: m.responsible_owner || '',
+          timeframe: m.timeframe || '',
+          cost_estimate: m.cost_estimate || '',
+          linked_idp: true
+        },
+        geometry: { type: 'Point', coordinates: coordsFromLocation }
+      };
+    });
+  });
   const features = linked;
   if (_map.getLayer('project-label')) _map.removeLayer('project-label');
   if (_map.getLayer('project-circle')) _map.removeLayer('project-circle');
@@ -992,6 +1000,7 @@ async function renderSheltersOnMap() {
   _map.addSource('shelter-source', {
     type: 'geojson',
     data: { type: 'FeatureCollection', features }
+    // PART 3/3 (lines 1001–1410)
   });
 
   _map.addLayer({
@@ -1119,27 +1128,26 @@ function initDashboardEvents() {
         mapDd.style.display = 'block';
         return;
       }
-    // In initDashboardEvents() -> mapSearch input handler block
- const needle = q.replace(/[^\d]/g, '');
-const matches = nums.filter(w => String(w).includes(needle || q)).slice(0, 50);
-if (!matches.length) { mapDd.style.display = 'none'; return; }
-mapDd.innerHTML = matches.map(item =>
-  `<div data-ward="${item}"
-    style="padding:6px 10px;cursor:pointer;border-bottom:1px solid var(--border);font-size:11px;transition:background .1s"
-    onmouseenter="this.style.background='var(--bg3)'"
-    onmouseleave="this.style.background=''">Ward ${item}</div>`
-).join('');
-mapDd.style.display = 'block';
-mapDd.style.maxHeight = '220px';
-mapDd.style.overflowY = 'auto';
-mapDd.querySelectorAll('[data-ward]').forEach(item => {
-  item.addEventListener('mousedown', e => {
-    e.preventDefault();
-    zoomToWard(parseInt(item.dataset.ward));
-    mapSearch.value = '';
-    mapDd.style.display = 'none';
-  });
-});
+      const needle = q.replace(/[^\d]/g, '');
+      const matches = nums.filter(w => String(w).includes(needle || q)).slice(0, 50);
+      if (!matches.length) { mapDd.style.display = 'none'; return; }
+      mapDd.innerHTML = matches.map(item =>
+        `<div data-ward="${item}"
+          style="padding:6px 10px;cursor:pointer;border-bottom:1px solid var(--border);font-size:11px;transition:background .1s"
+          onmouseenter="this.style.background='var(--bg3)'"
+          onmouseleave="this.style.background=''">Ward ${item}</div>`
+      ).join('');
+      mapDd.style.display = 'block';
+      mapDd.style.maxHeight = '220px';
+      mapDd.style.overflowY = 'auto';
+      mapDd.querySelectorAll('[data-ward]').forEach(item => {
+        item.addEventListener('mousedown', e => {
+          e.preventDefault();
+          zoomToWard(parseInt(item.dataset.ward));
+          mapSearch.value = '';
+          mapDd.style.display = 'none';
+        });
+      });
     });
     mapSearch.addEventListener('blur', () => {
       setTimeout(() => { mapDd.style.display = 'none'; }, 150);
@@ -1160,8 +1168,8 @@ mapDd.querySelectorAll('[data-ward]').forEach(item => {
   });
   document.getElementById('map-project-place')?.addEventListener('click', () => {
     const select = document.getElementById('map-project-select');
-    const selectedId = parseInt(select?.value, 10);
-    if (!Number.isFinite(selectedId)) {
+    const selectedId = String(select?.value || '').trim();
+    if (!selectedId) {
       notify('Select an IDP project before placing it on the map.', true);
       return;
     }
@@ -1215,26 +1223,31 @@ function mapCenterPoint() {
 }
 
 function parseMarkerCoords(locationText) {
-  if (!locationText || typeof locationText !== 'string') return null;
-  const m = locationText.match(/^@map:\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)/i);
-  if (!m) return null;
-  const lat = parseFloat(m[1]);
-  const lng = parseFloat(m[2]);
-  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
-  return [lng, lat];
+  const all = parseMarkerCoordsList(locationText);
+  return all.length ? all[0] : null;
+}
+
+function parseMarkerCoordsList(locationText) {
+  if (!locationText || typeof locationText !== 'string') return [];
+  const matches = [...locationText.matchAll(/@map:\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)/ig)];
+  if (!matches.length) return [];
+  return matches
+    .map(m => {
+      const lat = parseFloat(m[1]);
+      const lng = parseFloat(m[2]);
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+      return [lng, lat];
+    })
+    .filter(Boolean);
 }
 
 function getWardAtLngLat(lngLat) {
   if (!_map || !lngLat) return null;
-  const source = _map.getSource('ward-source');
-  if (!source || !source._data?.features) return null;
-  const point = [lngLat.lng, lngLat.lat];
-  for (const f of source._data.features) {
-    if (!f?.geometry) continue;
-    if (geometryContainsPoint(f.geometry, point)) {
-      const wardNum = parseInt(f.properties?.ward_number);
-      if (Number.isFinite(wardNum)) return wardNum;
-    }
+  const projectedPoint = _map.project(lngLat);
+  const features = _map.queryRenderedFeatures(projectedPoint, { layers: ['ward-fill'] }) || [];
+  for (const f of features) {
+    const wardNum = parseInt(f.properties?.ward_number, 10);
+    if (Number.isFinite(wardNum)) return wardNum;
   }
   return null;
 }
@@ -1347,8 +1360,8 @@ async function populateProjectPlacementOptions() {
     return;
   }
   const options = (data || []).map(p => {
-    const isPlaced = !!parseMarkerCoords(p.specific_location);
-    const label = `${p.hazard_name || 'IDP project'}${isPlaced ? ' (placed)' : ''}`;
+    const markerCount = parseMarkerCoordsList(p.specific_location).length;
+    const label = `${p.hazard_name || 'IDP project'}${markerCount ? ` (${markerCount} marker${markerCount > 1 ? 's' : ''})` : ''}`;
     return `<option value="${p.id}">${label}</option>`;
   }).join('');
   sel.innerHTML = '<option value="">Select IDP project…</option>' + options;
@@ -1362,15 +1375,30 @@ async function populateProjectPlacementOptions() {
 
 async function saveProjectMarkerAt(lngLat, wardNumFromClick, mitigationId) {
   const wardNum = parseInt(wardNumFromClick, 10);
-  if (!mitigationId || !Number.isFinite(wardNum)) {
+  const projectId = String(mitigationId || '').trim();
+  if (!projectId || !Number.isFinite(wardNum)) {
     notify('Select a valid project and click inside a ward to place it.', true);
     return;
   }
+  const { data: existingRow, error: existingErr } = await supabase
+    .from('mitigations')
+    .select('specific_location')
+    .eq('id', projectId)
+    .maybeSingle();
+  if (existingErr) {
+    notify(`Could not read existing marker locations: ${existingErr.message}`, true);
+    return;
+  }
+  const newEntry = `@map:${lngLat.lat},${lngLat.lng}`;
+  const existingText = String(existingRow?.specific_location || '').trim();
+  const nextLocation = existingText
+    ? `${existingText}\n${newEntry}`
+    : newEntry;
   const payload = {
     affected_wards: [wardNum],
-    specific_location: `@map:${lngLat.lat},${lngLat.lng}`
+    specific_location: nextLocation
   };
-  const { error } = await supabase.from('mitigations').update(payload).eq('id', mitigationId);
+  const { error } = await supabase.from('mitigations').update(payload).eq('id', projectId);
   if (error) {
     notify(`Could not save marker to backend: ${error.message}`, true);
     return;
