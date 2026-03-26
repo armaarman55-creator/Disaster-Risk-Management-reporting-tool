@@ -639,13 +639,20 @@ async function downloadMapImage(scope = 'current') {
   }
 }
 
+// pickAreaNameLabel()
 function pickAreaNameLabel(props = {}) {
   const candidates = [
     'SUBURB_NAME','SUBURB','TOWN_NAME','CITY_NAME','PLACE_NAME','MAIN_PLACE','MUNICNAME',
-    'MUNI_NAME','LOCAL_MUNI','NAME','WARD_NAME'
+    'MUNI_NAME','LOCAL_MUNI','NAME','WARD_NAME','AREA_NAME','SETTLEMENT','SUBPLACE','SUBPLACE_N','TOWN','VILLAGE'
   ];
   for (const key of candidates) {
     const value = props[key] ?? props[key.toLowerCase()];
+    if (value && String(value).trim()) return String(value).trim();
+  }
+  // Fallback: attempt any property key that looks like a place/town/suburb label.
+  for (const key of Object.keys(props || {})) {
+    if (!/(suburb|town|place|name|settlement|village|city)/i.test(key)) continue;
+    const value = props[key];
     if (value && String(value).trim()) return String(value).trim();
   }
   return '';
