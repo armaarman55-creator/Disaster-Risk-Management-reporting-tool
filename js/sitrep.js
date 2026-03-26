@@ -626,7 +626,7 @@ window.generateSitrepPDF = function() {
 <div class="doc-header">
   <div class="doc-header-left">
     <h1>Situation Report</h1>
-    <div class="sub">${muniName} · Disaster Management Centre</div>
+    <div class="sub">${muniName} — Disaster Management Centre</div>
     <div class="sub">${s.incident_name || 'Incident situation update'}</div>
   </div>
   <div class="doc-header-right">
@@ -711,7 +711,7 @@ window.generateSitrepPDF = function() {
 </div>
 
 <div class="doc-footer">
-  <span>SITREP-${num} · ${muniName} Disaster Management Centre · DRMSA Platform</span>
+  <span>SITREP-${num} · ${muniName} — Disaster Management Centre · DRMSA Platform</span>
   <span>Generated ${new Date().toLocaleString('en-ZA')}</span>
 </div>
 
