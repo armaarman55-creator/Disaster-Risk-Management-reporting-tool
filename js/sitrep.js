@@ -550,7 +550,9 @@ window.toggleAction = async function(idx) {
 };
  
 window.generateSitrepPDF = function() {
-  const muniName = _user?.municipalities?.name || 'Municipality';
+  const muniName = _user?.municipalities?.name
+    || window._drmsaUser?.municipalities?.name
+    || 'Municipality';
   if (!_currentSitrep) return;
   const s = _currentSitrep;
   const { shelters, closures } = window._sitrepLinkedData || { shelters: [], closures: [] };
