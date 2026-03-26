@@ -248,7 +248,7 @@ async function renderWardMap(neutralMode = false) {
           if (!cur || RISK_ORDER.indexOf(band) < RISK_ORDER.indexOf(cur)) wardPeak[wNum] = band;
         });
       });
-    }
+         }
 
     allWardNums.forEach(wNum => {
       const ratings = wardRatings[wNum];
@@ -498,7 +498,7 @@ async function renderWardLayers(featureCollection) {
         zoomToWard(wardNum);
       }
     });
-    _map.on('click', async e => {
+        _map.on('click', async e => {
       if (!_isAddingProjectMarker || !_selectedProjectForPlacement?.id) return;
       const wardNum = getWardAtLngLat(_map, e.lngLat, _wardFeatures);
       if (!Number.isFinite(wardNum)) {
@@ -748,7 +748,7 @@ async function renderBackgroundPlaceNames() {
         id: `osm-${el.id}`,
         properties: {
           name,
-          place: el.tags?.place || 'locality'
+                    place: el.tags?.place || 'locality'
         },
         geometry: { type: 'Point', coordinates: [lon, lat] }
       };
@@ -997,8 +997,7 @@ function renderTrend(hazardIdx) {
     { s: 'Season 3', v: (h.risk_rating || 0) * 0.9 },
     { s: 'Current', v: h.risk_rating || 0 }
   ];
-
-  body.innerHTML = seasons.map(row => {
+    body.innerHTML = seasons.map(row => {
     const pct = Math.round((row.v / 25) * 100);
     const band = row.v <= 5 ? 'c-n' : row.v <= 10 ? 'c-l' : row.v <= 15 ? 'c-t' : row.v <= 20 ? 'c-h' : 'c-xh';
     const label = row.v <= 5 ? 'NEGLIGIBLE' : row.v <= 10 ? 'LOW' : row.v <= 15 ? 'TOLERABLE' : row.v <= 20 ? 'HIGH' : 'EXTR HIGH';
@@ -1248,7 +1247,7 @@ function initDashboardEvents() {
     mapSearch.addEventListener('input', () => {
       const q = mapSearch.value.trim().toLowerCase();
       if (!q) { mapDd.style.display = 'none'; return; }
-      const nums = Object.keys(_wardFeatureIndex).map(Number).sort((a, b) => a - b);
+            const nums = Object.keys(_wardFeatureIndex).map(Number).sort((a, b) => a - b);
       if (!nums.length) {
         mapDd.innerHTML = '<div style="padding:8px 12px;font-size:11px;color:var(--text3)">Map not loaded yet — complete an HVC assessment first</div>';
         mapDd.style.display = 'block';
@@ -1437,3 +1436,39 @@ async function populateProjectPlacementOptions() {
 
 async function saveProjectMarkerAt(lngLat, wardNumFromClick, mitigationId) {
   const wardNum = parseInt(wardNumFromClick, 10);
+  const projectId = String(mitigationId || '').trim();
+  if (!projectId || !Number.isFinite(wardNum)) {
+    notify('Select a valid project and click inside a ward to place it.', true);
+    return;
+  }
+  const { data: existingRow, error: existingErr } = await supabase
+    .from('mitigations')
+    .select('specific_location')
+    .eq('id', projectId)
+    .maybeSingle();
+  if (existingErr) {
+    notify(`Could not read existing marker locations: ${existingErr.message}`, true);
+    return;
+  }
+  const newEntry = `@map:${lngLat.lat},${lngLat.lng}`;
+  const existingText = String(existingRow?.specific_location || '').trim();
+  const nextLocation = existingText
+    ? `${existingText}\n${newEntry}`
+    : newEntry;
+  const payload = {
+    affected_wards: [wardNum],
+    specific_location: nextLocation
+  };
+  const { error } = await supabase.from('mitigations').update(payload).eq('id', projectId);
+  if (error) {
+    notify(`Could not save marker to backend: ${error.message}`, true);
+    return;
+  }
+  notify('Project marker saved and shared with your municipality team.');
+  await renderProjectsOnMap();
+}
+
+function setEl(id, val) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = val;
+}
