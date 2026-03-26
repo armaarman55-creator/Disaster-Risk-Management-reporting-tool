@@ -1,4 +1,4 @@
-// js/hvc.js — Full HVC Assessment Tool (Annexure 3 intact)
+// js/hvc.js — Full HVC Assessment Tool
 import { supabase } from './supabase.js';
 import { writeAudit } from './audit.js';
 import { showDownloadMenu, docHeader } from './download.js';
@@ -93,8 +93,14 @@ let _customHazards = [];
 let _hvcWardSelections = {};
 // Track which hazard pickers have been initialised
 const _hvcPickerInited = new Set();
+
 // Draft assessment ID — set when auto-save creates a draft record
 let _draftId = null;
+
+// If set, user is editing an existing completed assessment
+// (autosave must not create new draft clones in this mode)
+let _editingAssessmentId = null;
+
 // Auto-save debounce timer
 let _autoSaveTimer = null;
 
@@ -355,6 +361,7 @@ async function renderHVCPage() {
 
   document.getElementById('hvc-new-btn')?.addEventListener('click', () => {
     _draftId = null;
+    _editingAssessmentId = null;
     _customHazards = [];
     Object.keys(_scores).forEach(k => delete _scores[k]);
     _hvcWardSelections = {};
@@ -917,23 +924,25 @@ function bindFormEvents() {
 // ── AUTO-SAVE ─────────────────────────────────────────────
 async function autoSaveDraft() {
   if (!_muniId) return;
+
+  // IMPORTANT: never create/update draft rows while editing existing assessment
+  if (_editingAssessmentId) return;
+
   const label = document.getElementById('a-label')?.value.trim() || 'Untitled draft';
 
   const meta = {
     municipality_id: _muniId,
     label,
-    season:       document.getElementById('a-season')?.value || '',
-    year:         parseInt(document.getElementById('a-year')?.value) || new Date().getFullYear(),
-    lead_assessor:document.getElementById('a-lead')?.value || '',
-    hazard_count: Object.keys(_scores).length,
-    status:       'draft'
+    season:        document.getElementById('a-season')?.value || '',
+    year:          parseInt(document.getElementById('a-year')?.value) || new Date().getFullYear(),
+    lead_assessor: document.getElementById('a-lead')?.value || '',
+    hazard_count:  Object.keys(_scores).length,
+    status:        'draft'
   };
 
   if (_draftId) {
-    // Update existing draft record
     await supabase.from('hvc_assessments').update(meta).eq('id', _draftId);
   } else {
-    // Create new draft record and store its ID
     const { data } = await supabase.from('hvc_assessments').insert(meta).select().single();
     if (data?.id) {
       _draftId = data.id;
@@ -943,6 +952,9 @@ async function autoSaveDraft() {
 }
 
 function scheduleAutoSave() {
+  // No draft autosave during edit mode
+  if (_editingAssessmentId) return;
+
   clearTimeout(_autoSaveTimer);
   _autoSaveTimer = setTimeout(() => autoSaveDraft(), 2000); // debounce 2s
 }
@@ -954,6 +966,8 @@ async function saveAssessment() {
   if (_assessmentSaving) return;
   const label = document.getElementById('a-label')?.value.trim();
   if (!label) { alert('Please enter an assessment label.'); return; }
+  // This handler is only for creating/finalizing a new assessment path
+_editingAssessmentId = null;
 
   _assessmentSaving = true;
   const btn = document.getElementById('save-hvc-btn');
@@ -1034,8 +1048,12 @@ async function saveAssessment() {
   }
 
   // Clear draft state now that it's been promoted to complete
-  _draftId = null;
+    _draftId = null;
+  _editingAssessmentId = null;
   clearTimeout(_autoSaveTimer);
+
+  showToast('✓ Assessment updated successfully!');
+  setTimeout(() => renderHVCPage(), 1200);
 
   try {
     await supabase.rpc('update_ward_dominant_risk', { p_municipality_id: _muniId });
@@ -1194,6 +1212,7 @@ async function editAssessment(id) {
 
   // Clear any in-progress new draft — we're now editing an existing record
   _draftId = null;
+  _editingAssessmentId = id;
   clearTimeout(_autoSaveTimer);
 
   // Render the new form with pre-filled values
