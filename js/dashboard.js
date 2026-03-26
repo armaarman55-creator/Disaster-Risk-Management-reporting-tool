@@ -1,6 +1,7 @@
-// PART 1/3 (lines 1–500)
 // js/dashboard.js
 import { supabase } from './supabase.js';
+import { parseMarkerCoords, getWardAtLngLat } from './dashboard-map.js';
+import { buildProjectFeatures, projectOptionLabel } from './dashboard-projects.js';
 
 const RISK_COLOURS = {
   'Extremely High': '#f85149', 'Extremely high': '#f85149',
@@ -25,6 +26,7 @@ let _mdbWardNumField = 'WARD_NO';
 let _wardCentroids = {};
 let _wardFeatureIndex = {};
 let _mapBounds = null;
+let _wardFeatures = [];
 let _map = null;
 let _mapMode = 'hazard';
 let _mapHandlersBound = false;
@@ -382,6 +384,7 @@ async function renderWardLayers(featureCollection) {
   _wardCentroids = {};
   _wardFeatureIndex = {};
   _mapBounds = null;
+  _wardFeatures = featureCollection?.features || [];
 
   featureCollection.features.forEach(f => {
     const wNum = parseInt(f.properties.ward_number);
@@ -483,7 +486,7 @@ async function renderWardLayers(featureCollection) {
     });
     _map.on('click', async e => {
       if (!_isAddingProjectMarker || !_selectedProjectForPlacement?.id) return;
-      const wardNum = getWardAtLngLat(e.lngLat);
+      const wardNum = getWardAtLngLat(_map, e.lngLat, _wardFeatures);
       if (!Number.isFinite(wardNum)) {
         notify('Please click inside a ward polygon to place this project.', true);
         return;
@@ -499,8 +502,6 @@ async function renderWardLayers(featureCollection) {
 
   setMapMode(_mapMode);
 }
-// PART 2/3 (lines 501–1000)
-
 function flattenCoords(geometry) {
   if (!geometry) return [];
   if (geometry.type === 'Polygon') return geometry.coordinates.flat();
@@ -654,35 +655,7 @@ async function renderProjectsOnMap({ switchMode = true } = {}) {
     .eq('municipality_id', _muniId)
     .eq('is_library', false);
 
-  const linked = (mits || []).flatMap((m, idx) => {
-    const ward = Array.isArray(m.affected_wards) && m.affected_wards.length ? parseInt(m.affected_wards[0]) : null;
-    const coordsList = parseMarkerCoordsList(m.specific_location);
-    if (!coordsList.length) return [];
-    return coordsList.map((coordsFromLocation, markerIdx) => {
-      const baseName = m.hazard_name || 'IDP project';
-      const markerName = coordsList.length > 1 ? `${baseName} #${markerIdx + 1}` : baseName;
-      return {
-        type: 'Feature',
-        id: `idp-${m.id || idx}-${markerIdx + 1}`,
-        properties: {
-          mitigation_id: m.id,
-          name: markerName,
-          base_name: baseName,
-          marker_index: markerIdx + 1,
-          description: m.description || '',
-          ward_number: ward || '',
-          project_type: 'IDP-linked',
-          status: m.idp_status || 'proposed',
-          owner: m.responsible_owner || '',
-          timeframe: m.timeframe || '',
-          cost_estimate: m.cost_estimate || '',
-          linked_idp: true
-        },
-        geometry: { type: 'Point', coordinates: coordsFromLocation }
-      };
-    });
-  });
-  const features = linked;
+  const features = buildProjectFeatures(mits || []);
   if (_map.getLayer('project-label')) _map.removeLayer('project-label');
   if (_map.getLayer('project-circle')) _map.removeLayer('project-circle');
   if (_map.getSource('project-source')) _map.removeSource('project-source');
@@ -1000,10 +973,8 @@ async function renderSheltersOnMap() {
   _map.addSource('shelter-source', {
     type: 'geojson',
     data: { type: 'FeatureCollection', features }
-    // PART 3/3 (lines 1001–1410)
   });
-
-  _map.addLayer({
+    _map.addLayer({
     id: 'shelter-circle',
     type: 'circle',
     source: 'shelter-source',
@@ -1222,70 +1193,6 @@ function mapCenterPoint() {
   return [27.9, -26.1];
 }
 
-function parseMarkerCoords(locationText) {
-  const all = parseMarkerCoordsList(locationText);
-  return all.length ? all[0] : null;
-}
-
-function parseMarkerCoordsList(locationText) {
-  if (!locationText || typeof locationText !== 'string') return [];
-  const matches = [...locationText.matchAll(/@map:\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)/ig)];
-  if (!matches.length) return [];
-  return matches
-    .map(m => {
-      const lat = parseFloat(m[1]);
-      const lng = parseFloat(m[2]);
-      if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
-      return [lng, lat];
-    })
-    .filter(Boolean);
-}
-
-function getWardAtLngLat(lngLat) {
-  if (!_map || !lngLat) return null;
-  const projectedPoint = _map.project(lngLat);
-  const features = _map.queryRenderedFeatures(projectedPoint, { layers: ['ward-fill'] }) || [];
-  for (const f of features) {
-    const wardNum = parseInt(f.properties?.ward_number, 10);
-    if (Number.isFinite(wardNum)) return wardNum;
-  }
-  return null;
-}
-
-function geometryContainsPoint(geometry, point) {
-  if (!geometry || !point) return false;
-  if (geometry.type === 'Polygon') {
-    return polygonContainsPoint(geometry.coordinates, point);
-  }
-  if (geometry.type === 'MultiPolygon') {
-    return geometry.coordinates.some(poly => polygonContainsPoint(poly, point));
-  }
-  return false;
-}
-
-function polygonContainsPoint(rings, point) {
-  if (!Array.isArray(rings) || !rings.length) return false;
-  const [x, y] = point;
-  const inOuter = ringContainsPoint(rings[0], x, y);
-  if (!inOuter) return false;
-  for (let i = 1; i < rings.length; i++) {
-    if (ringContainsPoint(rings[i], x, y)) return false;
-  }
-  return true;
-}
-
-function ringContainsPoint(ring, x, y) {
-  let inside = false;
-  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-    const xi = ring[i][0], yi = ring[i][1];
-    const xj = ring[j][0], yj = ring[j][1];
-    const intersect = ((yi > y) !== (yj > y)) &&
-      (x < ((xj - xi) * (y - yi)) / ((yj - yi) || 1e-12) + xi);
-    if (intersect) inside = !inside;
-  }
-  return inside;
-}
-
 function showProjectTooltip(p, clickX, clickY) {
   document.getElementById('ward-tooltip')?.remove();
   const wrap = document.getElementById('map-canvas-wrap');
@@ -1360,9 +1267,7 @@ async function populateProjectPlacementOptions() {
     return;
   }
   const options = (data || []).map(p => {
-    const markerCount = parseMarkerCoordsList(p.specific_location).length;
-    const label = `${p.hazard_name || 'IDP project'}${markerCount ? ` (${markerCount} marker${markerCount > 1 ? 's' : ''})` : ''}`;
-    return `<option value="${p.id}">${label}</option>`;
+    return `<option value="${p.id}">${projectOptionLabel(p)}</option>`;
   }).join('');
   sel.innerHTML = '<option value="">Select IDP project…</option>' + options;
   if (options) {
