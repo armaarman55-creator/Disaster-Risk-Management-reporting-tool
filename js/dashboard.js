@@ -1119,26 +1119,27 @@ function initDashboardEvents() {
         mapDd.style.display = 'block';
         return;
       }
-      const needle = q.replace(/[^\d]/g, '');
-      const matches = nums.filter(w => String(w).includes(needle || q)).slice(0, 50);
-      if (!matches.length) { mapDd.style.display = 'none'; return; }
-      mapDd.innerHTML = matches.map(item =>
-        `<div data-ward="${item.ward}"
-          style="padding:6px 10px;cursor:pointer;border-bottom:1px solid var(--border);font-size:11px;transition:background .1s"
-          onmouseenter="this.style.background='var(--bg3)'"
-          onmouseleave="this.style.background=''">Ward ${item.ward}${item.place ? ` · ${item.place}` : ''}</div>`
-      ).join('');
-      mapDd.style.display = 'block';
-      mapDd.style.maxHeight = '220px';
-      mapDd.style.overflowY = 'auto';
-      mapDd.querySelectorAll('[data-ward]').forEach(item => {
-        item.addEventListener('mousedown', e => {
-          e.preventDefault();
-          zoomToWard(parseInt(item.dataset.ward));
-          mapSearch.value = '';
-          mapDd.style.display = 'none';
-        });
-      });
+    // In initDashboardEvents() -> mapSearch input handler block
+const needle = q.replace(/[^\d]/g, '');
+const matches = nums.filter(w => String(w).includes(needle || q)).slice(0, 50);
+if (!matches.length) { mapDd.style.display = 'none'; return; }
+mapDd.innerHTML = matches.map(item =>
+  `<div data-ward="${item}"
+    style="padding:6px 10px;cursor:pointer;border-bottom:1px solid var(--border);font-size:11px;transition:background .1s"
+    onmouseenter="this.style.background='var(--bg3)'"
+    onmouseleave="this.style.background=''">Ward ${item}</div>`
+).join('');
+mapDd.style.display = 'block';
+mapDd.style.maxHeight = '220px';
+mapDd.style.overflowY = 'auto';
+mapDd.querySelectorAll('[data-ward]').forEach(item => {
+  item.addEventListener('mousedown', e => {
+    e.preventDefault();
+    zoomToWard(parseInt(item.dataset.ward));
+    mapSearch.value = '';
+    mapDd.style.display = 'none';
+  });
+}); 
     });
     mapSearch.addEventListener('blur', () => {
       setTimeout(() => { mapDd.style.display = 'none'; }, 150);
@@ -1332,6 +1333,7 @@ function hideProjectPlacementForm() {
 
 async function populateProjectPlacementOptions() {
   const sel = document.getElementById('map-project-select');
+  const placeBtn = document.getElementById('map-project-place');
   if (!sel) return;
   const { data, error } = await supabase
     .from('mitigations')
@@ -1341,6 +1343,7 @@ async function populateProjectPlacementOptions() {
     .order('hazard_name', { ascending: true });
   if (error) {
     notify(`Could not load project options: ${error.message}`, true);
+    if (placeBtn) placeBtn.disabled = true;
     return;
   }
   const options = (data || []).map(p => {
@@ -1349,6 +1352,12 @@ async function populateProjectPlacementOptions() {
     return `<option value="${p.id}">${label}</option>`;
   }).join('');
   sel.innerHTML = '<option value="">Select IDP project…</option>' + options;
+  if (options) {
+    sel.value = String(data[0].id);
+    if (placeBtn) placeBtn.disabled = false;
+  } else if (placeBtn) {
+    placeBtn.disabled = true;
+  }
 }
 
 async function saveProjectMarkerAt(lngLat, wardNumFromClick, mitigationId) {
