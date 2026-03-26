@@ -175,7 +175,6 @@ async function renderKPIs() {
     } catch(e) {}
   }
 }
-
 function renderHazardTable() {
   const hazards = _assessmentData?.hazards || [];
   const tbl = document.getElementById('hz-tbl');
@@ -257,7 +256,8 @@ async function renderWardMap(neutralMode = false) {
       const peak = Math.max(...ratings);
       wardRisk[wNum] = ratingToBand(avg + 0.2 * (peak - avg));
     });
-        _wardData.forEach(w => {
+
+    _wardData.forEach(w => {
       const wNum = parseInt(w.ward_number);
       if (w.dominant_risk && !wardRisk[wNum]) wardRisk[wNum] = w.dominant_risk;
     });
@@ -308,7 +308,6 @@ async function renderWardMap(neutralMode = false) {
   }
   window._drmsaZoomToWard = zoomToWard;
 }
-
 function normalizeRiskBand(rawRisk) {
   if (!rawRisk) return 'Negligible';
   const risk = String(rawRisk).trim().toLowerCase();
@@ -517,9 +516,8 @@ function flattenCoords(geometry) {
   if (!geometry) return [];
   if (geometry.type === 'Polygon') return geometry.coordinates.flat();
   if (geometry.type === 'MultiPolygon') return geometry.coordinates.flat(2);
-    return [];
+  return [];
 }
-
 function boundsFromCoords(coords) {
   const lons = coords.map(c => c[0]);
   const lats = coords.map(c => c[1]);
@@ -541,9 +539,19 @@ function extendBounds(a, b) {
 }
 
 function zoomToWard(wardNum) {
-  const entry = _wardFeatureIndex[parseInt(wardNum)];
+  const target = parseInt(wardNum, 10);
+  const entry = _wardFeatureIndex[target];
   if (!entry || !_map) {
-    notify('Ward ' + wardNum + ' not found on map', true);
+    const fallbackKey = Object.keys(_wardFeatureIndex).find(k => String(k).includes(String(target)));
+    const fallback = fallbackKey ? _wardFeatureIndex[parseInt(fallbackKey, 10)] : null;
+    if (!fallback || !_map) {
+      notify('Ward ' + wardNum + ' not found on map', true);
+      return;
+    }
+    _map.fitBounds([[fallback.bbox.minX, fallback.bbox.minY], [fallback.bbox.maxX, fallback.bbox.maxY]], {
+      padding: 70,
+      maxZoom: 13
+    });
     return;
   }
   _map.fitBounds([[entry.bbox.minX, entry.bbox.minY], [entry.bbox.maxX, entry.bbox.maxY]], {
@@ -645,7 +653,6 @@ async function downloadMapImage(scope = 'current') {
     setMapMode(previousMode);
   }
 }
-
 function pickAreaNameLabel(props = {}) {
   const candidates = [
     'SUBURB_NAME','SUBURB','TOWN_NAME','CITY_NAME','PLACE_NAME','MAIN_PLACE','MUNICNAME',
@@ -679,6 +686,11 @@ async function renderBackgroundPlaceNames() {
     north: Math.min(_mapBounds.maxY, viewBox?.north ?? _mapBounds.maxY),
     east: Math.min(_mapBounds.maxX, viewBox?.east ?? _mapBounds.maxX)
   };
+  const hasValidBbox =
+    [bbox.south, bbox.west, bbox.north, bbox.east].every(Number.isFinite) &&
+    bbox.south < bbox.north &&
+    bbox.west < bbox.east;
+  if (!hasValidBbox) return;
   const cacheKey = `${bbox.south.toFixed(3)},${bbox.west.toFixed(3)},${bbox.north.toFixed(3)},${bbox.east.toFixed(3)}`;
   if (_osmPlacesCacheKey === cacheKey && _map.getSource('osm-place-source')) return;
   _osmPlacesCacheKey = cacheKey;
@@ -692,8 +704,8 @@ async function renderBackgroundPlaceNames() {
   `;
   try {
     const OVERPASS_ENDPOINTS = [
-      'https://overpass-api.de/api/interpreter',
       'https://overpass.kumi.systems/api/interpreter',
+      'https://overpass-api.de/api/interpreter',
       'https://overpass.openstreetmap.ru/api/interpreter'
     ];
     let res = null;
@@ -702,12 +714,21 @@ async function renderBackgroundPlaceNames() {
       try {
         const ctl = new AbortController();
         const t = setTimeout(() => ctl.abort(), 9000);
-        const r = await fetch(endpoint, { method: 'POST', body: query, signal: ctl.signal });
+        const r = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
+          body: query.trim(),
+          signal: ctl.signal
+        });
         clearTimeout(t);
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         res = r;
         break;
       } catch (e) {
+        if (String(e?.name || '').toLowerCase() === 'aborterror') {
+          lastErr = new Error('Request timeout');
+          continue;
+        }
         lastErr = e;
       }
     }
@@ -760,7 +781,6 @@ async function renderBackgroundPlaceNames() {
     console.warn('OSM place labels unavailable:', e.message);
   }
 }
-
 async function renderProjectsOnMap({ switchMode = true } = {}) {
   if (!_map || !_muniId) return;
 
@@ -926,7 +946,6 @@ function showWardInfo(wid, risk, wardNum, clickX, clickY) {
     });
   }, 80);
 }
-
 
 function syncTrendSelector() {
   const sel = document.getElementById('trend-sel');
