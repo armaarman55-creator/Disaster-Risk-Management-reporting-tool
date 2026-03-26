@@ -435,13 +435,11 @@ async function renderWardLayers(featureCollection) {
     id: 'area-label',
     type: 'symbol',
     source: 'ward-source',
-    minzoom: 6,
+    minzoom: 8,
     layout: {
       'text-field': ['coalesce', ['get', 'area_name_label'], ''],
       'text-size': 11,
-      'text-offset': [0, -1.2],
-      'text-allow-overlap': true,
-      'text-ignore-placement': true
+      'text-offset': [0, -1.2]
     },
     paint: {
       'text-color': '#dbe7ff',
@@ -1115,24 +1113,14 @@ function initDashboardEvents() {
     mapSearch.addEventListener('input', () => {
       const q = mapSearch.value.trim().toLowerCase();
       if (!q) { mapDd.style.display = 'none'; return; }
-      const wards = Object.keys(_wardFeatureIndex).map(Number).sort((a, b) => a - b);
-      if (!wards.length) {
+      const nums = Object.keys(_wardFeatureIndex).map(Number).sort((a, b) => a - b);
+      if (!nums.length) {
         mapDd.innerHTML = '<div style="padding:8px 12px;font-size:11px;color:var(--text3)">Map not loaded yet — complete an HVC assessment first</div>';
         mapDd.style.display = 'block';
         return;
       }
       const needle = q.replace(/[^\d]/g, '');
-      const matches = wards
-        .map(w => {
-          const entry = _wardFeatureIndex[w];
-          const place = (entry?.properties?.area_name_label || '').toLowerCase();
-          const byNumber = needle ? String(w).includes(needle) : String(w).includes(q);
-          const byPlace = !!place && place.includes(q);
-          if (!byNumber && !byPlace) return null;
-          return { ward: w, place };
-        })
-        .filter(Boolean)
-        .slice(0, 50);
+      const matches = nums.filter(w => String(w).includes(needle || q)).slice(0, 50);
       if (!matches.length) { mapDd.style.display = 'none'; return; }
       mapDd.innerHTML = matches.map(item =>
         `<div data-ward="${item.ward}"
@@ -1171,8 +1159,8 @@ function initDashboardEvents() {
   });
   document.getElementById('map-project-place')?.addEventListener('click', () => {
     const select = document.getElementById('map-project-select');
-    const selectedId = String(select?.value || '').trim();
-    if (!selectedId) {
+    const selectedId = parseInt(select?.value, 10);
+    if (!Number.isFinite(selectedId)) {
       notify('Select an IDP project before placing it on the map.', true);
       return;
     }

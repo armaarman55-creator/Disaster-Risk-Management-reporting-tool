@@ -4,6 +4,7 @@ import { showDownloadMenu, docHeader } from './download.js';
 
 let _muniId = null;
 let _user = null;
+let _currentMopup = null;
 
 export async function initMopup(user) {
   _user = user;
@@ -102,6 +103,7 @@ async function createMopup() {
 async function openMopup(id) {
   const { data: r } = await supabase.from('mopup_reports').select('*').eq('id', id).single();
   if (!r) return;
+  _currentMopup = r;
 
   const page = document.getElementById('page-mopup');
   if (!page) return;
@@ -533,11 +535,231 @@ function getMopupDocHTML(r, muniName) {
 }
 
 window.generateMopupPDF = function() {
+  const r = _currentMopup;
+  if (!r) return;
   const muniName = _user?.municipalities?.name || 'Municipality';
-  const body = document.getElementById('mu-body')?.innerText || '';
+  const num      = String(r.report_number).padStart(2,'0');
+  const fin      = r.financial_summary || {};
+  const total    = Object.values(fin).reduce((a,b) => a + (parseFloat(b)||0), 0);
+  const orgs     = r.organisations_deployed || [];
+  const worked   = r.lessons_worked_well || [];
+  const improve  = r.lessons_to_improve || [];
+  const recs     = r.recommendations || [];
+  const relief   = r.relief_totals || {};
+
+  const fmt = (d) => d ? new Date(d).toLocaleDateString('en-ZA', {day:'numeric',month:'long',year:'numeric'}) : '—';
+  const cur = (v) => `R ${(parseFloat(v)||0).toLocaleString('en-ZA', {minimumFractionDigits:2})}`;
+
+  const statusColour = { draft:'#d29922', complete:'#3fb950', authorised:'#58a6ff' };
+  const statusCol = statusColour[r.status] || '#6e7681';
+  const authBadge = r.is_authorised
+    ? `<span style="background:#3fb95020;border:1px solid #3fb950;color:#3fb950;padding:3px 10px;border-radius:4px;font-size:11px;font-weight:700;letter-spacing:.06em">AUTHORISED</span>`
+    : `<span style="background:#d2992220;border:1px solid #d29922;color:#d29922;padding:3px 10px;border-radius:4px;font-size:11px;font-weight:700;letter-spacing:.06em">DRAFT</span>`;
+
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>MOPUP-${num} — ${r.incident_name||'Mop-up Report'}</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:Arial,Helvetica,sans-serif;font-size:11pt;color:#1a1a2e;background:#fff;padding:0}
+  @media screen{body{max-width:800px;margin:0 auto;padding:30px 20px}}
+  @media print{body{padding:0}@page{margin:18mm 15mm}}
+
+  /* Header */
+  .doc-header{background:#1a3a6b;color:#fff;padding:22px 28px 18px;display:flex;justify-content:space-between;align-items:flex-start}
+  .doc-header-left h1{font-size:18pt;font-weight:700;letter-spacing:-.01em;margin-bottom:4px}
+  .doc-header-left .sub{font-size:10pt;opacity:.8;margin-bottom:2px}
+  .doc-header-right{text-align:right;font-size:9pt;opacity:.85;line-height:1.7}
+  .doc-num{font-size:22pt;font-weight:800;letter-spacing:.04em;color:#fff;opacity:.25;margin-top:4px}
+
+  /* Status bar */
+  .status-bar{background:#f0f4f8;border-bottom:3px solid #1a3a6b;padding:10px 28px;display:flex;align-items:center;gap:14px;font-size:10pt}
+  .status-bar .lbl{color:#666;font-size:9pt}
+  .status-pill{padding:3px 10px;border-radius:4px;font-size:10pt;font-weight:700;letter-spacing:.04em}
+  .pill-active{background:#f8515920;border:1px solid #f85149;color:#f85149}
+  .pill-contained{background:#d2992220;border:1px solid #d29922;color:#d29922}
+  .pill-resolved{background:#3fb95020;border:1px solid #3fb950;color:#3fb950}
+
+  /* Body */
+  .doc-body{padding:22px 28px}
+
+  /* Section */
+  .sec{margin-bottom:22px;page-break-inside:avoid}
+  .sec-title{font-size:9pt;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#1a3a6b;border-bottom:1.5px solid #1a3a6b;padding-bottom:4px;margin-bottom:12px}
+
+  /* Stat grid */
+  .stat-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:12px}
+  .stat-box{border:1px solid #e0e6ed;border-radius:6px;padding:10px 8px;text-align:center}
+  .stat-box .val{font-size:18pt;font-weight:800;color:#1a3a6b;line-height:1}
+  .stat-box .val.red{color:#c0392b}
+  .stat-box .val.amber{color:#e67e22}
+  .stat-box .val.blue{color:#2980b9}
+  .stat-box .lbl{font-size:8pt;color:#888;margin-top:3px;text-transform:uppercase;letter-spacing:.04em}
+
+  /* Table */
+  table{width:100%;border-collapse:collapse;font-size:10pt;margin-bottom:8px}
+  th{background:#1a3a6b;color:#fff;padding:6px 10px;text-align:left;font-size:9pt;font-weight:600}
+  td{padding:5px 10px;border-bottom:1px solid #eef0f3}
+  tr:nth-child(even) td{background:#f7f9fc}
+  td.right,th.right{text-align:right}
+  .total-row td{font-weight:700;background:#eef0f3;border-top:1.5px solid #1a3a6b}
+
+  /* Field rows */
+  .field-row{display:flex;gap:0;border-bottom:1px solid #eef0f3;padding:5px 0}
+  .field-key{width:38%;font-size:9.5pt;color:#666;font-weight:600}
+  .field-val{flex:1;font-size:9.5pt;color:#1a1a2e}
+
+  /* Narrative box */
+  .narrative{background:#f7f9fc;border-left:3px solid #1a3a6b;padding:10px 14px;font-size:10pt;line-height:1.7;border-radius:0 4px 4px 0}
+
+  /* Lesson items */
+  .lesson{display:flex;gap:8px;padding:5px 0;border-bottom:1px solid #eef0f3;font-size:10pt}
+  .lesson-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;margin-top:4px}
+
+  /* Footer */
+  .doc-footer{background:#f0f4f8;border-top:2px solid #1a3a6b;padding:10px 28px;font-size:8pt;color:#888;display:flex;justify-content:space-between}
+
+  /* Print button — screen only */
+  @media screen{
+    .print-btn{display:block;margin:20px auto;padding:12px 32px;background:#1a3a6b;color:#fff;border:none;border-radius:6px;font-size:13px;font-weight:700;cursor:pointer;letter-spacing:.04em}
+    .print-btn:hover{background:#16305a}
+  }
+  @media print{.print-btn{display:none}}
+</style>
+</head>
+<body>
+
+<button class="print-btn" onclick="window.print()">⬇ Save as PDF / Print</button>
+
+<div class="doc-header">
+  <div class="doc-header-left">
+    <h1>Mop-up Report</h1>
+    <div class="sub">${muniName} · Disaster Management Centre</div>
+    <div class="sub">${r.incident_name || 'Incident report'}</div>
+  </div>
+  <div class="doc-header-right">
+    <div class="doc-num">MOPUP-${num}</div>
+    <div>Compiled: ${fmt(r.created_at)}</div>
+    <div>Updated: ${fmt(r.updated_at)}</div>
+    <div style="margin-top:6px">${authBadge}</div>
+  </div>
+</div>
+
+<div class="status-bar">
+  <span class="lbl">Hazard type:</span>
+  <strong>${r.hazard_type || '—'}</strong>
+  <span style="margin-left:auto;color:#666;font-size:9pt">
+    Activation: <strong>${fmt(r.activation_date)}</strong>
+    &nbsp;→&nbsp; Stand-down: <strong>${fmt(r.standdown_date)}</strong>
+    &nbsp;·&nbsp; Duration: <strong>${r.duration_days || '—'} days</strong>
+    &nbsp;·&nbsp; SitReps issued: <strong>${r.sitreps_issued || '—'}</strong>
+  </span>
+</div>
+
+<div class="doc-body">
+
+  <!-- Final Impact -->
+  <div class="sec">
+    <div class="sec-title">Final Impact Figures</div>
+    <div class="stat-grid">
+      <div class="stat-box"><div class="val amber">${r.total_affected||0}</div><div class="lbl">Total Affected</div></div>
+      <div class="stat-box"><div class="val red">${r.fatalities||0}</div><div class="lbl">Fatalities</div></div>
+      <div class="stat-box"><div class="val amber">${r.injuries||0}</div><div class="lbl">Injuries</div></div>
+      <div class="stat-box"><div class="val amber">${r.properties_damaged||0}</div><div class="lbl">Properties Damaged</div></div>
+      <div class="stat-box"><div class="val red">${r.structures_destroyed||0}</div><div class="lbl">Structures Destroyed</div></div>
+    </div>
+  </div>
+
+  <!-- Incident Narrative -->
+  ${r.narrative ? `
+  <div class="sec">
+    <div class="sec-title">Incident Narrative</div>
+    <div class="narrative">${r.narrative}</div>
+  </div>` : ''}
+
+  <!-- Financial Summary -->
+  <div class="sec">
+    <div class="sec-title">Financial Summary</div>
+    <table>
+      <tr><th>Category</th><th class="right">Amount</th></tr>
+      <tr><td>Relief distribution</td><td class="right">${cur(fin.relief)}</td></tr>
+      <tr><td>Emergency repairs</td><td class="right">${cur(fin.repairs)}</td></tr>
+      <tr><td>Personnel overtime</td><td class="right">${cur(fin.personnel)}</td></tr>
+      <tr><td>Equipment &amp; logistics</td><td class="right">${cur(fin.equipment)}</td></tr>
+      <tr class="total-row"><td>Total expenditure</td><td class="right">${cur(total)}</td></tr>
+    </table>
+  </div>
+
+  <!-- Organisations Deployed -->
+  ${orgs.length ? `
+  <div class="sec">
+    <div class="sec-title">Organisations Deployed</div>
+    <table>
+      <tr><th>Organisation</th><th>Role in response</th></tr>
+      ${orgs.map(o=>`<tr><td>${o.name||'—'}</td><td>${o.role||'—'}</td></tr>`).join('')}
+    </table>
+  </div>` : ''}
+
+  <!-- Relief Distributed -->
+  ${Object.keys(relief).length ? `
+  <div class="sec">
+    <div class="sec-title">Relief Distributed</div>
+    <table>
+      <tr><th>Item</th><th class="right">Quantity</th></tr>
+      ${[['Food parcels','food_parcels'],['Water (5L units)','water_units'],['Blankets','blankets'],['Hygiene kits','hygiene_kits'],['Baby packs','baby_packs'],['SASSA vouchers','sassa_vouchers']]
+        .filter(([,k])=>relief[k])
+        .map(([label,k])=>`<tr><td>${label}</td><td class="right">${relief[k]}</td></tr>`).join('')}
+    </table>
+  </div>` : ''}
+
+  <!-- Lessons Learned -->
+  ${(worked.length || improve.length) ? `
+  <div class="sec">
+    <div class="sec-title">Lessons Learned</div>
+    ${worked.length ? `
+      <div style="font-size:9pt;font-weight:700;color:#3fb950;margin-bottom:6px;text-transform:uppercase;letter-spacing:.06em">What worked well</div>
+      ${worked.map(l=>`<div class="lesson"><div class="lesson-dot" style="background:#3fb950"></div><div><strong>${l.title||''}</strong>${l.description?` — ${l.description}`:''}</div></div>`).join('')}
+    ` : ''}
+    ${improve.length ? `
+      <div style="font-size:9pt;font-weight:700;color:#e74c3c;margin:10px 0 6px;text-transform:uppercase;letter-spacing:.06em">What needs improvement</div>
+      ${improve.map(l=>`<div class="lesson"><div class="lesson-dot" style="background:#e74c3c"></div><div><strong>${l.title||''}</strong>${l.description?` — ${l.description}`:''}</div></div>`).join('')}
+    ` : ''}
+  </div>` : ''}
+
+  <!-- Recommendations -->
+  ${recs.length ? `
+  <div class="sec">
+    <div class="sec-title">Recommendations</div>
+    <table>
+      <tr><th>#</th><th>Recommendation</th><th>IDP KPA</th></tr>
+      ${recs.map((rec,i)=>`<tr><td>${i+1}</td><td>${rec.text||'—'}</td><td>${rec.idp_kpa||'—'}</td></tr>`).join('')}
+    </table>
+  </div>` : ''}
+
+  <!-- Authorisation -->
+  <div class="sec">
+    <div class="sec-title">Authorisation</div>
+    <div class="field-row"><span class="field-key">Compiled by</span><span class="field-val">${r.compiled_by||'—'}</span></div>
+    <div class="field-row"><span class="field-key">Authorised by (Municipal Manager)</span><span class="field-val">${r.authorised_by||'—'}</span></div>
+    <div class="field-row"><span class="field-key">Authorised on</span><span class="field-val">${fmt(r.authorised_at)}</span></div>
+    <div class="field-row"><span class="field-key">Published</span><span class="field-val">${r.is_published?'Yes':'No'}</span></div>
+  </div>
+
+</div>
+
+<div class="doc-footer">
+  <span>MOPUP-${num} · ${muniName} Disaster Management Centre · DRMSA Platform</span>
+  <span>Generated ${new Date().toLocaleString('en-ZA')}</span>
+</div>
+
+</body>
+</html>`;
+
   const win = window.open('', '_blank');
-  win.document.write(`<html><head><title>Mop-up Report</title><style>body{font-family:Arial,sans-serif;padding:40px;max-width:700px;margin:0 auto;font-size:12px;line-height:1.6}h1{font-size:18px;color:#1a3a6b}footer{margin-top:40px;font-size:10px;color:#888;border-top:1px solid #eee;padding-top:12px}</style></head><body><h1>Mop-up Report</h1><pre style="white-space:pre-wrap;font-family:Arial,sans-serif">${body}</pre><footer>DRMSA Platform · ${muniName} Disaster Management Centre · Apache 2.0</footer></body></html>`);
-  win.print();
+  win.document.write(html);
+  win.document.close();
 };
 
 function showToast(msg, isError = false) {

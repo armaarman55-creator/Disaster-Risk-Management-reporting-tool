@@ -1,6 +1,5 @@
 // js/routes.js
 import { supabase } from './supabase.js';
-import { openShareModal } from './share.js';
 
 let _muniId = null;
 let _closures = [];
@@ -87,7 +86,8 @@ function renderClosureCard(c) {
 
       <div class="rec-foot">
         <button class="btn btn-sm btn-green closure-save" data-id="${c.id}">Save changes</button>
-        <button class="btn btn-sm closure-share" data-id="${c.id}">Share</button>
+        <button class="btn btn-sm closure-email" data-id="${c.id}">✉ Email</button>
+        <button class="btn btn-sm closure-dl" data-id="${c.id}" data-name="${c.road_name}">↓ Save</button>
         <button class="btn btn-sm closure-edit" data-id="${c.id}" style="margin-left:auto">Edit</button>
         <button class="btn btn-sm btn-red closure-delete" data-id="${c.id}">Delete</button>
       </div>
@@ -289,17 +289,49 @@ function bindClosureEvents() {
     });
   });
 
-  // Share
-  document.querySelectorAll('.closure-share').forEach(btn => {
+  // Email closure
+  document.querySelectorAll('.closure-email').forEach(btn => {
     btn.addEventListener('click', () => {
       const c = _closures.find(x => x.id === btn.dataset.id);
       if (!c) return;
       const alt = c.alternative_routes?.[0];
-      openShareModal({
-        type: 'closure', title: c.road_name, imageCategory: 'closure',
-        url: `${window.location.origin}/public/routes/${c.id}`,
-        text: `ROAD CLOSED — ${c.road_name}\nReason: ${c.reason||'N/A'}\nClosed: ${c.closed_since?new Date(c.closed_since).toLocaleString('en-ZA'):'N/A'}\nExpected reopening: ${c.expected_reopen||'Unknown'}${alt?`\n\nALTERNATIVE: ${alt.description}`:''}`,
+      const subject = encodeURIComponent(`ROAD CLOSED — ${c.road_name}`);
+      const body = encodeURIComponent(
+        `ROAD CLOSED — ${c.road_name}\n` +
+        `Reason: ${c.reason||'N/A'}\n` +
+        `Status: ${(c.status||'').toUpperCase()}\n` +
+        `Closed since: ${c.closed_since ? new Date(c.closed_since).toLocaleString('en-ZA') : 'N/A'}\n` +
+        `Expected reopening: ${c.expected_reopen||'Unknown'}\n` +
+        `Authority: ${c.authority||'N/A'}\n` +
+        `Wards affected: ${Array.isArray(c.affected_wards) ? c.affected_wards.join(', ') : c.affected_wards||'N/A'}` +
+        (alt ? `\n\nALTERNATIVE ROUTE:\n${alt.description}\nExtra distance: ${alt.extra_distance||'?'} km · ${alt.vehicle_suitability||'All vehicles'}` : '')
+      );
+      window.open(`mailto:?subject=${subject}&body=${body}`);
+    });
+  });
+
+  // Download / save closure as text
+  document.querySelectorAll('.closure-dl').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const c = _closures.find(x => x.id === btn.dataset.id);
+      if (!c) return;
+      const alt = c.alternative_routes?.[0];
+      const text = `ROAD CLOSED — ${c.road_name}\n` +
+        `Reason: ${c.reason||'N/A'}\n` +
+        `Status: ${(c.status||'').toUpperCase()}\n` +
+        `Closed since: ${c.closed_since ? new Date(c.closed_since).toLocaleString('en-ZA') : 'N/A'}\n` +
+        `Expected reopening: ${c.expected_reopen||'Unknown'}\n` +
+        `Authority: ${c.authority||'N/A'}\n` +
+        `Wards affected: ${Array.isArray(c.affected_wards) ? c.affected_wards.join(', ') : c.affected_wards||'N/A'}` +
+        (alt ? `\n\nALTERNATIVE ROUTE:\n${alt.description}\nExtra distance: ${alt.extra_distance||'?'} km · ${alt.vehicle_suitability||'All vehicles'}` : '');
+      const blob = new Blob([text], { type: 'text/plain' });
+      const url  = URL.createObjectURL(blob);
+      const a    = Object.assign(document.createElement('a'), {
+        href: url,
+        download: `DRMSA-closure-${(c.road_name||'route').replace(/\s+/g,'-')}.txt`
       });
+      a.click();
+      URL.revokeObjectURL(url);
     });
   });
 

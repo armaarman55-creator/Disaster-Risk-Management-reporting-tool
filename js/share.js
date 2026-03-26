@@ -24,7 +24,7 @@ export async function openShareModal({ type, title, text, url, imageCategory }) 
     } catch(e) {}
   }
   const images = ALL_IMAGES[imageCategory] || [];
-  selectedImage = images[0] || null;
+  selectedImage = null; // no image selected by default — user must opt in
 
   const overlay = document.createElement('div');
   overlay.id = 'share-modal-overlay';
@@ -37,17 +37,20 @@ export async function openShareModal({ type, title, text, url, imageCategory }) 
       </div>
       <div class="share-modal-body">
         ${images.length > 0 ? `
-        <div class="img-picker-label">Choose share image</div>
+        <div class="img-picker-label">Choose share image <span style="font-size:10px;color:var(--text3);font-weight:400">(optional)</span></div>
         <div class="img-picker-grid" id="img-picker-grid">
-          ${images.map((img, i) => `
-            <div class="img-card ${i === 0 ? 'selected' : ''}" data-id="${img.id}" onclick="selectShareImage('${img.id}','${imageCategory}')">
+          <div class="img-card selected" data-id="__none__" onclick="selectShareImage('__none__','${imageCategory}')"
+            style="display:flex;flex-direction:column;align-items:center;justify-content:center;opacity:.6">
+            <div style="font-size:18px;margin-bottom:4px">✕</div>
+            <div class="img-card-name">No image</div>
+          </div>
+          ${images.map((img) => `
+            <div class="img-card" data-id="${img.id}" onclick="selectShareImage('${img.id}','${imageCategory}')">
               ${img.svg}
               <div class="img-card-name">${img.name}</div>
             </div>`).join('')}
         </div>
-        <div class="share-img-preview" id="share-img-preview">
-          ${selectedImage ? selectedImage.svg : ''}
-        </div>
+        <div class="share-img-preview" id="share-img-preview"></div>
         ` : ''}
         <div class="share-preview-box" id="share-preview-text">${text}</div>
         <div class="share-channels" id="share-channels">
@@ -119,12 +122,17 @@ function buildChannels(url, title, text) {
 }
 
 window.selectShareImage = function(id, category) {
-  const images = ALL_IMAGES[category] || [];
-  selectedImage = images.find(i => i.id === id) || null;
   document.querySelectorAll('.img-card').forEach(c => {
     c.classList.toggle('selected', c.dataset.id === id);
   });
   const preview = document.getElementById('share-img-preview');
+  if (id === '__none__') {
+    selectedImage = null;
+    if (preview) preview.innerHTML = '';
+    return;
+  }
+  const images = ALL_IMAGES[category] || [];
+  selectedImage = images.find(i => i.id === id) || null;
   if (preview && selectedImage) preview.innerHTML = selectedImage.svg;
 };
 
