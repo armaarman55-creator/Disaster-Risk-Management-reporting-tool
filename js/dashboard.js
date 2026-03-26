@@ -32,6 +32,7 @@ let _mapMode = 'hazard';
 let _mapHandlersBound = false;
 let _shelterClickBound = false;
 let _projectsClickBound = false;
+let _osmPlacesCacheKey = '';
 let _isAddingProjectMarker = false;
 let _selectedProjectForPlacement = null;
 let _wardFillVisible = true;
@@ -299,6 +300,7 @@ async function renderWardMap(neutralMode = false) {
 
   await ensureMapInitialized();
   await renderWardLayers(featureCollection);
+  await renderBackgroundPlaceNames();
   updateMapLegend();
   if (_mapMode === 'shelters') {
     await renderSheltersOnMap();
@@ -426,9 +428,10 @@ async function renderWardLayers(featureCollection) {
     id: 'ward-label',
     type: 'symbol',
     source: 'ward-source',
+    minzoom: 9,
     layout: {
       'text-field': ['concat', 'W', ['to-string', ['get', 'ward_number']]],
-      'text-size': 10
+      'text-size': ['interpolate', ['linear'], ['zoom'], 9, 9, 12, 12]
     },
     paint: {
       'text-color': '#ffffff',
@@ -440,13 +443,11 @@ async function renderWardLayers(featureCollection) {
     id: 'area-label',
     type: 'symbol',
     source: 'ward-source',
-    minzoom: 6,
+    minzoom: 10,
     layout: {
       'text-field': ['coalesce', ['get', 'area_name_label'], ''],
       'text-size': 11,
-      'text-offset': [0, -1.2],
-      'text-allow-overlap': true,
-      'text-ignore-placement': true
+      'text-offset': [0, -1.2]
     },
         paint: {
       'text-color': '#dbe7ff',
@@ -593,6 +594,7 @@ function setMapMode(mode) {
   if (_map.getLayer('shelter-label')) _map.setLayoutProperty('shelter-label', 'visibility', sheltersVisible ? 'visible' : 'none');
   if (_map.getLayer('project-circle')) _map.setLayoutProperty('project-circle', 'visibility', projectsVisible ? 'visible' : 'none');
   if (_map.getLayer('project-label')) _map.setLayoutProperty('project-label', 'visibility', projectsVisible ? 'visible' : 'none');
+  if (_map.getLayer('osm-place-label')) _map.setLayoutProperty('osm-place-label', 'visibility', 'visible');
 }
 
 function applyWardLayerVisibility() {
@@ -661,6 +663,85 @@ function pickAreaNameLabel(props = {}) {
     if (value && String(value).trim()) return String(value).trim();
   }
   return 'Ward';
+}
+
+async function renderBackgroundPlaceNames() {
+  if (!_map || !_mapBounds) return;
+  const bbox = {
+    south: _mapBounds.minY,
+    west: _mapBounds.minX,
+    north: _mapBounds.maxY,
+    east: _mapBounds.maxX
+  };
+  const cacheKey = `${bbox.south.toFixed(3)},${bbox.west.toFixed(3)},${bbox.north.toFixed(3)},${bbox.east.toFixed(3)}`;
+  if (_osmPlacesCacheKey === cacheKey && _map.getSource('osm-place-source')) return;
+  _osmPlacesCacheKey = cacheKey;
+
+  const query = `
+    [out:json][timeout:25];
+    (
+      node["place"~"city|town|suburb|neighbourhood|village"](${bbox.south},${bbox.west},${bbox.north},${bbox.east});
+    );
+    out body;
+  `;
+  try {
+    const ctl = new AbortController();
+    const t = setTimeout(() => ctl.abort(), 12000);
+    const res = await fetch('https://overpass-api.de/api/interpreter', {
+      method: 'POST',
+      body: query,
+      signal: ctl.signal
+    });
+    clearTimeout(t);
+    if (!res.ok) throw new Error(`OSM places HTTP ${res.status}`);
+    const data = await res.json();
+    const features = (data.elements || []).map(el => {
+      const name = el.tags?.name || el.tags?.['name:en'];
+      if (!name || typeof el.lat !== 'number' || typeof el.lon !== 'number') return null;
+      return {
+        type: 'Feature',
+        id: `osm-${el.id}`,
+        properties: {
+          name,
+          place: el.tags?.place || 'locality'
+        },
+        geometry: { type: 'Point', coordinates: [el.lon, el.lat] }
+      };
+    }).filter(Boolean);
+
+    if (_map.getLayer('osm-place-label')) _map.removeLayer('osm-place-label');
+    if (_map.getSource('osm-place-source')) _map.removeSource('osm-place-source');
+    _map.addSource('osm-place-source', {
+      type: 'geojson',
+      data: { type: 'FeatureCollection', features }
+    });
+    _map.addLayer({
+      id: 'osm-place-label',
+      type: 'symbol',
+      source: 'osm-place-source',
+      minzoom: 10,
+      layout: {
+        'text-field': ['get', 'name'],
+        'text-size': [
+          'match', ['get', 'place'],
+          'city', 13,
+          'town', 12,
+          'suburb', 11,
+          'village', 11,
+          'neighbourhood', 10,
+          10
+        ],
+        'text-font': ['Open Sans Semibold', 'Arial Unicode MS Bold']
+      },
+      paint: {
+        'text-color': '#c9d6ea',
+        'text-halo-color': '#0d1117',
+        'text-halo-width': 1
+      }
+    });
+  } catch (e) {
+    console.warn('OSM place labels unavailable:', e.message);
+  }
 }
 
 async function renderProjectsOnMap({ switchMode = true } = {}) {
@@ -741,7 +822,6 @@ async function renderProjectsOnMap({ switchMode = true } = {}) {
 
   if (switchMode) setMapMode('projects');
 }
-
 function showWardInfo(wid, risk, wardNum, clickX, clickY) {
   const BAND_COL = {
     'Extremely High':'#f85149','High':'#d29922',
@@ -898,7 +978,8 @@ async function renderIDPSummary() {
 
     const body = document.getElementById('idp-summary-body');
     if (!body) return;
-        if (!total) {
+
+    if (!total) {
       body.innerHTML = '<div style="padding:16px;text-align:center;color:var(--text3);font-size:12px">No mitigations registered yet. Go to IDP Linkage to add spatial mitigations.</div>';
       return;
     }
