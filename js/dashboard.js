@@ -357,24 +357,26 @@ async function ensureMapInitialized() {
   if (!window.maplibregl) {
     throw new Error('MapLibre GL not loaded on page');
   }
-  _map = new window.maplibregl.Map({
-    container: 'maplibre-map',
-    style: {
-      version: 8,
-      glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
-      sources: {
-        satellite: {
-          type: 'raster',
-          tiles: ['https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
-          tileSize: 256,
-          attribution: 'Esri'
-        }
-      },
-      layers: [{ id: 'satellite-base', type: 'raster', source: 'satellite' }]
+ // ensureMapInitialized()
+_map = new window.maplibregl.Map({
+  container: 'maplibre-map',
+  preserveDrawingBuffer: true,
+  style: {
+    version: 8,
+    glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
+    sources: {
+      satellite: {
+        type: 'raster',
+        tiles: ['https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
+        tileSize: 256,
+        attribution: 'Esri'
+      }
     },
-    center: [27.9, -26.1],
-    zoom: 7
-  });
+    layers: [{ id: 'satellite-base', type: 'raster', source: 'satellite' }]
+  },
+  center: [27.9, -26.1],
+  zoom: 7
+});
 
   await new Promise(resolve => _map.once('load', resolve));
   bindMapControls();
@@ -435,22 +437,23 @@ async function renderWardLayers(featureCollection) {
       'text-halo-width': 1
     }
   });
-  _map.addLayer({
-    id: 'area-label',
-    type: 'symbol',
-    source: 'ward-source',
-    minzoom: 8,
-    layout: {
-      'text-field': ['coalesce', ['get', 'area_name_label'], ''],
-      'text-size': 11,
-      'text-offset': [0, -1.2]
-    },
-    paint: {
-      'text-color': '#dbe7ff',
-      'text-halo-color': '#0d1117',
-      'text-halo-width': 1
-    }
-  });
+ // renderWardLayers() area-label layer
+_map.addLayer({
+  id: 'area-label',
+  type: 'symbol',
+  source: 'ward-source',
+  minzoom: 6,
+  layout: {
+    'text-field': ['coalesce', ['get', 'area_name_label'], ''],
+    'text-size': 11,
+    'text-offset': [0, -1.2]
+  },
+  paint: {
+    'text-color': '#dbe7ff',
+    'text-halo-color': '#0d1117',
+    'text-halo-width': 1
+  }
+});
 
   if (_mapBounds) {
     _map.fitBounds([[ _mapBounds.minX, _mapBounds.minY ], [ _mapBounds.maxX, _mapBounds.maxY ]], { padding: 30, maxZoom: 12 });
@@ -473,17 +476,19 @@ async function renderWardLayers(featureCollection) {
       hoveredId = null;
     });
 
-    _map.on('click', 'ward-fill', e => {
-      const feature = e.features?.[0];
-      if (!feature) return;
-      const wardNum = parseInt(feature.properties?.ward_number);
-      const risk = normalizeRiskBand(feature.properties?.risk_band);
-      const wrap = document.getElementById('map-canvas-wrap');
-      const rect = wrap ? wrap.getBoundingClientRect() : { left: 0, top: 0 };
-      const clickX = e.point?.x ?? (e.originalEvent?.clientX - rect.left);
-      const clickY = e.point?.y ?? (e.originalEvent?.clientY - rect.top);
-      showWardInfo(wardNum, risk, wardNum, clickX, clickY);
-    });
+    // renderWardLayers() ward click handler
+_map.on('click', 'ward-fill', e => {
+  const feature = e.features?.[0];
+  if (!feature) return;
+  const wardNum = parseInt(feature.properties?.ward_number);
+  const risk = normalizeRiskBand(feature.properties?.risk_band);
+  const wrap = document.getElementById('map-canvas-wrap');
+  const rect = wrap ? wrap.getBoundingClientRect() : { left: 0, top: 0 };
+  const clickX = e.point?.x ?? (e.originalEvent?.clientX - rect.left);
+  const clickY = e.point?.y ?? (e.originalEvent?.clientY - rect.top);
+  showWardInfo(wardNum, risk, wardNum, clickX, clickY);
+  if (Number.isFinite(wardNum)) zoomToWard(wardNum);
+});
     _map.on('click', async e => {
       if (!_isAddingProjectMarker || !_selectedProjectForPlacement?.id) return;
       const wardNum = getWardAtLngLat(_map, e.lngLat, _wardFeatures);
