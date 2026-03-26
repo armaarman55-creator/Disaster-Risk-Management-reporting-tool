@@ -202,6 +202,7 @@ function ratingToBand(r) {
 async function renderWardMap(neutralMode = false) {
   const mapContainer = document.getElementById('maplibre-map');
   if (!mapContainer) return;
+  setMapCanvasStatus();
 
   const wardRisk = {};
   const wardPeak = {};
@@ -264,9 +265,10 @@ async function renderWardMap(neutralMode = false) {
 
   const mdbWards = await fetchMdbWards();
   if (!mdbWards?.length) {
-    mapContainer.innerHTML = '<div style="height:100%;display:flex;align-items:center;justify-content:center;color:var(--text3);font-size:12px">Ward boundaries unavailable for this municipality.</div>';
+    setMapCanvasStatus('Ward boundaries unavailable for this municipality.');
     return;
   }
+  setMapCanvasStatus();
 
   const featureCollection = {
     type: 'FeatureCollection',
@@ -579,6 +581,23 @@ function setMapMode(mode) {
   if (_map.getLayer('shelter-label')) _map.setLayoutProperty('shelter-label', 'visibility', sheltersVisible ? 'visible' : 'none');
   if (_map.getLayer('project-circle')) _map.setLayoutProperty('project-circle', 'visibility', projectsVisible ? 'visible' : 'none');
   if (_map.getLayer('project-label')) _map.setLayoutProperty('project-label', 'visibility', projectsVisible ? 'visible' : 'none');
+}
+
+function setMapCanvasStatus(message = '') {
+  const wrap = document.getElementById('map-canvas-wrap');
+  if (!wrap) return;
+  let status = document.getElementById('map-canvas-status');
+  if (!message) {
+    status?.remove();
+    return;
+  }
+  if (!status) {
+    status = document.createElement('div');
+    status.id = 'map-canvas-status';
+    status.style.cssText = 'position:absolute;left:12px;right:12px;bottom:12px;padding:8px 10px;border-radius:8px;background:rgba(13,17,23,0.88);border:1px solid var(--border2);color:var(--text2);font-size:12px;line-height:1.4;z-index:55;pointer-events:none';
+    wrap.appendChild(status);
+  }
+  status.textContent = message;
 }
 
 function applyWardLayerVisibility() {
@@ -1189,7 +1208,7 @@ function initDashboardEvents() {
       } else {
         hideProjectPlacementForm();
         setMapMode('hazard');
-        updateMapLegend();
+        await renderWardMap();
       }
     });
   });
