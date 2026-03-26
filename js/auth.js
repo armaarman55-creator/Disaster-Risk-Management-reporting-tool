@@ -161,7 +161,7 @@ function bindSignIn() {
   });
 }
 
-// ── GUEST LOGIN ────────────────────────────────────────────
+// ── GUEST LOGIN ───────────────────────────────────────────
 function bindGuestLogin() {
   document.getElementById('btn-guest')?.addEventListener('click', async () => {
     window._guestMode = true;
@@ -214,7 +214,19 @@ function bindRegister() {
       return;
     }
 
-    document.getElementById('panel-register').innerHTML = `...`;
+    const panel = document.getElementById('panel-register');
+    if (panel) {
+      panel.innerHTML = `
+        <div class="auth-heading">Registration submitted</div>
+        <div class="auth-sub" style="line-height:1.7">
+          ✅ Your account was created successfully.<br>
+          Please check your email and click the confirmation link before signing in.<br><br>
+          After confirmation, your account may still require municipal approval depending on role.
+        </div>
+        <button class="auth-btn auth-btn-primary" id="back-to-login-btn">Back to sign in</button>
+      `;
+      document.getElementById('back-to-login-btn')?.addEventListener('click', () => showPanel('login'));
+    }
   });
 }
 
