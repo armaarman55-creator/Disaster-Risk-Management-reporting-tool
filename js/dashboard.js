@@ -1122,11 +1122,11 @@ function initDashboardEvents() {
       const needle = q.replace(/[^\d]/g, '');
       const matches = nums.filter(w => String(w).includes(needle || q)).slice(0, 50);
       if (!matches.length) { mapDd.style.display = 'none'; return; }
-      mapDd.innerHTML = matches.map(w =>
-        `<div data-ward="${w}"
+      mapDd.innerHTML = matches.map(item =>
+        `<div data-ward="${item.ward}"
           style="padding:6px 10px;cursor:pointer;border-bottom:1px solid var(--border);font-size:11px;transition:background .1s"
           onmouseenter="this.style.background='var(--bg3)'"
-          onmouseleave="this.style.background=''">Ward ${w}</div>`
+          onmouseleave="this.style.background=''">Ward ${item.ward}${item.place ? ` · ${item.place}` : ''}</div>`
       ).join('');
       mapDd.style.display = 'block';
       mapDd.style.maxHeight = '220px';
