@@ -1120,7 +1120,7 @@ function initDashboardEvents() {
         return;
       }
     // In initDashboardEvents() -> mapSearch input handler block
-const needle = q.replace(/[^\d]/g, '');
+ const needle = q.replace(/[^\d]/g, '');
 const matches = nums.filter(w => String(w).includes(needle || q)).slice(0, 50);
 if (!matches.length) { mapDd.style.display = 'none'; return; }
 mapDd.innerHTML = matches.map(item =>
@@ -1139,7 +1139,7 @@ mapDd.querySelectorAll('[data-ward]').forEach(item => {
     mapSearch.value = '';
     mapDd.style.display = 'none';
   });
-}); 
+});
     });
     mapSearch.addEventListener('blur', () => {
       setTimeout(() => { mapDd.style.display = 'none'; }, 150);
