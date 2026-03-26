@@ -30,7 +30,18 @@ let _mapHandlersBound = false;
 let _shelterClickBound = false;
 let _projectsClickBound = false;
 let _isAddingProjectMarker = false;
+let _selectedProjectForPlacement = null;
+let _wardFillVisible = true;
 let _trendSelectedIndex = 0;
+
+function notify(message, isError = false) {
+  if (typeof window.showToast === 'function') {
+    window.showToast(message, isError);
+    return;
+  }
+  if (isError) console.error(message);
+  else console.log(message);
+}
 
 export async function initDashboard(user) {
   _muniId = user?.municipality_id;
@@ -347,6 +358,7 @@ async function ensureMapInitialized() {
     container: 'maplibre-map',
     style: {
       version: 8,
+      glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
       sources: {
         satellite: {
           type: 'raster',
@@ -461,18 +473,25 @@ async function renderWardLayers(featureCollection) {
       const feature = e.features?.[0];
       if (!feature) return;
       const wardNum = parseInt(feature.properties?.ward_number);
-      if (_isAddingProjectMarker) {
-        _isAddingProjectMarker = false;
-        _map.getCanvas().style.cursor = '';
-        saveProjectMarkerAt(e.lngLat, wardNum);
-        return;
-      }
       const risk = normalizeRiskBand(feature.properties?.risk_band);
       const wrap = document.getElementById('map-canvas-wrap');
       const rect = wrap ? wrap.getBoundingClientRect() : { left: 0, top: 0 };
       const clickX = e.point?.x ?? (e.originalEvent?.clientX - rect.left);
       const clickY = e.point?.y ?? (e.originalEvent?.clientY - rect.top);
       showWardInfo(wardNum, risk, wardNum, clickX, clickY);
+    });
+    _map.on('click', async e => {
+      if (!_isAddingProjectMarker || !_selectedProjectForPlacement?.id) return;
+      const wardNum = getWardAtLngLat(e.lngLat);
+      if (!Number.isFinite(wardNum)) {
+        notify('Please click inside a ward polygon to place this project.', true);
+        return;
+      }
+      _isAddingProjectMarker = false;
+      _map.getCanvas().style.cursor = '';
+      await saveProjectMarkerAt(e.lngLat, wardNum, _selectedProjectForPlacement.id);
+      _selectedProjectForPlacement = null;
+      hideProjectPlacementForm();
     });
     _mapHandlersBound = true;
   }
@@ -510,7 +529,7 @@ function extendBounds(a, b) {
 function zoomToWard(wardNum) {
   const entry = _wardFeatureIndex[parseInt(wardNum)];
   if (!entry || !_map) {
-    showToast('Ward ' + wardNum + ' not found on map', true);
+    notify('Ward ' + wardNum + ' not found on map', true);
     return;
   }
   _map.fitBounds([[entry.bbox.minX, entry.bbox.minY], [entry.bbox.maxX, entry.bbox.maxY]], {
@@ -526,6 +545,16 @@ function bindMapControls() {
     if (_map && _mapBounds) {
       _map.fitBounds([[ _mapBounds.minX, _mapBounds.minY ], [ _mapBounds.maxX, _mapBounds.maxY ]], { padding: 30, maxZoom: 12 });
     }
+  });
+  document.getElementById('map-toggle-fill')?.addEventListener('click', () => {
+    _wardFillVisible = !_wardFillVisible;
+    applyWardLayerVisibility();
+    const btn = document.getElementById('map-toggle-fill');
+    if (btn) btn.textContent = _wardFillVisible ? 'Hide ward fill' : 'Show ward fill';
+  });
+  document.getElementById('map-download')?.addEventListener('click', async () => {
+    const scope = document.getElementById('map-download-scope')?.value || 'current';
+    await downloadMapImage(scope);
   });
 }
 
@@ -543,14 +572,63 @@ function setMapMode(mode) {
   const hazardVisible = mode === 'hazard';
   const sheltersVisible = mode === 'shelters';
   const projectsVisible = mode === 'projects';
-  if (_map.getLayer('ward-fill')) _map.setLayoutProperty('ward-fill', 'visibility', (hazardVisible || projectsVisible) ? 'visible' : 'none');
-  if (_map.getLayer('ward-outline')) _map.setLayoutProperty('ward-outline', 'visibility', (hazardVisible || projectsVisible) ? 'visible' : 'none');
+  applyWardLayerVisibility();
   if (_map.getLayer('ward-label')) _map.setLayoutProperty('ward-label', 'visibility', (hazardVisible || projectsVisible) ? 'visible' : 'none');
   if (_map.getLayer('area-label')) _map.setLayoutProperty('area-label', 'visibility', (hazardVisible || projectsVisible) ? 'visible' : 'none');
   if (_map.getLayer('shelter-circle')) _map.setLayoutProperty('shelter-circle', 'visibility', sheltersVisible ? 'visible' : 'none');
   if (_map.getLayer('shelter-label')) _map.setLayoutProperty('shelter-label', 'visibility', sheltersVisible ? 'visible' : 'none');
   if (_map.getLayer('project-circle')) _map.setLayoutProperty('project-circle', 'visibility', projectsVisible ? 'visible' : 'none');
   if (_map.getLayer('project-label')) _map.setLayoutProperty('project-label', 'visibility', projectsVisible ? 'visible' : 'none');
+}
+
+function applyWardLayerVisibility() {
+  if (!_map) return;
+  const showWardLayers = (_mapMode === 'hazard' || _mapMode === 'projects');
+  if (_map.getLayer('ward-fill')) _map.setLayoutProperty('ward-fill', 'visibility', (showWardLayers && _wardFillVisible) ? 'visible' : 'none');
+  if (_map.getLayer('ward-outline')) _map.setLayoutProperty('ward-outline', 'visibility', showWardLayers ? 'visible' : 'none');
+}
+
+async function waitForMapIdle() {
+  if (!_map) return;
+  await new Promise(resolve => {
+    const done = () => resolve();
+    _map.once('idle', done);
+  });
+}
+
+async function downloadMapImage(scope = 'current') {
+  if (!_map) return;
+  const previousMode = _mapMode;
+  const targetMode = previousMode === 'shelters' ? 'hazard' : previousMode;
+  const cam = {
+    center: _map.getCenter(),
+    zoom: _map.getZoom(),
+    bearing: _map.getBearing(),
+    pitch: _map.getPitch()
+  };
+  try {
+    if (scope === 'full' && _mapBounds) {
+      _map.fitBounds([[ _mapBounds.minX, _mapBounds.minY ], [ _mapBounds.maxX, _mapBounds.maxY ]], { padding: 30, maxZoom: 12, duration: 0 });
+      await waitForMapIdle();
+    } else if (previousMode !== targetMode) {
+      setMapMode(targetMode);
+      await waitForMapIdle();
+    }
+    const url = _map.getCanvas().toDataURL('image/png');
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `ward-map-${scope}-${stamp}.png`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    notify(`Map image downloaded (${scope === 'full' ? 'full extent' : 'current view'}).`);
+  } catch (e) {
+    notify(`Could not download map image: ${e.message}`, true);
+  } finally {
+    _map.jumpTo(cam);
+    setMapMode(previousMode);
+  }
 }
 
 function pickAreaNameLabel(props = {}) {
@@ -565,7 +643,7 @@ function pickAreaNameLabel(props = {}) {
   return '';
 }
 
-async function renderProjectsOnMap() {
+async function renderProjectsOnMap({ switchMode = true } = {}) {
   if (!_map || !_muniId) return;
 
   const { data: mits } = await supabase
@@ -577,25 +655,25 @@ async function renderProjectsOnMap() {
   const linked = (mits || []).map((m, idx) => {
     const ward = Array.isArray(m.affected_wards) && m.affected_wards.length ? parseInt(m.affected_wards[0]) : null;
     const coordsFromLocation = parseMarkerCoords(m.specific_location);
-    const point = coordsFromLocation || resolveWardPoint(ward) || mapCenterPoint();
-    const isManual = !!coordsFromLocation;
+    if (!coordsFromLocation) return null;
     return {
       type: 'Feature',
       id: `idp-${m.id || idx}`,
       properties: {
+        mitigation_id: m.id,
         name: m.hazard_name || 'IDP project',
         description: m.description || '',
         ward_number: ward || '',
-        project_type: isManual ? 'Manual marker' : 'IDP-linked',
+        project_type: 'IDP-linked',
         status: m.idp_status || 'proposed',
         owner: m.responsible_owner || '',
         timeframe: m.timeframe || '',
         cost_estimate: m.cost_estimate || '',
-        linked_idp: !isManual
+        linked_idp: true
       },
-      geometry: { type: 'Point', coordinates: point }
+      geometry: { type: 'Point', coordinates: coordsFromLocation }
     };
-  });
+  }).filter(Boolean);
   const features = linked;
   if (_map.getLayer('project-label')) _map.removeLayer('project-label');
   if (_map.getLayer('project-circle')) _map.removeLayer('project-circle');
@@ -663,7 +741,7 @@ async function renderProjectsOnMap() {
     ).join('');
   }
 
-  setMapMode('projects');
+  if (switchMode) setMapMode('projects');
 }
 
 function showWardInfo(wid, risk, wardNum, clickX, clickY) {
@@ -731,7 +809,9 @@ function showWardInfo(wid, risk, wardNum, clickX, clickY) {
     '<div style="display:inline-block;background:' + bandCol + '22;border:1px solid ' + bandCol + '55;border-radius:4px;padding:2px 8px;font-size:10px;font-weight:700;color:' + bandCol + ';margin-bottom:8px;letter-spacing:.04em">' +
       risk.toUpperCase() +
     '</div>' +
-    (wardHazards.length ? '<div style="font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--text3);margin-bottom:5px">Hazards in ward</div>' + hazardRows + extra : noHazards);
+    '<div style="max-height:170px;overflow:auto;padding-right:4px">' +
+      (wardHazards.length ? '<div style="font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--text3);margin-bottom:5px">Hazards in ward</div>' + hazardRows + extra : noHazards) +
+    '</div>';
 
   wrap.appendChild(tooltip);
 
@@ -1074,8 +1154,25 @@ function initDashboardEvents() {
   }
   document.getElementById('map-add-project')?.addEventListener('click', async () => {
     setMapMode('projects');
-    await renderProjectsOnMap();
+    await renderProjectsOnMap({ switchMode: false });
     await startAddProjectMode();
+  });
+  document.getElementById('map-project-place')?.addEventListener('click', () => {
+    const select = document.getElementById('map-project-select');
+    const selectedId = parseInt(select?.value, 10);
+    if (!Number.isFinite(selectedId)) {
+      notify('Select an IDP project before placing it on the map.', true);
+      return;
+    }
+    _selectedProjectForPlacement = { id: selectedId };
+    _isAddingProjectMarker = true;
+    if (_map) _map.getCanvas().style.cursor = 'crosshair';
+    const hint = document.getElementById('map-project-hint');
+    if (hint) hint.textContent = 'Placement mode active: click anywhere inside a ward.';
+    notify('Placement mode active. Click anywhere inside a ward to place this project.');
+  });
+  document.getElementById('map-project-cancel')?.addEventListener('click', () => {
+    hideProjectPlacementForm();
   });
   // Layer toggle — Hazard shows risk colours, Shelters/Projects show other layers
   document.querySelectorAll('.lyr').forEach(btn => {
@@ -1084,10 +1181,13 @@ function initDashboardEvents() {
       btn.classList.add('on');
       const layer = btn.textContent.trim().toLowerCase();
       if (layer === 'shelters') {
+        hideProjectPlacementForm();
         await renderSheltersOnMap();
       } else if (layer === 'projects') {
+        hideProjectPlacementForm();
         await renderProjectsOnMap();
       } else {
+        hideProjectPlacementForm();
         setMapMode('hazard');
         updateMapLegend();
       }
@@ -1121,6 +1221,55 @@ function parseMarkerCoords(locationText) {
   const lng = parseFloat(m[2]);
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
   return [lng, lat];
+}
+
+function getWardAtLngLat(lngLat) {
+  if (!_map || !lngLat) return null;
+  const source = _map.getSource('ward-source');
+  if (!source || !source._data?.features) return null;
+  const point = [lngLat.lng, lngLat.lat];
+  for (const f of source._data.features) {
+    if (!f?.geometry) continue;
+    if (geometryContainsPoint(f.geometry, point)) {
+      const wardNum = parseInt(f.properties?.ward_number);
+      if (Number.isFinite(wardNum)) return wardNum;
+    }
+  }
+  return null;
+}
+
+function geometryContainsPoint(geometry, point) {
+  if (!geometry || !point) return false;
+  if (geometry.type === 'Polygon') {
+    return polygonContainsPoint(geometry.coordinates, point);
+  }
+  if (geometry.type === 'MultiPolygon') {
+    return geometry.coordinates.some(poly => polygonContainsPoint(poly, point));
+  }
+  return false;
+}
+
+function polygonContainsPoint(rings, point) {
+  if (!Array.isArray(rings) || !rings.length) return false;
+  const [x, y] = point;
+  const inOuter = ringContainsPoint(rings[0], x, y);
+  if (!inOuter) return false;
+  for (let i = 1; i < rings.length; i++) {
+    if (ringContainsPoint(rings[i], x, y)) return false;
+  }
+  return true;
+}
+
+function ringContainsPoint(ring, x, y) {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const xi = ring[i][0], yi = ring[i][1];
+    const xj = ring[j][0], yj = ring[j][1];
+    const intersect = ((yi > y) !== (yj > y)) &&
+      (x < ((xj - xi) * (y - yi)) / ((yj - yi) || 1e-12) + xi);
+    if (intersect) inside = !inside;
+  }
+  return inside;
 }
 
 function showProjectTooltip(p, clickX, clickY) {
@@ -1160,34 +1309,64 @@ function showProjectTooltip(p, clickX, clickY) {
 
 async function startAddProjectMode() {
   if (!_map) return;
-  _isAddingProjectMarker = true;
-  _map.getCanvas().style.cursor = 'crosshair';
-  showToast('Click anywhere inside a ward polygon to place the project marker.');
+  _isAddingProjectMarker = false;
+  _selectedProjectForPlacement = null;
+  await populateProjectPlacementOptions();
+  showProjectPlacementForm();
 }
 
-async function saveProjectMarkerAt(lngLat, wardNumFromClick) {
-  const name = prompt('Project name');
-  if (!name) return;
-  const status = prompt('Project status (planned / in-progress / completed)', 'planned') || 'planned';
-  const wardInput = prompt('Ward number', wardNumFromClick ? String(wardNumFromClick) : '') || '';
-  const description = prompt('Short project description', '') || '';
-  const wardNum = parseInt(wardInput, 10);
-  const payload = {
-    municipality_id: _muniId,
-    hazard_name: name.trim(),
-    description: description.trim(),
-    affected_wards: Number.isFinite(wardNum) ? [wardNum] : [],
-    specific_location: `@map:${lngLat.lat},${lngLat.lng}`,
-    idp_status: status.trim().toLowerCase(),
-    mitigation_type: 'Policy/Plan',
-    is_library: false
-  };
-  const { error } = await supabase.from('mitigations').insert(payload);
+function showProjectPlacementForm() {
+  const wrap = document.getElementById('map-project-form');
+  if (wrap) wrap.style.display = 'block';
+}
+
+function hideProjectPlacementForm() {
+  const wrap = document.getElementById('map-project-form');
+  if (wrap) wrap.style.display = 'none';
+  _isAddingProjectMarker = false;
+  _selectedProjectForPlacement = null;
+  if (_map) _map.getCanvas().style.cursor = '';
+  const hint = document.getElementById('map-project-hint');
+  if (hint) hint.textContent = 'Pick an IDP project, then click anywhere inside a ward.';
+}
+
+async function populateProjectPlacementOptions() {
+  const sel = document.getElementById('map-project-select');
+  if (!sel) return;
+  const { data, error } = await supabase
+    .from('mitigations')
+    .select('id,hazard_name,idp_status,specific_location')
+    .eq('municipality_id', _muniId)
+    .eq('is_library', false)
+    .order('hazard_name', { ascending: true });
   if (error) {
-    showToast(`Could not save marker to backend: ${error.message}`, true);
+    notify(`Could not load project options: ${error.message}`, true);
     return;
   }
-  showToast('Project marker saved and shared with your municipality team.');
+  const options = (data || []).map(p => {
+    const isPlaced = !!parseMarkerCoords(p.specific_location);
+    const label = `${p.hazard_name || 'IDP project'}${isPlaced ? ' (placed)' : ''}`;
+    return `<option value="${p.id}">${label}</option>`;
+  }).join('');
+  sel.innerHTML = '<option value="">Select IDP project…</option>' + options;
+}
+
+async function saveProjectMarkerAt(lngLat, wardNumFromClick, mitigationId) {
+  const wardNum = parseInt(wardNumFromClick, 10);
+  if (!mitigationId || !Number.isFinite(wardNum)) {
+    notify('Select a valid project and click inside a ward to place it.', true);
+    return;
+  }
+  const payload = {
+    affected_wards: [wardNum],
+    specific_location: `@map:${lngLat.lat},${lngLat.lng}`
+  };
+  const { error } = await supabase.from('mitigations').update(payload).eq('id', mitigationId);
+  if (error) {
+    notify(`Could not save marker to backend: ${error.message}`, true);
+    return;
+  }
+  notify('Project marker saved and shared with your municipality team.');
   await renderProjectsOnMap();
 }
 
