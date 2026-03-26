@@ -175,6 +175,7 @@ async function renderKPIs() {
     } catch(e) {}
   }
 }
+
 function renderHazardTable() {
   const hazards = _assessmentData?.hazards || [];
   const tbl = document.getElementById('hz-tbl');
@@ -308,6 +309,7 @@ async function renderWardMap(neutralMode = false) {
   }
   window._drmsaZoomToWard = zoomToWard;
 }
+
 function normalizeRiskBand(rawRisk) {
   if (!rawRisk) return 'Negligible';
   const risk = String(rawRisk).trim().toLowerCase();
@@ -379,6 +381,9 @@ async function ensureMapInitialized() {
 
   await new Promise(resolve => _map.once('load', resolve));
   bindMapControls();
+  _map.on('moveend', () => {
+    renderBackgroundPlaceNames();
+  });
 }
 
 async function renderWardLayers(featureCollection) {
@@ -518,6 +523,7 @@ function flattenCoords(geometry) {
   if (geometry.type === 'MultiPolygon') return geometry.coordinates.flat(2);
   return [];
 }
+
 function boundsFromCoords(coords) {
   const lons = coords.map(c => c[0]);
   const lats = coords.map(c => c[1]);
@@ -540,18 +546,13 @@ function extendBounds(a, b) {
 
 function zoomToWard(wardNum) {
   const target = parseInt(wardNum, 10);
+  if (!Number.isFinite(target)) {
+    notify('Enter a valid ward number.', true);
+    return;
+  }
   const entry = _wardFeatureIndex[target];
   if (!entry || !_map) {
-    const fallbackKey = Object.keys(_wardFeatureIndex).find(k => String(k).includes(String(target)));
-    const fallback = fallbackKey ? _wardFeatureIndex[parseInt(fallbackKey, 10)] : null;
-    if (!fallback || !_map) {
-      notify('Ward ' + wardNum + ' not found on map', true);
-      return;
-    }
-    _map.fitBounds([[fallback.bbox.minX, fallback.bbox.minY], [fallback.bbox.maxX, fallback.bbox.maxY]], {
-      padding: 70,
-      maxZoom: 13
-    });
+    notify('Ward ' + target + ' not found on map', true);
     return;
   }
   _map.fitBounds([[entry.bbox.minX, entry.bbox.minY], [entry.bbox.maxX, entry.bbox.maxY]], {
@@ -653,6 +654,7 @@ async function downloadMapImage(scope = 'current') {
     setMapMode(previousMode);
   }
 }
+
 function pickAreaNameLabel(props = {}) {
   const candidates = [
     'SUBURB_NAME','SUBURB','TOWN_NAME','CITY_NAME','PLACE_NAME','MAIN_PLACE','MUNICNAME',
@@ -698,9 +700,11 @@ async function renderBackgroundPlaceNames() {
   const query = `
     [out:json][timeout:25];
     (
-      node["place"~"city|town|suburb|neighbourhood|village"](${bbox.south},${bbox.west},${bbox.north},${bbox.east});
+      node["place"~"city|town|suburb|neighbourhood|village|hamlet"](${bbox.south},${bbox.west},${bbox.north},${bbox.east});
+      way["place"~"city|town|suburb|neighbourhood|village|hamlet"](${bbox.south},${bbox.west},${bbox.north},${bbox.east});
+      relation["place"~"city|town|suburb|neighbourhood|village|hamlet"](${bbox.south},${bbox.west},${bbox.north},${bbox.east});
     );
-    out body;
+    out center tags;
   `;
   try {
     const OVERPASS_ENDPOINTS = [
@@ -736,7 +740,9 @@ async function renderBackgroundPlaceNames() {
     const data = await res.json();
     const features = (data.elements || []).map(el => {
       const name = el.tags?.name || el.tags?.['name:en'];
-      if (!name || typeof el.lat !== 'number' || typeof el.lon !== 'number') return null;
+      const lat = typeof el.lat === 'number' ? el.lat : (typeof el.center?.lat === 'number' ? el.center.lat : null);
+      const lon = typeof el.lon === 'number' ? el.lon : (typeof el.center?.lon === 'number' ? el.center.lon : null);
+      if (!name || typeof lat !== 'number' || typeof lon !== 'number') return null;
       return {
         type: 'Feature',
         id: `osm-${el.id}`,
@@ -744,9 +750,11 @@ async function renderBackgroundPlaceNames() {
           name,
           place: el.tags?.place || 'locality'
         },
-        geometry: { type: 'Point', coordinates: [el.lon, el.lat] }
+        geometry: { type: 'Point', coordinates: [lon, lat] }
       };
     }).filter(Boolean);
+
+    if (!features.length) return;
 
     if (_map.getLayer('osm-place-label')) _map.removeLayer('osm-place-label');
     if (_map.getSource('osm-place-source')) _map.removeSource('osm-place-source');
@@ -758,9 +766,12 @@ async function renderBackgroundPlaceNames() {
       id: 'osm-place-label',
       type: 'symbol',
       source: 'osm-place-source',
-      minzoom: 10,
+      minzoom: 8,
       layout: {
         'text-field': ['get', 'name'],
+        'text-font': ['Open Sans Regular'],
+        'text-allow-overlap': true,
+        'text-ignore-placement': true,
         'text-size': [
           'match', ['get', 'place'],
           'city', 13,
@@ -772,8 +783,8 @@ async function renderBackgroundPlaceNames() {
         ]
       },
       paint: {
-        'text-color': '#c9d6ea',
-        'text-halo-color': '#0d1117',
+        'text-color': '#dbe7ff',
+        'text-halo-color': '#111827',
         'text-halo-width': 1
       }
     });
@@ -781,6 +792,7 @@ async function renderBackgroundPlaceNames() {
     console.warn('OSM place labels unavailable:', e.message);
   }
 }
+
 async function renderProjectsOnMap({ switchMode = true } = {}) {
   if (!_map || !_muniId) return;
 
@@ -947,6 +959,7 @@ function showWardInfo(wid, risk, wardNum, clickX, clickY) {
   }, 80);
 }
 
+
 function syncTrendSelector() {
   const sel = document.getElementById('trend-sel');
   if (!sel) return;
@@ -1056,7 +1069,7 @@ function initRealtimeRefresh() {
       table: 'hvc_assessments',
       filter: `municipality_id=eq.${_muniId}`
     }, async () => {
-            console.log('HVC assessment changed — refreshing dashboard');
+      console.log('HVC assessment changed — refreshing dashboard');
       await loadAssessmentData();
       await renderKPIs();
       renderHazardTable();
@@ -1225,6 +1238,13 @@ function initDashboardEvents() {
   const mapDd     = document.getElementById('map-ward-dd');
   if (mapSearch && mapDd && !mapSearch._searchInited) {
     mapSearch._searchInited = true;
+    const selectWard = ward => {
+      const wardNum = parseInt(ward, 10);
+      if (!Number.isFinite(wardNum)) return;
+      zoomToWard(wardNum);
+      mapSearch.value = '';
+      mapDd.style.display = 'none';
+    };
     mapSearch.addEventListener('input', () => {
       const q = mapSearch.value.trim().toLowerCase();
       if (!q) { mapDd.style.display = 'none'; return; }
@@ -1235,7 +1255,11 @@ function initDashboardEvents() {
         return;
       }
       const needle = q.replace(/[^\d]/g, '');
-      const matches = nums.filter(w => String(w).includes(needle || q)).slice(0, 50);
+      const matches = nums.filter(w => {
+        const wardStr = String(w);
+        if (needle) return wardStr.includes(needle);
+        return (`ward ${wardStr}`).includes(q) || wardStr.includes(q);
+      }).slice(0, 50);
       if (!matches.length) { mapDd.style.display = 'none'; return; }
       mapDd.innerHTML = matches.map(item =>
         `<div data-ward="${item}"
@@ -1247,12 +1271,11 @@ function initDashboardEvents() {
       mapDd.style.maxHeight = '220px';
       mapDd.style.overflowY = 'auto';
       mapDd.querySelectorAll('[data-ward]').forEach(item => {
-        item.addEventListener('mousedown', e => {
+        const handlePick = e => {
           e.preventDefault();
-          zoomToWard(parseInt(item.dataset.ward));
-          mapSearch.value = '';
-          mapDd.style.display = 'none';
-        });
+          selectWard(item.dataset.ward);
+        };
+        item.addEventListener('click', handlePick);
       });
     });
     mapSearch.addEventListener('blur', () => {
@@ -1263,8 +1286,7 @@ function initDashboardEvents() {
       const wardNum = parseInt((mapSearch.value || '').replace(/[^\d]/g, ''), 10);
       if (!Number.isFinite(wardNum)) return;
       e.preventDefault();
-      zoomToWard(wardNum);
-      mapDd.style.display = 'none';
+      selectWard(wardNum);
     });
   }
   document.getElementById('map-add-project')?.addEventListener('click', async () => {
@@ -1336,7 +1358,7 @@ function showProjectTooltip(p, clickX, clickY) {
   const tooltip = document.createElement('div');
   tooltip.id = 'ward-tooltip';
   tooltip.style.cssText = `position:absolute;background:var(--bg2);border:1px solid var(--border2);border-left:3px solid ${linked ? '#ffffff' : '#58a6ff'};border-radius:8px;padding:12px 14px;min-width:230px;max-width:280px;box-shadow:0 4px 20px rgba(0,0,0,.45);z-index:100;font-family:Inter,system-ui,sans-serif`;
-    tooltip.innerHTML = `
+  tooltip.innerHTML = `
     <div style="display:flex;justify-content:space-between;margin-bottom:6px">
       <div style="font-size:13px;font-weight:700;color:var(--text)">${p.name || 'Project'}</div>
       <button id="wtt-close" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:18px;line-height:1">×</button>
@@ -1415,39 +1437,3 @@ async function populateProjectPlacementOptions() {
 
 async function saveProjectMarkerAt(lngLat, wardNumFromClick, mitigationId) {
   const wardNum = parseInt(wardNumFromClick, 10);
-  const projectId = String(mitigationId || '').trim();
-  if (!projectId || !Number.isFinite(wardNum)) {
-    notify('Select a valid project and click inside a ward to place it.', true);
-    return;
-  }
-  const { data: existingRow, error: existingErr } = await supabase
-    .from('mitigations')
-    .select('specific_location')
-    .eq('id', projectId)
-    .maybeSingle();
-  if (existingErr) {
-    notify(`Could not read existing marker locations: ${existingErr.message}`, true);
-    return;
-  }
-  const newEntry = `@map:${lngLat.lat},${lngLat.lng}`;
-  const existingText = String(existingRow?.specific_location || '').trim();
-  const nextLocation = existingText
-    ? `${existingText}\n${newEntry}`
-    : newEntry;
-  const payload = {
-    affected_wards: [wardNum],
-    specific_location: nextLocation
-  };
-  const { error } = await supabase.from('mitigations').update(payload).eq('id', projectId);
-  if (error) {
-    notify(`Could not save marker to backend: ${error.message}`, true);
-    return;
-  }
-  notify('Project marker saved and shared with your municipality team.');
-  await renderProjectsOnMap();
-}
-
-function setEl(id, val) {
-  const el = document.getElementById(id);
-  if (el) el.textContent = val;
-}
