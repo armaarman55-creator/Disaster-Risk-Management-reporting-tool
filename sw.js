@@ -1,4 +1,4 @@
-const CACHE = 'drmsa-v1';
+const CACHE = 'drmsa-v2-20260325c';
 const SHELL = [
   '/', '/index.html',
   '/manifest.json',
@@ -33,7 +33,30 @@ self.addEventListener('fetch', e => {
     e.respondWith(fetch(request).catch(() => new Response('{"error":"offline"}', { headers: { 'Content-Type': 'application/json' } })));
     return;
   }
-  // Cache-first for app shell
+
+  const isSameOrigin = url.origin === self.location.origin;
+  const isCriticalAsset =
+    request.mode === 'navigate' ||
+    url.pathname === '/' ||
+    url.pathname.endsWith('.html') ||
+    url.pathname.endsWith('.js') ||
+    url.pathname.endsWith('.css');
+
+  // Network-first for HTML/JS/CSS so deploys are picked up immediately
+  if (isSameOrigin && isCriticalAsset) {
+    e.respondWith(
+      fetch(request).then(resp => {
+        if (resp && resp.status === 200) {
+          const clone = resp.clone();
+          caches.open(CACHE).then(c => c.put(request, clone));
+        }
+        return resp;
+      }).catch(() => caches.match(request).then(cached => cached || caches.match('/index.html')))
+    );
+    return;
+  }
+
+  // Cache-first for remaining same-origin assets
   e.respondWith(
     caches.match(request).then(cached => {
       if (cached) return cached;
