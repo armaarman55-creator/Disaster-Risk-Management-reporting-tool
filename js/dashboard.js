@@ -1142,10 +1142,10 @@ function initDashboardEvents() {
       const matches = nums.filter(w => String(w).includes(needle || q)).slice(0, 50);
       if (!matches.length) { mapDd.style.display = 'none'; return; }
       mapDd.innerHTML = matches.map(item =>
-        `<div data-ward="${item.ward}"
+        `<div data-ward="${item}"
           style="padding:6px 10px;cursor:pointer;border-bottom:1px solid var(--border);font-size:11px;transition:background .1s"
           onmouseenter="this.style.background='var(--bg3)'"
-          onmouseleave="this.style.background=''">Ward ${item.ward}${item.place ? ` · ${item.place}` : ''}</div>`
+          onmouseleave="this.style.background=''">Ward ${item}</div>`
       ).join('');
       mapDd.style.display = 'block';
       mapDd.style.maxHeight = '220px';
@@ -1178,8 +1178,8 @@ function initDashboardEvents() {
   });
   document.getElementById('map-project-place')?.addEventListener('click', () => {
     const select = document.getElementById('map-project-select');
-    const selectedId = parseInt(select?.value, 10);
-    if (!Number.isFinite(selectedId)) {
+    const selectedId = String(select?.value || '').trim();
+    if (!selectedId) {
       notify('Select an IDP project before placing it on the map.', true);
       return;
     }
@@ -1368,19 +1368,23 @@ async function populateProjectPlacementOptions() {
     return `<option value="${p.id}">${label}</option>`;
   }).join('');
   sel.innerHTML = '<option value="">Select IDP project…</option>' + options;
+  const preferred = (data || []).find(p => !parseMarkerCoords(p.specific_location)) || (data || [])[0];
+  sel.value = preferred ? String(preferred.id) : '';
 }
 
 async function saveProjectMarkerAt(lngLat, wardNumFromClick, mitigationId) {
   const wardNum = parseInt(wardNumFromClick, 10);
-  if (!mitigationId || !Number.isFinite(wardNum)) {
+  const mitigationKey = String(mitigationId ?? '').trim();
+  if (!mitigationKey || !Number.isFinite(wardNum)) {
     notify('Select a valid project and click inside a ward to place it.', true);
     return;
   }
+  const mitigationIdFilter = /^\d+$/.test(mitigationKey) ? parseInt(mitigationKey, 10) : mitigationKey;
   const payload = {
     affected_wards: [wardNum],
     specific_location: `@map:${lngLat.lat},${lngLat.lng}`
   };
-  const { error } = await supabase.from('mitigations').update(payload).eq('id', mitigationId);
+  const { error } = await supabase.from('mitigations').update(payload).eq('id', mitigationIdFilter);
   if (error) {
     notify(`Could not save marker to backend: ${error.message}`, true);
     return;
