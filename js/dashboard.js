@@ -16,7 +16,7 @@ const CHIP_CLASS   = {
 };
 const CHIP_LABEL   = {
   'Extremely High':'EXTR HIGH','Extremely high':'EXTR HIGH',
-  'High':'HIGH','Tolerable':'TOLERABLE','Low':'LOW','Negligible':'NEGLIGIBLE'
+  'High':'HIGH','TOLERABLE':'Tolerable','Low':'LOW','Negligible':'NEGLIGIBLE'
 };
 
 let _assessmentData = null;
@@ -33,6 +33,10 @@ let _mapHandlersBound = false;
 let _shelterClickBound = false;
 let _projectsClickBound = false;
 let _osmPlacesCacheKey = '';
+let _osmPlacesInFlight = false;
+let _osmPlacesLastFetchAt = 0;
+let _osmPlacesDebounceTimer = null;
+let _osmEndpointCooldownUntil = {};
 let _isAddingProjectMarker = false;
 let _selectedProjectForPlacement = null;
 let _wardFillVisible = true;
@@ -248,9 +252,8 @@ async function renderWardMap(neutralMode = false) {
           if (!cur || RISK_ORDER.indexOf(band) < RISK_ORDER.indexOf(cur)) wardPeak[wNum] = band;
         });
       });
-         }
-
-    allWardNums.forEach(wNum => {
+    }
+        allWardNums.forEach(wNum => {
       const ratings = wardRatings[wNum];
       if (!ratings.length) return;
       const avg = ratings.reduce((a, b) => a + b, 0) / ratings.length;
@@ -382,7 +385,10 @@ async function ensureMapInitialized() {
   await new Promise(resolve => _map.once('load', resolve));
   bindMapControls();
   _map.on('moveend', () => {
-    renderBackgroundPlaceNames();
+    if (_osmPlacesDebounceTimer) clearTimeout(_osmPlacesDebounceTimer);
+    _osmPlacesDebounceTimer = setTimeout(() => {
+      renderBackgroundPlaceNames();
+    }, 700);
   });
 }
 
@@ -675,6 +681,10 @@ function pickAreaNameLabel(props = {}) {
 
 async function renderBackgroundPlaceNames() {
   if (!_map || !_mapBounds) return;
+  if ((_map.getZoom?.() || 0) < 8) return;
+  if (_osmPlacesInFlight) return;
+  const now = Date.now();
+  if (now - _osmPlacesLastFetchAt < 5000) return;
   const view = _map.getBounds?.();
   const viewBox = view ? {
     south: view.getSouth(),
@@ -696,6 +706,8 @@ async function renderBackgroundPlaceNames() {
   const cacheKey = `${bbox.south.toFixed(3)},${bbox.west.toFixed(3)},${bbox.north.toFixed(3)},${bbox.east.toFixed(3)}`;
   if (_osmPlacesCacheKey === cacheKey && _map.getSource('osm-place-source')) return;
   _osmPlacesCacheKey = cacheKey;
+  _osmPlacesInFlight = true;
+  _osmPlacesLastFetchAt = now;
 
   const query = `
     [out:json][timeout:25];
@@ -715,6 +727,8 @@ async function renderBackgroundPlaceNames() {
     let res = null;
     let lastErr = null;
     for (const endpoint of OVERPASS_ENDPOINTS) {
+      const cooldownUntil = _osmEndpointCooldownUntil[endpoint] || 0;
+      if (Date.now() < cooldownUntil) continue;
       try {
         const ctl = new AbortController();
         const t = setTimeout(() => ctl.abort(), 9000);
@@ -725,7 +739,12 @@ async function renderBackgroundPlaceNames() {
           signal: ctl.signal
         });
         clearTimeout(t);
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        if (!r.ok) {
+          if (r.status === 429 || r.status === 504) {
+            _osmEndpointCooldownUntil[endpoint] = Date.now() + 60000;
+          }
+          throw new Error(`HTTP ${r.status}`);
+        }
         res = r;
         break;
       } catch (e) {
@@ -790,6 +809,8 @@ async function renderBackgroundPlaceNames() {
     });
   } catch (e) {
     console.warn('OSM place labels unavailable:', e.message);
+  } finally {
+    _osmPlacesInFlight = false;
   }
 }
 
@@ -1274,7 +1295,7 @@ function initDashboardEvents() {
           e.preventDefault();
           selectWard(item.dataset.ward);
         };
-        item.addEventListener('click', handlePick);
+        item.addEventListener('pointerdown', handlePick);
       });
     });
     mapSearch.addEventListener('blur', () => {
