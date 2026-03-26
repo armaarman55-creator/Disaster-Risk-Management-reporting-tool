@@ -1,6 +1,5 @@
 // js/community.js
 import { supabase } from './supabase.js';
-import { openShareModal } from './share.js';
 
 let _muniId = null;
 let _activeTab = 'shelters';
@@ -182,7 +181,6 @@ function renderShelterCard(s) {
       <div class="rec-foot">
         <button class="btn btn-green btn-sm shelter-update" data-id="${s.id}">Update</button>
         <button class="btn btn-sm shelter-edit" data-id="${s.id}">Edit details</button>
-        <button class="btn btn-sm shelter-share" data-id="${s.id}">Share</button>
         <button class="btn btn-sm shelter-dl" data-id="${s.id}" data-name="${s.name}">↓ Save</button>
         <button class="btn btn-sm btn-red shelter-delete" data-id="${s.id}" style="margin-left:auto">Delete</button>
       </div>
@@ -219,19 +217,6 @@ function bindShelterEvents(shelters) {
       await supabase.from('shelters').delete().eq('id', btn.dataset.id);
       showToast('Shelter deleted');
       await renderShelters(document.getElementById('community-body'));
-    });
-  });
-
-  // Share
-  document.querySelectorAll('.shelter-share').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const s = shelters.find(x => x.id === btn.dataset.id);
-      if (!s) return;
-      openShareModal({
-        type:'shelter', title:s.name, imageCategory:'shelter',
-        url:`${window.location.origin}/public/shelters/${s.id}`,
-        text:`SHELTER — ${s.name}\nWard ${s.ward_number} · ${s.address||''}\nStatus: ${(s.status||'').toUpperCase()}\nCapacity: ${s.current_occupancy||0} / ${s.capacity}`
-      });
     });
   });
 
@@ -376,7 +361,6 @@ function renderReliefCard(op) {
       </div>
       <div class="rec-foot">
         <button class="btn btn-sm btn-green relief-edit" data-id="${op.id}">Edit</button>
-        <button class="btn btn-sm relief-share" data-id="${op.id}">Share</button>
         <button class="btn btn-sm relief-dl" data-id="${op.id}" data-name="${op.name}">↓ Save</button>
         <button class="btn btn-sm btn-red relief-delete" data-id="${op.id}" style="margin-left:auto">Delete</button>
       </div>
@@ -409,17 +393,6 @@ function bindReliefEvents(ops) {
     });
   });
 
-  document.querySelectorAll('.relief-share').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const op = ops.find(o => o.id === btn.dataset.id);
-      if (!op) return;
-      openShareModal({
-        type:'relief', title:op.name, imageCategory:'relief',
-        url:`${window.location.origin}/public/relief/${op.id}`,
-        text:`RELIEF DISTRIBUTION — ${op.name}\n${op.distribution_point||''}\n${op.schedule||''}\nContact: ${op.public_contact||'N/A'}`
-      });
-    });
-  });
 }
 
 // ── SAWS ─────────────────────────────────────────────────
@@ -505,7 +478,6 @@ function renderSAWSCard(w) {
       </div>
       ${w.description?`<div style="padding:10px 16px;font-size:12px;color:var(--text2);line-height:1.6">${w.description}</div>`:''}
       <div class="rec-foot">
-        <button class="btn btn-sm saws-share" data-id="${w.id}" data-title="${w.title.replace(/"/g,'&quot;')}" data-desc="${(w.description||'').replace(/"/g,'&quot;')}">Share warning</button>
         <button class="btn btn-sm btn-red" onclick="deactivateSAWS('${w.id}')">Deactivate</button>
       </div>
     </div>`;
