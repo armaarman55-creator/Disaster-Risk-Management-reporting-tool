@@ -55,11 +55,3 @@ export async function getCurrentUser() {
   return profile;
 }
 
-export async function isOnboardingComplete(municipalityId) {
-  const { data } = await supabase
-    .from('municipalities')
-    .select('onboarding_complete')
-    .eq('id', municipalityId)
-    .single();
-  return data?.onboarding_complete === true;
-}
