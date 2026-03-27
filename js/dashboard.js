@@ -449,6 +449,7 @@ async function renderWardLayers(featureCollection) {
     source: 'ward-source',
     minzoom: 9,
     layout: {
+      'text-font': ['Open Sans Regular'],
       'text-field': ['concat', 'W', ['to-string', ['get', 'ward_number']]],
       'text-size': ['interpolate', ['linear'], ['zoom'], 9, 9, 12, 12]
     },
@@ -464,6 +465,7 @@ async function renderWardLayers(featureCollection) {
     source: 'ward-source',
     minzoom: 10,
     layout: {
+      'text-font': ['Open Sans Regular'],
       'text-field': ['coalesce', ['get', 'area_name_label'], ''],
       'text-size': 11,
       'text-offset': [0, -1.2]
@@ -1190,6 +1192,7 @@ async function renderSheltersOnMap() {
     type: 'symbol',
     source: 'shelter-source',
     layout: {
+      'text-font': ['Open Sans Regular'],
       'text-field': ['coalesce', ['get', 'name'], 'Shelter'],
       'text-size': 9,
       'text-offset': [0, 1.3]
