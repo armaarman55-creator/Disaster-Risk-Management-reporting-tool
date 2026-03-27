@@ -302,7 +302,6 @@ async function renderWardMap(neutralMode = false) {
         properties: {
           ...props,
           ward_number: wNum,
-          area_name_label: pickAreaNameLabel(props),
           risk_band: risk,
           peak_band: peakBand || null,
           fill_color: RISK_COLOURS[risk] || '#6e7681'
@@ -377,7 +376,7 @@ async function ensureMapInitialized() {
     preserveDrawingBuffer: true,
     style: {
       version: 8,
-      glyphs: 'https://cdn.jsdelivr.net/gh/openmaptiles/fonts/{fontstack}/{range}.pbf',
+      glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
             sources: {
         satellite: {
           type: 'raster',
@@ -421,7 +420,6 @@ async function renderWardLayers(featureCollection) {
   });
   window._drmsaWardCentroids = _wardCentroids;
 
-  if (_map.getLayer('area-label')) _map.removeLayer('area-label');
   if (_map.getLayer('ward-label')) _map.removeLayer('ward-label');
   if (_map.getLayer('ward-outline')) _map.removeLayer('ward-outline');
   if (_map.getLayer('ward-fill')) _map.removeLayer('ward-fill');
@@ -449,7 +447,7 @@ async function renderWardLayers(featureCollection) {
     source: 'ward-source',
     minzoom: 9,
     layout: {
-      'text-font': ['Open Sans Regular'],
+      'text-font': ['Noto Sans Regular'],
       'text-field': ['concat', 'W', ['to-string', ['get', 'ward_number']]],
       'text-size': ['interpolate', ['linear'], ['zoom'], 9, 9, 12, 12]
     },
@@ -459,23 +457,8 @@ async function renderWardLayers(featureCollection) {
       'text-halo-width': 1
     }
   });
-  _map.addLayer({
-    id: 'area-label',
-    type: 'symbol',
-    source: 'ward-source',
-    minzoom: 10,
-    layout: {
-      'text-font': ['Open Sans Regular'],
-      'text-field': ['coalesce', ['get', 'area_name_label'], ''],
-      'text-size': 11,
-      'text-offset': [0, -1.2]
-    },
-    paint: {
-      'text-color': '#dbe7ff',
-      'text-halo-color': '#0d1117',
-      'text-halo-width': 1
-    }
-  });
+  // area-label layer removed — MDB ward features carry no place name attributes.
+  // Place names are sourced exclusively from the OSM Overpass layer (renderBackgroundPlaceNames).
 
   if (_mapBounds) {
     _map.fitBounds([[ _mapBounds.minX, _mapBounds.minY ], [ _mapBounds.maxX, _mapBounds.maxY ]], { padding: 30, maxZoom: 12 });
@@ -587,7 +570,6 @@ function setMapMode(mode) {
   const projectsVisible = mode === 'projects';
   applyWardLayerVisibility();
   if (_map.getLayer('ward-label')) _map.setLayoutProperty('ward-label', 'visibility', (hazardVisible || projectsVisible) ? 'visible' : 'none');
-  if (_map.getLayer('area-label')) _map.setLayoutProperty('area-label', 'visibility', (hazardVisible || projectsVisible) ? 'visible' : 'none');
   if (_map.getLayer('shelter-circle')) _map.setLayoutProperty('shelter-circle', 'visibility', sheltersVisible ? 'visible' : 'none');
   if (_map.getLayer('shelter-label')) _map.setLayoutProperty('shelter-label', 'visibility', sheltersVisible ? 'visible' : 'none');
   if (_map.getLayer('project-circle')) _map.setLayoutProperty('project-circle', 'visibility', projectsVisible ? 'visible' : 'none');
@@ -645,23 +627,10 @@ async function downloadMapImage(scope = 'current') {
   }
 }
 
-function pickAreaNameLabel(props = {}) {
-  const candidates = [
-    'SUBURB_NAME','SUBURB','TOWN_NAME','CITY_NAME','PLACE_NAME','MAIN_PLACE','MUNICNAME',
-    'MUNI_NAME','LOCAL_MUNI','NAME','WARD_NAME','AREA_NAME','SETTLEMENT','SUBPLACE','SUBPLACE_N','TOWN','VILLAGE'
-  ];
-  for (const key of candidates) {
-    const value = props[key] ?? props[key.toLowerCase()];
-    if (value && String(value).trim()) return String(value).trim();
-  }
-  // Fallback: attempt any property key that looks like a place/town/suburb label.
-  for (const key of Object.keys(props || {})) {
-    if (!/(suburb|town|place|name|settlement|village|city)/i.test(key)) continue;
-    const value = props[key];
-    if (value && String(value).trim()) return String(value).trim();
-  }
-  return '';
-}
+// pickAreaNameLabel is intentionally removed.
+// MDB ward features only carry ward number and municipal code — no suburb, town, or
+// settlement attributes. Place name labels are rendered exclusively by the OSM
+// Overpass layer in renderBackgroundPlaceNames().
 
 function pickOsmPlaceName(tags = {}) {
   const candidates = [
@@ -806,7 +775,7 @@ async function renderBackgroundPlaceNames() {
       minzoom: 8,
       layout: {
         'text-field': ['get', 'name'],
-        'text-font': ['Open Sans Regular'],
+        'text-font': ['Noto Sans Regular'],
         'text-allow-overlap': true,
         'text-ignore-placement': true,
         'text-size': [
@@ -882,6 +851,7 @@ async function renderProjectsOnMap({ switchMode = true } = {}) {
     type: 'symbol',
     source: 'project-source',
     layout: {
+      'text-font': ['Noto Sans Regular'],
       'text-field': ['coalesce', ['get', 'name'], 'Project'],
       'text-size': 9,
       'text-offset': [0, 1.3]
@@ -1192,7 +1162,7 @@ async function renderSheltersOnMap() {
     type: 'symbol',
     source: 'shelter-source',
     layout: {
-      'text-font': ['Open Sans Regular'],
+      'text-font': ['Noto Sans Regular'],
       'text-field': ['coalesce', ['get', 'name'], 'Shelter'],
       'text-size': 9,
       'text-offset': [0, 1.3]
