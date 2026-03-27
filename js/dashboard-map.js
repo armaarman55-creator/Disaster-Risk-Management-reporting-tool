@@ -42,6 +42,57 @@ export function getWardAtLngLat(map, lngLat, wardFeatures = []) {
   return null;
 }
 
+export function flattenCoords(geometry) {
+  if (!geometry) return [];
+  if (geometry.type === 'Polygon') return geometry.coordinates.flat();
+  if (geometry.type === 'MultiPolygon') return geometry.coordinates.flat(2);
+  return [];
+}
+
+export function boundsFromCoords(coords = []) {
+  if (!Array.isArray(coords) || !coords.length) return null;
+  const lons = coords.map(c => c[0]).filter(Number.isFinite);
+  const lats = coords.map(c => c[1]).filter(Number.isFinite);
+  if (!lons.length || !lats.length) return null;
+  return {
+    minX: Math.min(...lons),
+    minY: Math.min(...lats),
+    maxX: Math.max(...lons),
+    maxY: Math.max(...lats)
+  };
+}
+
+export function extendBounds(a, b) {
+  return {
+    minX: Math.min(a.minX, b.minX),
+    minY: Math.min(a.minY, b.minY),
+    maxX: Math.max(a.maxX, b.maxX),
+    maxY: Math.max(a.maxY, b.maxY)
+  };
+}
+
+export function zoomToWardOnMap(map, wardNum, wardFeatureIndex = {}, wardFeatures = [], opts = {}) {
+  const target = parseInt(wardNum, 10);
+  if (!map || !Number.isFinite(target)) return false;
+
+  const padding = Number.isFinite(opts.padding) ? opts.padding : 70;
+  const maxZoom = Number.isFinite(opts.maxZoom) ? opts.maxZoom : 13;
+
+  const entry = wardFeatureIndex?.[target];
+  if (entry?.bbox) {
+    map.fitBounds([[entry.bbox.minX, entry.bbox.minY], [entry.bbox.maxX, entry.bbox.maxY]], { padding, maxZoom });
+    return true;
+  }
+
+  const feature = (wardFeatures || []).find(f => parseInt(f?.properties?.ward_number, 10) === target);
+  if (!feature?.geometry) return false;
+  const coords = flattenCoords(feature.geometry);
+  const bbox = boundsFromCoords(coords);
+  if (!bbox) return false;
+  map.fitBounds([[bbox.minX, bbox.minY], [bbox.maxX, bbox.maxY]], { padding, maxZoom });
+  return true;
+}
+
 function geometryContainsPoint(geometry, point) {
   if (!geometry || !point) return false;
   if (geometry.type === 'Polygon') return polygonContainsPoint(geometry.coordinates, point);
