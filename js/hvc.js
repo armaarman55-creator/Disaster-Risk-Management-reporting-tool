@@ -17,8 +17,9 @@ let _muniId = null;
 let _user   = null;
 let _wards  = [];
 
-// ── SCORING DESCRIPTORS (from Excel Annexure 3) ──────────
+// ── SCORING DESCRIPTORS (Extended HVC Model - Strict Subtypes) ──────────
 const DESCRIPTORS = {
+
   affected_area: {
     1: { label: 'Very small area',    desc: 'Confined to a localised point or single ward — affects roughly 20% of the municipal area' },
     2: { label: 'Small area',         desc: 'Limited to a portion of the municipality — roughly 40% of the municipal area affected' },
@@ -51,28 +52,128 @@ const DESCRIPTORS = {
     5: { label: 'Cannot predict',     desc: 'No reliable warning indicators — sudden onset requires standing response capacity at all times' }
   },
 
+  // ── VULNERABILITY ──────────
   vulnerability: {
-    1: { label: 'Very Low',  desc: 'Exposed elements are well-protected — strong existing measures result in negligible residual risk' },
-    2: { label: 'Low',       desc: 'Some exposure exists but structural or community-level protections significantly reduce potential impact' },
-    3: { label: 'Moderate',  desc: 'Partial protective measures in place — vulnerable groups and critical infrastructure remain exposed' },
-    4: { label: 'High',      desc: 'Significant exposure with limited protection — high-risk populations face considerable impact potential' },
-    5: { label: 'Very High', desc: 'No meaningful protection in place — maximum exposure with high poverty, infrastructure deficits, or social fragility' }
+
+    political: {
+      1: { label: 'Very Low',  desc: 'Stable governance environment — strong leadership and high public trust minimise risk exposure' },
+      2: { label: 'Low',       desc: 'Minor political tensions present — governance structures remain functional' },
+      3: { label: 'Moderate',  desc: 'Noticeable governance challenges — occasional instability may affect service delivery' },
+      4: { label: 'High',      desc: 'Frequent instability or weak governance — protests or coordination failures increase risk' },
+      5: { label: 'Very High', desc: 'Severe instability — breakdown in authority and inability to coordinate response' }
+    },
+
+    economic: {
+      1: { label: 'Very Low',  desc: 'Strong economy — high resilience and low poverty reduce vulnerability' },
+      2: { label: 'Low',       desc: 'Generally stable economy — most households can absorb shocks' },
+      3: { label: 'Moderate',  desc: 'Mixed conditions — many households have limited financial resilience' },
+      4: { label: 'High',      desc: 'Widespread poverty and unemployment increase vulnerability' },
+      5: { label: 'Very High', desc: 'Severe economic distress — extreme poverty and lack of livelihoods' }
+    },
+
+    social: {
+      1: { label: 'Very Low',  desc: 'Strong social cohesion and service access — communities are resilient' },
+      2: { label: 'Low',       desc: 'Stable social conditions with minor service gaps' },
+      3: { label: 'Moderate',  desc: 'Unequal service access — some marginalised groups' },
+      4: { label: 'High',      desc: 'Significant inequality and poor service delivery increase risk' },
+      5: { label: 'Very High', desc: 'Severe social vulnerability — lack of basic services and high dependency' }
+    },
+
+    environmental: {
+      1: { label: 'Very Low',  desc: 'Environment well-managed with minimal degradation' },
+      2: { label: 'Low',       desc: 'Minor environmental stress with limited impact' },
+      3: { label: 'Moderate',  desc: 'Noticeable degradation contributes to risk exposure' },
+      4: { label: 'High',      desc: 'Significant environmental degradation increases hazard impact' },
+      5: { label: 'Very High', desc: 'Severe degradation — no natural buffers remain' }
+    },
+
+    technological: {
+      1: { label: 'Very Low',  desc: 'Robust systems — infrastructure and technology are resilient' },
+      2: { label: 'Low',       desc: 'Minor technical vulnerabilities — systems generally reliable' },
+      3: { label: 'Moderate',  desc: 'Ageing infrastructure — some systems fail under stress' },
+      4: { label: 'High',      desc: 'Frequent failures increase vulnerability' },
+      5: { label: 'Very High', desc: 'Critical infrastructure failing — high exposure to technological risk' }
+    }
   },
 
+  // ── CAPACITY ──────────
   capacity: {
-    1: { label: 'Very Low',  desc: 'Response capacity critically absent — no dedicated resources, trained personnel, or coordination mechanisms in place' },
-    2: { label: 'Low',       desc: 'Limited capacity exists — significant gaps in equipment, staffing, or inter-agency arrangements remain' },
-    3: { label: 'Moderate',  desc: 'Basic response capability available — partial systems and stakeholder support cover some aspects of the risk' },
-    4: { label: 'High',      desc: 'Well-resourced response capacity — trained personnel, functional equipment, and established protocols in place' },
-    5: { label: 'Very High', desc: 'Fully prepared — dedicated capacity, tested contingency plans, and multi-stakeholder coordination operational' }
+
+    institutional: {
+      1: { label: 'Very Low',  desc: 'No disaster management structures or plans' },
+      2: { label: 'Low',       desc: 'Basic structures exist but poorly coordinated' },
+      3: { label: 'Moderate',  desc: 'Functional plans but inconsistent implementation' },
+      4: { label: 'High',      desc: 'Well-established frameworks and coordination' },
+      5: { label: 'Very High', desc: 'Highly effective governance and integrated systems' }
+    },
+
+    technical: {
+      1: { label: 'Very Low',  desc: 'No technical systems or expertise' },
+      2: { label: 'Low',       desc: 'Limited tools and technical skills' },
+      3: { label: 'Moderate',  desc: 'Some systems and trained personnel available' },
+      4: { label: 'High',      desc: 'Strong technical systems and reliable data' },
+      5: { label: 'Very High', desc: 'Advanced systems with real-time data and modelling' }
+    },
+
+    financial: {
+      1: { label: 'Very Low',  desc: 'No dedicated funding available' },
+      2: { label: 'Low',       desc: 'Limited financial resources' },
+      3: { label: 'Moderate',  desc: 'Partial funding available' },
+      4: { label: 'High',      desc: 'Adequate funding for most activities' },
+      5: { label: 'Very High', desc: 'Strong financial resilience and contingency funding' }
+    },
+
+    people: {
+      1: { label: 'Very Low',  desc: 'No trained personnel or responders available' },
+      2: { label: 'Low',       desc: 'Limited skilled personnel with gaps' },
+      3: { label: 'Moderate',  desc: 'Some trained staff and volunteers available' },
+      4: { label: 'High',      desc: 'Well-trained personnel with adequate coverage' },
+      5: { label: 'Very High', desc: 'Highly skilled workforce with strong surge capacity' }
+    },
+
+    infrastructure: {
+      1: { label: 'Very Low',  desc: 'Critical infrastructure lacking or non-functional' },
+      2: { label: 'Low',       desc: 'Limited and unreliable infrastructure' },
+      3: { label: 'Moderate',  desc: 'Basic infrastructure with some gaps' },
+      4: { label: 'High',      desc: 'Reliable infrastructure supports response' },
+      5: { label: 'Very High', desc: 'Robust and resilient systems' }
+    },
+
+    community: {
+      1: { label: 'Very Low',  desc: 'No community awareness or preparedness' },
+      2: { label: 'Low',       desc: 'Limited awareness and engagement' },
+      3: { label: 'Moderate',  desc: 'Some community participation' },
+      4: { label: 'High',      desc: 'Active community involvement' },
+      5: { label: 'Very High', desc: 'Highly resilient communities' }
+    }
   },
 
+  // ── PRIORITY (CORRECT HVC INDEX) ──────────
   priority: {
-    1: { label: 'Very Low',  desc: 'Monitor only — low consequence and low likelihood require no near-term resource allocation' },
-    2: { label: 'Low',       desc: 'Include in annual review — action deferred pending resolution of higher-priority hazard risks' },
-    3: { label: 'Moderate',  desc: 'Schedule for medium-term planning — integrate into IDP processes and sector department engagement' },
-    4: { label: 'High',      desc: 'Near-term action required — assign budget, activate stakeholder coordination, and review contingency plans' },
-    5: { label: 'Critical',  desc: 'Immediate action required — escalate to district or provincial level and activate emergency protocols' }
+
+    importance: {
+      1: { label: 'Very Low',  desc: 'Minimal impact on communities or municipal functions — limited consequence' },
+      2: { label: 'Low',       desc: 'Minor impacts — manageable within routine municipal operations' },
+      3: { label: 'Moderate',  desc: 'Noticeable impacts — requires planning and departmental coordination' },
+      4: { label: 'High',      desc: 'Significant impacts — affects critical services and vulnerable populations' },
+      5: { label: 'Very High', desc: 'Severe impacts — threatens lives, infrastructure, and municipal stability' }
+    },
+
+    urgency: {
+      1: { label: 'Very Low',  desc: 'No immediate action required — long-term monitoring sufficient' },
+      2: { label: 'Low',       desc: 'Action can be delayed — address in routine planning cycles' },
+      3: { label: 'Moderate',  desc: 'Timely intervention required — include in current planning cycle' },
+      4: { label: 'High',      desc: 'Near-term action required — prioritise within departmental plans' },
+      5: { label: 'Critical',  desc: 'Immediate action required — urgent intervention and response needed' }
+    },
+
+    growth: {
+      1: { label: 'Very Low',  desc: 'Risk unlikely to increase — stable or declining trend' },
+      2: { label: 'Low',       desc: 'Slow growth — minor increase over time' },
+      3: { label: 'Moderate',  desc: 'Gradual increase — risk expected to grow if unmanaged' },
+      4: { label: 'High',      desc: 'Rapid growth — risk escalating quickly due to conditions' },
+      5: { label: 'Very High', desc: 'Exponential growth — risk increasing rapidly and likely to worsen significantly' }
+    }
   }
 };
 
