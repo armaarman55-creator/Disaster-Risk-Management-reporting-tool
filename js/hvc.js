@@ -20,53 +20,59 @@ let _wards  = [];
 // ── SCORING DESCRIPTORS (from Excel Annexure 3) ──────────
 const DESCRIPTORS = {
   affected_area: {
-    1: { label: 'Very small area',    desc: 'Affects only a very small part (roughly 20%) of the local municipality' },
-    2: { label: 'Small area',         desc: 'Affects a small part (roughly 40%) of the local municipality' },
-    3: { label: 'Just over half',     desc: 'Affects a part (roughly 60%) of the local municipality' },
-    4: { label: 'Large area',         desc: 'Affects a large part (roughly 80%) of the local municipality' },
-    5: { label: 'Whole municipality', desc: 'Affects the whole local municipality' }
+    1: { label: 'Very small area',    desc: 'Confined to a localised point or single ward — affects roughly 20% of the municipal area' },
+    2: { label: 'Small area',         desc: 'Limited to a portion of the municipality — roughly 40% of the municipal area affected' },
+    3: { label: 'Just over half',     desc: 'Extends across a significant portion — roughly 60% of the municipal area affected' },
+    4: { label: 'Large area',         desc: 'Widespread impact across roughly 80% of the municipality, including urban and rural areas' },
+    5: { label: 'Whole municipality', desc: 'All wards and areas affected — full municipal extent from urban core to outlying settlements' }
   },
+
   probability: {
-    1: { label: 'Highly improbable', desc: 'Unlikely' },
-    2: { label: 'Slight probability', desc: 'Possible' },
-    3: { label: 'Possible',          desc: '50/50 chance' },
-    4: { label: 'Very good chance',  desc: 'Likely' },
-    5: { label: 'Highly probable',   desc: 'Certain' }
+    1: { label: 'Highly improbable',  desc: 'No credible trigger conditions present — occurrence would be exceptional and largely unexpected' },
+    2: { label: 'Slight probability', desc: 'Conditions exist but significant barriers remain — possible only under specific circumstances' },
+    3: { label: 'Possible',           desc: 'Roughly even chance of occurring given prevailing environmental or socio-economic conditions' },
+    4: { label: 'Very good chance',   desc: 'Trigger conditions are commonly present — occurrence is expected without preventive intervention' },
+    5: { label: 'Highly probable',    desc: 'Near-certain to occur — historical pattern and current conditions make occurrence virtually inevitable' }
   },
+
   frequency: {
-    1: { label: 'Once every 5+ years', desc: 'Can occur once every 5 years or more' },
-    2: { label: 'Annually',            desc: 'Can occur annually' },
-    3: { label: 'Seasonally',          desc: 'Can occur seasonally' },
-    4: { label: 'Monthly',             desc: 'Can occur monthly' },
-    5: { label: 'Weekly',              desc: 'Can occur weekly' }
+    1: { label: 'Once every 5+ years', desc: 'Rare occurrence — documented in records but not a regular operational concern' },
+    2: { label: 'Annually',            desc: 'Recurs at least once per year — typically tied to seasonal cycles or recurring triggers' },
+    3: { label: 'Seasonally',          desc: 'Occurs multiple times per year in line with seasonal conditions or periodic drivers' },
+    4: { label: 'Monthly',             desc: 'Recurring monthly — demands sustained operational readiness and resource allocation' },
+    5: { label: 'Weekly',              desc: 'Near-constant occurrence — must be integrated into routine municipal operations and monitoring' }
   },
+
   predictability: {
-    1: { label: 'Predictable',         desc: 'Predictable' },
-    2: { label: 'Fairly predictable',  desc: 'Fairly predictable' },
-    3: { label: '50/50',               desc: '50/50 chance to predict' },
-    4: { label: 'Slight chance',       desc: 'Slight chance to predict' },
-    5: { label: 'Cannot predict',      desc: 'Cannot predict' }
+    1: { label: 'Predictable',        desc: 'Reliable early warning systems and historical data allow confident advance planning and preparation' },
+    2: { label: 'Fairly predictable', desc: 'Warning signs typically emerge in time to activate preparedness and pre-position resources' },
+    3: { label: '50/50',              desc: 'Some indicators exist but onset timing is unreliable — only partial lead time can be expected' },
+    4: { label: 'Slight chance',      desc: 'Minimal advance warning available — response is largely reactive with a very narrow preparation window' },
+    5: { label: 'Cannot predict',     desc: 'No reliable warning indicators — sudden onset requires standing response capacity at all times' }
   },
+
   vulnerability: {
-    1: { label: 'Very Low',    desc: 'Negligible vulnerability — strong existing protections in place' },
-    2: { label: 'Low',         desc: 'Minor vulnerability — some protections exist' },
-    3: { label: 'Moderate',    desc: 'Moderate vulnerability — partial measures in place' },
-    4: { label: 'High',        desc: 'High vulnerability — limited protections, high exposure' },
-    5: { label: 'Very High',   desc: 'Extreme vulnerability — no protections, maximum exposure' }
+    1: { label: 'Very Low',  desc: 'Exposed elements are well-protected — strong existing measures result in negligible residual risk' },
+    2: { label: 'Low',       desc: 'Some exposure exists but structural or community-level protections significantly reduce potential impact' },
+    3: { label: 'Moderate',  desc: 'Partial protective measures in place — vulnerable groups and critical infrastructure remain exposed' },
+    4: { label: 'High',      desc: 'Significant exposure with limited protection — high-risk populations face considerable impact potential' },
+    5: { label: 'Very High', desc: 'No meaningful protection in place — maximum exposure with high poverty, infrastructure deficits, or social fragility' }
   },
+
   capacity: {
-    1: { label: 'Very Low',    desc: 'No capacity — resources, systems and people largely absent' },
-    2: { label: 'Low',         desc: 'Limited capacity — some resources but significant gaps' },
-    3: { label: 'Moderate',    desc: 'Moderate capacity — partial systems and resources available' },
-    4: { label: 'High',        desc: 'Good capacity — well-resourced with minor gaps' },
-    5: { label: 'Very High',   desc: 'Excellent capacity — fully resourced, trained and ready' }
+    1: { label: 'Very Low',  desc: 'Response capacity critically absent — no dedicated resources, trained personnel, or coordination mechanisms in place' },
+    2: { label: 'Low',       desc: 'Limited capacity exists — significant gaps in equipment, staffing, or inter-agency arrangements remain' },
+    3: { label: 'Moderate',  desc: 'Basic response capability available — partial systems and stakeholder support cover some aspects of the risk' },
+    4: { label: 'High',      desc: 'Well-resourced response capacity — trained personnel, functional equipment, and established protocols in place' },
+    5: { label: 'Very High', desc: 'Fully prepared — dedicated capacity, tested contingency plans, and multi-stakeholder coordination operational' }
   },
+
   priority: {
-    1: { label: 'Very Low',    desc: 'Minimal — not an immediate concern' },
-    2: { label: 'Low',         desc: 'Low priority — monitor but no urgent action' },
-    3: { label: 'Moderate',    desc: 'Moderate — plan for medium-term action' },
-    4: { label: 'High',        desc: 'High — requires near-term attention and resources' },
-    5: { label: 'Critical',    desc: 'Critical — immediate action required' }
+    1: { label: 'Very Low',  desc: 'Monitor only — low consequence and low likelihood require no near-term resource allocation' },
+    2: { label: 'Low',       desc: 'Include in annual review — action deferred pending resolution of higher-priority hazard risks' },
+    3: { label: 'Moderate',  desc: 'Schedule for medium-term planning — integrate into IDP processes and sector department engagement' },
+    4: { label: 'High',      desc: 'Near-term action required — assign budget, activate stakeholder coordination, and review contingency plans' },
+    5: { label: 'Critical',  desc: 'Immediate action required — escalate to district or provincial level and activate emergency protocols' }
   }
 };
 
