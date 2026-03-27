@@ -15,11 +15,11 @@ export async function initAuth() {
     return;
   }
 
-  // Check existing session
+  // Do not auto-enter dashboard from a persisted session.
+  // Force an explicit sign-in each time the auth screen loads.
   const { data: { session } } = await supabase.auth.getSession();
   if (session) {
-    const user = await getCurrentUser();
-    if (user) { hideAuth(); await initApp(user); return; }
+    await supabase.auth.signOut();
   }
 
   await loadMunicipalities();
