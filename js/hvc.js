@@ -17,163 +17,56 @@ let _muniId = null;
 let _user   = null;
 let _wards  = [];
 
-// ── SCORING DESCRIPTORS (Extended HVC Model - Strict Subtypes) ──────────
+// ── SCORING DESCRIPTORS (from Excel Annexure 3) ──────────
 const DESCRIPTORS = {
-
   affected_area: {
-    1: { label: 'Very small area',    desc: 'Confined to a localised point or single ward — affects roughly 20% of the municipal area' },
-    2: { label: 'Small area',         desc: 'Limited to a portion of the municipality — roughly 40% of the municipal area affected' },
-    3: { label: 'Just over half',     desc: 'Extends across a significant portion — roughly 60% of the municipal area affected' },
-    4: { label: 'Large area',         desc: 'Widespread impact across roughly 80% of the municipality, including urban and rural areas' },
-    5: { label: 'Whole municipality', desc: 'All wards and areas affected — full municipal extent from urban core to outlying settlements' }
+    1: { label: 'Very small area',    desc: 'Affects only a very small part (roughly 20%) of the local municipality' },
+    2: { label: 'Small area',         desc: 'Affects a small part (roughly 40%) of the local municipality' },
+    3: { label: 'Just over half',     desc: 'Affects a part (roughly 60%) of the local municipality' },
+    4: { label: 'Large area',         desc: 'Affects a large part (roughly 80%) of the local municipality' },
+    5: { label: 'Whole municipality', desc: 'Affects the whole local municipality' }
   },
-
   probability: {
-    1: { label: 'Highly improbable',  desc: 'No credible trigger conditions present — occurrence would be exceptional and largely unexpected' },
-    2: { label: 'Slight probability', desc: 'Conditions exist but significant barriers remain — possible only under specific circumstances' },
-    3: { label: 'Possible',           desc: 'Roughly even chance of occurring given prevailing environmental or socio-economic conditions' },
-    4: { label: 'Very good chance',   desc: 'Trigger conditions are commonly present — occurrence is expected without preventive intervention' },
-    5: { label: 'Highly probable',    desc: 'Near-certain to occur — historical pattern and current conditions make occurrence virtually inevitable' }
+    1: { label: 'Highly improbable', desc: 'Unlikely' },
+    2: { label: 'Slight probability', desc: 'Possible' },
+    3: { label: 'Possible',          desc: '50/50 chance' },
+    4: { label: 'Very good chance',  desc: 'Likely' },
+    5: { label: 'Highly probable',   desc: 'Certain' }
   },
-
   frequency: {
-    1: { label: 'Once every 5+ years', desc: 'Rare occurrence — documented in records but not a regular operational concern' },
-    2: { label: 'Annually',            desc: 'Recurs at least once per year — typically tied to seasonal cycles or recurring triggers' },
-    3: { label: 'Seasonally',          desc: 'Occurs multiple times per year in line with seasonal conditions or periodic drivers' },
-    4: { label: 'Monthly',             desc: 'Recurring monthly — demands sustained operational readiness and resource allocation' },
-    5: { label: 'Weekly',              desc: 'Near-constant occurrence — must be integrated into routine municipal operations and monitoring' }
+    1: { label: 'Once every 5+ years', desc: 'Can occur once every 5 years or more' },
+    2: { label: 'Annually',            desc: 'Can occur annually' },
+    3: { label: 'Seasonally',          desc: 'Can occur seasonally' },
+    4: { label: 'Monthly',             desc: 'Can occur monthly' },
+    5: { label: 'Weekly',              desc: 'Can occur weekly' }
   },
-
   predictability: {
-    1: { label: 'Predictable',        desc: 'Reliable early warning systems and historical data allow confident advance planning and preparation' },
-    2: { label: 'Fairly predictable', desc: 'Warning signs typically emerge in time to activate preparedness and pre-position resources' },
-    3: { label: '50/50',              desc: 'Some indicators exist but onset timing is unreliable — only partial lead time can be expected' },
-    4: { label: 'Slight chance',      desc: 'Minimal advance warning available — response is largely reactive with a very narrow preparation window' },
-    5: { label: 'Cannot predict',     desc: 'No reliable warning indicators — sudden onset requires standing response capacity at all times' }
+    1: { label: 'Predictable',         desc: 'Predictable' },
+    2: { label: 'Fairly predictable',  desc: 'Fairly predictable' },
+    3: { label: '50/50',               desc: '50/50 chance to predict' },
+    4: { label: 'Slight chance',       desc: 'Slight chance to predict' },
+    5: { label: 'Cannot predict',      desc: 'Cannot predict' }
   },
-
-  // ── VULNERABILITY ──────────
   vulnerability: {
-
-    political: {
-      1: { label: 'Very Low',  desc: 'Stable governance environment — strong leadership and high public trust minimise risk exposure' },
-      2: { label: 'Low',       desc: 'Minor political tensions present — governance structures remain functional' },
-      3: { label: 'Moderate',  desc: 'Noticeable governance challenges — occasional instability may affect service delivery' },
-      4: { label: 'High',      desc: 'Frequent instability or weak governance — protests or coordination failures increase risk' },
-      5: { label: 'Very High', desc: 'Severe instability — breakdown in authority and inability to coordinate response' }
-    },
-
-    economic: {
-      1: { label: 'Very Low',  desc: 'Strong economy — high resilience and low poverty reduce vulnerability' },
-      2: { label: 'Low',       desc: 'Generally stable economy — most households can absorb shocks' },
-      3: { label: 'Moderate',  desc: 'Mixed conditions — many households have limited financial resilience' },
-      4: { label: 'High',      desc: 'Widespread poverty and unemployment increase vulnerability' },
-      5: { label: 'Very High', desc: 'Severe economic distress — extreme poverty and lack of livelihoods' }
-    },
-
-    social: {
-      1: { label: 'Very Low',  desc: 'Strong social cohesion and service access — communities are resilient' },
-      2: { label: 'Low',       desc: 'Stable social conditions with minor service gaps' },
-      3: { label: 'Moderate',  desc: 'Unequal service access — some marginalised groups' },
-      4: { label: 'High',      desc: 'Significant inequality and poor service delivery increase risk' },
-      5: { label: 'Very High', desc: 'Severe social vulnerability — lack of basic services and high dependency' }
-    },
-
-    environmental: {
-      1: { label: 'Very Low',  desc: 'Environment well-managed with minimal degradation' },
-      2: { label: 'Low',       desc: 'Minor environmental stress with limited impact' },
-      3: { label: 'Moderate',  desc: 'Noticeable degradation contributes to risk exposure' },
-      4: { label: 'High',      desc: 'Significant environmental degradation increases hazard impact' },
-      5: { label: 'Very High', desc: 'Severe degradation — no natural buffers remain' }
-    },
-
-    technological: {
-      1: { label: 'Very Low',  desc: 'Robust systems — infrastructure and technology are resilient' },
-      2: { label: 'Low',       desc: 'Minor technical vulnerabilities — systems generally reliable' },
-      3: { label: 'Moderate',  desc: 'Ageing infrastructure — some systems fail under stress' },
-      4: { label: 'High',      desc: 'Frequent failures increase vulnerability' },
-      5: { label: 'Very High', desc: 'Critical infrastructure failing — high exposure to technological risk' }
-    }
+    1: { label: 'Very Low',    desc: 'Negligible vulnerability — strong existing protections in place' },
+    2: { label: 'Low',         desc: 'Minor vulnerability — some protections exist' },
+    3: { label: 'Moderate',    desc: 'Moderate vulnerability — partial measures in place' },
+    4: { label: 'High',        desc: 'High vulnerability — limited protections, high exposure' },
+    5: { label: 'Very High',   desc: 'Extreme vulnerability — no protections, maximum exposure' }
   },
-
-  // ── CAPACITY ──────────
   capacity: {
-
-    institutional: {
-      1: { label: 'Very Low',  desc: 'No disaster management structures or plans' },
-      2: { label: 'Low',       desc: 'Basic structures exist but poorly coordinated' },
-      3: { label: 'Moderate',  desc: 'Functional plans but inconsistent implementation' },
-      4: { label: 'High',      desc: 'Well-established frameworks and coordination' },
-      5: { label: 'Very High', desc: 'Highly effective governance and integrated systems' }
-    },
-
-    technical: {
-      1: { label: 'Very Low',  desc: 'No technical systems or expertise' },
-      2: { label: 'Low',       desc: 'Limited tools and technical skills' },
-      3: { label: 'Moderate',  desc: 'Some systems and trained personnel available' },
-      4: { label: 'High',      desc: 'Strong technical systems and reliable data' },
-      5: { label: 'Very High', desc: 'Advanced systems with real-time data and modelling' }
-    },
-
-    financial: {
-      1: { label: 'Very Low',  desc: 'No dedicated funding available' },
-      2: { label: 'Low',       desc: 'Limited financial resources' },
-      3: { label: 'Moderate',  desc: 'Partial funding available' },
-      4: { label: 'High',      desc: 'Adequate funding for most activities' },
-      5: { label: 'Very High', desc: 'Strong financial resilience and contingency funding' }
-    },
-
-    people: {
-      1: { label: 'Very Low',  desc: 'No trained personnel or responders available' },
-      2: { label: 'Low',       desc: 'Limited skilled personnel with gaps' },
-      3: { label: 'Moderate',  desc: 'Some trained staff and volunteers available' },
-      4: { label: 'High',      desc: 'Well-trained personnel with adequate coverage' },
-      5: { label: 'Very High', desc: 'Highly skilled workforce with strong surge capacity' }
-    },
-
-    infrastructure: {
-      1: { label: 'Very Low',  desc: 'Critical infrastructure lacking or non-functional' },
-      2: { label: 'Low',       desc: 'Limited and unreliable infrastructure' },
-      3: { label: 'Moderate',  desc: 'Basic infrastructure with some gaps' },
-      4: { label: 'High',      desc: 'Reliable infrastructure supports response' },
-      5: { label: 'Very High', desc: 'Robust and resilient systems' }
-    },
-
-    community: {
-      1: { label: 'Very Low',  desc: 'No community awareness or preparedness' },
-      2: { label: 'Low',       desc: 'Limited awareness and engagement' },
-      3: { label: 'Moderate',  desc: 'Some community participation' },
-      4: { label: 'High',      desc: 'Active community involvement' },
-      5: { label: 'Very High', desc: 'Highly resilient communities' }
-    }
+    1: { label: 'Very Low',    desc: 'No capacity — resources, systems and people largely absent' },
+    2: { label: 'Low',         desc: 'Limited capacity — some resources but significant gaps' },
+    3: { label: 'Moderate',    desc: 'Moderate capacity — partial systems and resources available' },
+    4: { label: 'High',        desc: 'Good capacity — well-resourced with minor gaps' },
+    5: { label: 'Very High',   desc: 'Excellent capacity — fully resourced, trained and ready' }
   },
-
-  // ── PRIORITY (CORRECT HVC INDEX) ──────────
   priority: {
-
-    importance: {
-      1: { label: 'Very Low',  desc: 'Minimal impact on communities or municipal functions — limited consequence' },
-      2: { label: 'Low',       desc: 'Minor impacts — manageable within routine municipal operations' },
-      3: { label: 'Moderate',  desc: 'Noticeable impacts — requires planning and departmental coordination' },
-      4: { label: 'High',      desc: 'Significant impacts — affects critical services and vulnerable populations' },
-      5: { label: 'Very High', desc: 'Severe impacts — threatens lives, infrastructure, and municipal stability' }
-    },
-
-    urgency: {
-      1: { label: 'Very Low',  desc: 'No immediate action required — long-term monitoring sufficient' },
-      2: { label: 'Low',       desc: 'Action can be delayed — address in routine planning cycles' },
-      3: { label: 'Moderate',  desc: 'Timely intervention required — include in current planning cycle' },
-      4: { label: 'High',      desc: 'Near-term action required — prioritise within departmental plans' },
-      5: { label: 'Critical',  desc: 'Immediate action required — urgent intervention and response needed' }
-    },
-
-    growth: {
-      1: { label: 'Very Low',  desc: 'Risk unlikely to increase — stable or declining trend' },
-      2: { label: 'Low',       desc: 'Slow growth — minor increase over time' },
-      3: { label: 'Moderate',  desc: 'Gradual increase — risk expected to grow if unmanaged' },
-      4: { label: 'High',      desc: 'Rapid growth — risk escalating quickly due to conditions' },
-      5: { label: 'Very High', desc: 'Exponential growth — risk increasing rapidly and likely to worsen significantly' }
-    }
+    1: { label: 'Very Low',    desc: 'Minimal — not an immediate concern' },
+    2: { label: 'Low',         desc: 'Low priority — monitor but no urgent action' },
+    3: { label: 'Moderate',    desc: 'Moderate — plan for medium-term action' },
+    4: { label: 'High',        desc: 'High — requires near-term attention and resources' },
+    5: { label: 'Critical',    desc: 'Critical — immediate action required' }
   }
 };
 
@@ -191,6 +84,49 @@ const RISK_BAND  = (r) => r<=5?'Negligible':r<=10?'Low':r<=15?'Tolerable':r<=20?
 const BAND_CLS   = { 'Negligible':'c-n','Low':'c-l','Tolerable':'c-t','High':'c-h','Extremely High':'c-xh' };
 const PRIO_LEVEL = (p) => p<=2?'LOW':p<=3.5?'MEDIUM':'HIGH';
 const slug       = (s) => s.toLowerCase().replace(/[^a-z0-9]/g,'-');
+
+const FIELD_SUBTYPE_ALIASES = {
+  vulnerability: {
+    vp: ['political'],
+    ve: ['economic'],
+    vs: ['social'],
+    vt: ['technological'],
+    vn: ['environmental']
+  },
+  capacity: {
+    ci: ['institutional'],
+    cp: ['programme', 'program', 'technical'],
+    cq: ['public_participation', 'public-participation', 'participation', 'community'],
+    cf: ['financial'],
+    ch: ['people', 'human_resources'],
+    cs: ['support_networks', 'support-networks', 'infrastructure']
+  },
+  priority: {
+    pi: ['importance'],
+    pu: ['urgency'],
+    pg: ['growth']
+  }
+};
+
+function isScoreScale(obj) {
+  return !!(obj && typeof obj === 'object' && obj[1]?.label);
+}
+
+function descriptorScale(descGroup, fieldKey='') {
+  const group = DESCRIPTORS?.[descGroup];
+  if (!group) return null;
+  if (isScoreScale(group)) return group; // flat format
+
+  const suffix = String(fieldKey).split('_').pop();
+  const aliases = FIELD_SUBTYPE_ALIASES?.[descGroup]?.[suffix] || [];
+  for (const a of aliases) {
+    if (isScoreScale(group?.[a])) return group[a];
+  }
+
+  // Fallback: first score-like child (keeps UI functional even if key names differ)
+  const firstScale = Object.values(group).find(isScoreScale);
+  return firstScale || null;
+}
 
 // In-memory scores
 const _scores = {};
@@ -362,8 +298,7 @@ export async function initHVC(user) {
 async function renderHVCPage() {
   const page = document.getElementById('page-hvc');
   if (!page) return;
-
-  const { data: assessments } = await supabase
+    const { data: assessments } = await supabase
     .from('hvc_assessments')
     .select('id,label,season,year,hazard_count,status,created_at')
     .eq('municipality_id', _muniId)
@@ -505,7 +440,7 @@ function renderAssessmentList(assessments) {
             <span class="badge ${a.status==='complete'?'b-green':'b-amber'}">${(a.status||'draft').toUpperCase()}</span>
             <button class="btn btn-sm" data-open="${a.id}">View</button>
             <button class="btn btn-sm btn-green" data-edit="${a.id}">Edit</button>
-                        <button class="btn btn-sm" data-download="${a.id}" data-label="${a.label||a.season+' '+a.year}">↓ Download</button>
+            <button class="btn btn-sm" data-download="${a.id}" data-label="${a.label||a.season+' '+a.year}">↓ Download</button>
             <button class="btn btn-sm btn-red" data-delete="${a.id}" data-label="${a.label||a.season+' '+a.year}">Delete</button>
           </div>
         </div>
@@ -627,7 +562,8 @@ function renderHazardRow(hazard, cat, isCustom=false) {
   const id = slug(hazard);
 
   const makeSelect = (key, descGroup, extraStyle='') => {
-    const opts = Object.entries(DESCRIPTORS[descGroup]||{}).map(([v,d]) =>
+    const scale = descriptorScale(descGroup, key) || {};
+    const opts = Object.entries(scale).map(([v,d]) =>
       `<option value="${v}">${v} — ${d.label}</option>`
     ).join('');
     return `
@@ -661,8 +597,7 @@ function renderHazardRow(hazard, cat, isCustom=false) {
 
       <!-- Collapsed state -->
       <div id="hbody-${id}" style="display:none">
-
-        <!-- A. Hazard Analysis -->
+              <!-- A. Hazard Analysis -->
         <div style="padding:10px 14px;border-bottom:1px solid var(--border)">
           <div style="font-size:9px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--blue);margin-bottom:10px">A. HAZARD ANALYSIS</div>
 
@@ -808,9 +743,10 @@ window.hvcScoreChanged = function(sel) {
   const fieldKey = key.replace(id + '_', '');
   const hintId   = `hint-${id}-${id}_${fieldKey}`;
   const hint     = document.getElementById(hintId);
+  const scale    = descriptorScale(descGrp, key);
 
-  if (hint && val && DESCRIPTORS[descGrp]?.[val]) {
-    hint.textContent = DESCRIPTORS[descGrp][val].desc;
+  if (hint && val && scale?.[val]) {
+    hint.textContent = scale[val].desc;
     hint.style.display = 'block';
     hint.style.color = 'var(--text2)';
   } else if (hint) {
@@ -905,21 +841,32 @@ function showReferenceModal() {
         <button class="btn btn-sm" onclick="document.getElementById('hvc-ref-modal').remove()">✕ Close</button>
       </div>
       <div style="padding:20px">
-              ${renderRefTable('HAZARD ANALYSIS', 'var(--blue)', [
-          ['Affected Area', Object.entries(DESCRIPTORS.affected_area).map(([v,d])=>`${v} — ${d.label}: ${d.desc}`)],
-          ['Probability',   Object.entries(DESCRIPTORS.probability).map(([v,d])=>`${v} — ${d.label}: ${d.desc}`)],
-          ['Frequency',     Object.entries(DESCRIPTORS.frequency).map(([v,d])=>`${v} — ${d.label}: ${d.desc}`)],
-          ['Predictability',Object.entries(DESCRIPTORS.predictability).map(([v,d])=>`${v} — ${d.label}: ${d.desc}`)]
+        ${renderRefTable('HAZARD ANALYSIS', 'var(--blue)', [
+          ['Affected Area', descriptorItems('affected_area')],
+          ['Probability',   descriptorItems('probability')],
+          ['Frequency',     descriptorItems('frequency')],
+          ['Predictability',descriptorItems('predictability')]
         ])}
-        ${renderRefTable('VULNERABILITY (PESTE)', 'var(--amber)',
-          [['Political / Economic / Social / Technological / Environmental', Object.entries(DESCRIPTORS.vulnerability).map(([v,d])=>`${v} — ${d.label}: ${d.desc}`)]]
-        )}
-        ${renderRefTable('CAPACITY ASSESSMENT', 'var(--green)',
-          [['Institutional / Programme / Public Participation / Financial / People / Support Networks', Object.entries(DESCRIPTORS.capacity).map(([v,d])=>`${v} — ${d.label}: ${d.desc}`)]]
-        )}
-        ${renderRefTable('PRIORITY INDEX', 'var(--purple)',
-          [['Importance / Urgency / Growth', Object.entries(DESCRIPTORS.priority).map(([v,d])=>`${v} — ${d.label}: ${d.desc}`)]]
-        )}
+        ${renderRefTable('VULNERABILITY (PESTE)', 'var(--amber)', [
+          ['Political', descriptorItems('vulnerability', 'vp')],
+          ['Economic', descriptorItems('vulnerability', 've')],
+          ['Social', descriptorItems('vulnerability', 'vs')],
+          ['Technological', descriptorItems('vulnerability', 'vt')],
+          ['Environmental', descriptorItems('vulnerability', 'vn')]
+        ])}
+        ${renderRefTable('CAPACITY ASSESSMENT', 'var(--green)', [
+          ['Institutional', descriptorItems('capacity', 'ci')],
+          ['Programme', descriptorItems('capacity', 'cp')],
+          ['Public Participation', descriptorItems('capacity', 'cq')],
+          ['Financial', descriptorItems('capacity', 'cf')],
+          ['People', descriptorItems('capacity', 'ch')],
+          ['Support Networks', descriptorItems('capacity', 'cs')]
+        ])}
+        ${renderRefTable('PRIORITY INDEX', 'var(--purple)', [
+          ['Importance', descriptorItems('priority', 'pi')],
+          ['Urgency', descriptorItems('priority', 'pu')],
+          ['Growth', descriptorItems('priority', 'pg')]
+        ])}
         <div class="panel" style="margin-top:16px">
           <div class="ph"><div class="ph-title">Risk Band Definitions</div></div>
           <div class="pb">
@@ -949,7 +896,7 @@ function showReferenceModal() {
 function renderRefTable(title, colour, rows) {
   return `<div class="panel" style="margin-bottom:16px">
     <div class="ph"><div class="ph-title" style="color:${colour}">${title}</div></div>
-    <div class="pb">
+        <div class="pb">
       ${rows.map(([label, items]) => `
         <div style="margin-bottom:12px">
           <div style="font-size:11px;font-weight:700;color:var(--text2);margin-bottom:6px">${label}</div>
@@ -957,6 +904,11 @@ function renderRefTable(title, colour, rows) {
         </div>`).join('')}
     </div>
   </div>`;
+}
+
+function descriptorItems(descGroup, fieldKey='') {
+  const scale = descriptorScale(descGroup, fieldKey) || {};
+  return Object.entries(scale).map(([v, d]) => `${v} — ${d.label}: ${d.desc}`);
 }
 
 // ── BIND FORM EVENTS ──────────────────────────────────────
@@ -1244,7 +1196,7 @@ async function openAssessment(id) {
                 <td style="padding:6px 8px;font-family:monospace">${s.priority_index?.toFixed(2)||'—'}</td>
                 <td style="padding:6px 8px"><span class="badge ${s.priority_level==='HIGH'?'b-red':s.priority_level==='MEDIUM'?'b-amber':'b-gray'}">${s.priority_level||'—'}</span></td>
                 <td style="padding:6px 8px;font-size:11px;color:var(--text3)">${Array.isArray(s.affected_wards)&&s.affected_wards.length?'Wards: '+s.affected_wards.join(', '):'—'}</td>
-              </tr>`).join('')}
+                              </tr>`).join('')}
           </tbody>
         </table>
       </div>
@@ -1305,7 +1257,7 @@ async function editAssessment(id) {
   _hvcWardSelections = {};
   _hvcPickerInited.clear();
   const content = document.getElementById('hvc-content');
-    if (!content) return;
+  if (!content) return;
 
   content.innerHTML = `<div style="padding:22px">
     <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap">
@@ -1544,7 +1496,7 @@ async function exportAssessmentPDF(id, label) {
       <td style="padding:6px 8px;text-align:center">
         <span style="background:${BAND_COL_HEX[s.risk_band]||'#6e7681'}22;border:1px solid ${BAND_COL_HEX[s.risk_band]||'#6e7681'}55;
           color:${BAND_COL_HEX[s.risk_band]||'#6e7681'};padding:2px 6px;border-radius:3px;font-size:10px;font-weight:700">
-          ${(s.risk_band||'—').toUpperCase()}
+                    ${(s.risk_band||'—').toUpperCase()}
         </span>
       </td>
       <td style="padding:6px 8px;text-align:center">${s.priority_index?.toFixed(2)||'—'}</td>
