@@ -398,7 +398,7 @@ function renderAssessmentList(assessments) {
             <span class="badge ${a.status==='complete'?'b-green':'b-amber'}">${(a.status||'draft').toUpperCase()}</span>
             <button class="btn btn-sm" data-open="${a.id}">View</button>
             <button class="btn btn-sm btn-green" data-edit="${a.id}">Edit</button>
-            <button class="btn btn-sm" data-download="${a.id}" data-label="${a.label||a.season+' '+a.year}">↓ Download</button>
+                        <button class="btn btn-sm" data-download="${a.id}" data-label="${a.label||a.season+' '+a.year}">↓ Download</button>
             <button class="btn btn-sm btn-red" data-delete="${a.id}" data-label="${a.label||a.season+' '+a.year}">Delete</button>
           </div>
         </div>
@@ -532,25 +532,6 @@ function renderHazardRow(hazard, cat, isCustom=false) {
       </select>
       <div class="hvc-hint" id="hint-${id}-${key}" style="font-size:10px;color:var(--text3);margin-top:3px;min-height:14px;line-height:1.4;display:none"></div>`;
   };
-
-  // Build ward options — use DB wards if available, else generate from municipality ward_count
-  let wardOpts = '';
-  if (_wards.length) {
-    wardOpts = _wards.map(w =>
-      `<option value="${w.ward_number}">Ward ${w.ward_number}${w.area_name ? ' — ' + w.area_name : ''}</option>`
-    ).join('');
-  } else {
-    // Fall back to generating ward numbers from municipality ward_count
-    const wardCount = _user?.municipalities?.ward_count || 0;
-    if (wardCount > 0) {
-      wardOpts = Array.from({ length: wardCount }, (_, i) =>
-        `<option value="${i + 1}">Ward ${i + 1}</option>`
-      ).join('');
-    } else {
-      // Last resort — allow free text entry instead of a select
-      wardOpts = null;
-    }
-  }
 
   return `
     <div class="panel" style="margin-bottom:8px" id="hrow-${id}">
@@ -716,7 +697,6 @@ window.hvcScoreChanged = function(sel) {
   const val     = sel.value;
 
   // Show hint text
-  const shortKey = key.split('_').pop();
   // Use the field name portion after hazard slug
   const fieldKey = key.replace(id + '_', '');
   const hintId   = `hint-${id}-${id}_${fieldKey}`;
@@ -818,7 +798,7 @@ function showReferenceModal() {
         <button class="btn btn-sm" onclick="document.getElementById('hvc-ref-modal').remove()">✕ Close</button>
       </div>
       <div style="padding:20px">
-        ${renderRefTable('HAZARD ANALYSIS', 'var(--blue)', [
+              ${renderRefTable('HAZARD ANALYSIS', 'var(--blue)', [
           ['Affected Area', Object.entries(DESCRIPTORS.affected_area).map(([v,d])=>`${v} — ${d.label}: ${d.desc}`)],
           ['Probability',   Object.entries(DESCRIPTORS.probability).map(([v,d])=>`${v} — ${d.label}: ${d.desc}`)],
           ['Frequency',     Object.entries(DESCRIPTORS.frequency).map(([v,d])=>`${v} — ${d.label}: ${d.desc}`)],
@@ -873,7 +853,7 @@ function renderRefTable(title, colour, rows) {
 }
 
 // ── BIND FORM EVENTS ──────────────────────────────────────
-function bindFormEvents() {
+function bindFormEvents(saveHandler = saveAssessment) {
   // Auto-save when header fields change
   ['a-label','a-season','a-year','a-lead'].forEach(id => {
     document.getElementById(id)?.addEventListener('input', scheduleAutoSave);
@@ -918,7 +898,8 @@ function bindFormEvents() {
   });
 
   // Save
-  document.getElementById('save-hvc-btn')?.addEventListener('click', saveAssessment);
+  const saveBtn = document.getElementById('save-hvc-btn');
+  if (saveBtn) saveBtn.onclick = saveHandler;
 }
 
 // ── AUTO-SAVE ─────────────────────────────────────────────
@@ -1051,9 +1032,6 @@ _editingAssessmentId = null;
     _draftId = null;
   _editingAssessmentId = null;
   clearTimeout(_autoSaveTimer);
-
-  showToast('✓ Assessment updated successfully!');
-  setTimeout(() => renderHVCPage(), 1200);
 
   try {
     await supabase.rpc('update_ward_dominant_risk', { p_municipality_id: _muniId });
@@ -1220,7 +1198,7 @@ async function editAssessment(id) {
   _hvcWardSelections = {};
   _hvcPickerInited.clear();
   const content = document.getElementById('hvc-content');
-  if (!content) return;
+    if (!content) return;
 
   content.innerHTML = `<div style="padding:22px">
     <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap">
@@ -1294,14 +1272,9 @@ async function editAssessment(id) {
     if (notes && s.notes)         notes.value = s.notes;
   });
 
-  bindFormEvents();
-
-  // Override save button to UPDATE instead of INSERT
+  bindFormEvents(() => saveEditedAssessment(id, assessment));
   const saveBtn = document.getElementById('save-hvc-btn');
-  if (saveBtn) {
-    saveBtn.textContent = 'Save changes';
-    saveBtn.onclick = () => saveEditedAssessment(id, assessment);
-  }
+  if (saveBtn) saveBtn.textContent = 'Save changes';
 
   document.getElementById('hvc-edit-back')?.addEventListener('click', renderHVCPage);
 }
