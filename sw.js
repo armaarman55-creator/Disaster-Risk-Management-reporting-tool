@@ -1,11 +1,11 @@
-const CACHE = 'drmsa-v1';
+const CACHE = 'drmsa-v2';
 const SHELL = [
   '/', '/index.html',
   '/manifest.json',
   '/css/main.css', '/css/auth.css', '/css/dashboard.css',
   '/css/community.css', '/css/sitrep.css', '/css/mopup.css',
   '/css/share.css', '/css/onboarding.css',
-  '/js/app.js', '/js/supabase.js', '/js/auth.js', '/js/onboarding.js',
+  '/js/app.js', '/js/supabase.js', '/js/auth.js',
   '/js/dashboard.js', '/js/hvc.js', '/js/community.js', '/js/routes.js',
   '/js/sitrep.js', '/js/mopup.js', '/js/stakeholders.js',
   '/js/share.js', '/js/svg-images.js', '/js/pwa.js',
