@@ -1,6 +1,13 @@
 // js/dashboard.js
 import { supabase } from './supabase.js';
-import { parseMarkerCoords, getWardAtLngLat } from './dashboard-map.js';
+import {
+  parseMarkerCoords,
+  getWardAtLngLat,
+  flattenCoords,
+  boundsFromCoords,
+  extendBounds,
+  zoomToWardOnMap
+} from './dashboard-map.js';
 import { buildProjectFeatures, projectOptionLabel } from './dashboard-projects.js';
 
 const RISK_COLOURS = {
@@ -371,7 +378,7 @@ async function ensureMapInitialized() {
     style: {
       version: 8,
       glyphs: 'https://cdn.jsdelivr.net/gh/openmaptiles/fonts/{fontstack}/{range}.pbf',
-      sources: {
+            sources: {
         satellite: {
           type: 'raster',
           tiles: ['https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
@@ -526,48 +533,20 @@ async function renderWardLayers(featureCollection) {
   setMapMode(_mapMode);
 }
 
-function flattenCoords(geometry) {
-  if (!geometry) return [];
-  if (geometry.type === 'Polygon') return geometry.coordinates.flat();
-  if (geometry.type === 'MultiPolygon') return geometry.coordinates.flat(2);
-  return [];
-}
-
-function boundsFromCoords(coords) {
-  const lons = coords.map(c => c[0]);
-  const lats = coords.map(c => c[1]);
-  return {
-    minX: Math.min(...lons),
-    minY: Math.min(...lats),
-    maxX: Math.max(...lons),
-    maxY: Math.max(...lats)
-  };
-}
-
-function extendBounds(a, b) {
-  return {
-    minX: Math.min(a.minX, b.minX),
-    minY: Math.min(a.minY, b.minY),
-    maxX: Math.max(a.maxX, b.maxX),
-    maxY: Math.max(a.maxY, b.maxY)
-  };
-}
-
 function zoomToWard(wardNum) {
   const target = parseInt(wardNum, 10);
   if (!Number.isFinite(target)) {
     notify('Enter a valid ward number.', true);
     return;
   }
-  const entry = _wardFeatureIndex[target];
-  if (!entry || !_map) {
-    notify('Ward ' + target + ' not found on map', true);
+  if (!_map) {
+    notify('Map is not ready yet.', true);
     return;
   }
-  _map.fitBounds([[entry.bbox.minX, entry.bbox.minY], [entry.bbox.maxX, entry.bbox.maxY]], {
-    padding: 70,
-    maxZoom: 13
-  });
+  const didZoom = zoomToWardOnMap(_map, target, _wardFeatureIndex, _wardFeatures, { padding: 70, maxZoom: 13 });
+  if (!didZoom) {
+    notify('Ward ' + target + ' not found on map', true);
+  }
 }
 
 function bindMapControls() {
@@ -682,6 +661,27 @@ function pickAreaNameLabel(props = {}) {
   return '';
 }
 
+function pickOsmPlaceName(tags = {}) {
+  const candidates = [
+    'name',
+    'name:en',
+    'official_name',
+    'short_name',
+    'int_name',
+    'loc_name',
+    'alt_name',
+    'place_name',
+    'addr:suburb',
+    'addr:city',
+    'is_in'
+  ];
+  for (const key of candidates) {
+    const value = tags?.[key];
+    if (value && String(value).trim()) return String(value).trim();
+  }
+  return '';
+}
+
 async function renderBackgroundPlaceNames() {
   if (!_map || !_mapBounds) return;
   if ((_map.getZoom?.() || 0) < 8) return;
@@ -758,7 +758,7 @@ async function renderBackgroundPlaceNames() {
           throw new Error(`HTTP ${r.status}`);
         }
         res = r;
-        break;
+                break;
       } catch (e) {
         if (String(e?.name || '').toLowerCase() === 'aborterror') {
           lastErr = new Error('Request timeout');
@@ -770,7 +770,7 @@ async function renderBackgroundPlaceNames() {
     if (!res) throw new Error(lastErr?.message || 'All Overpass endpoints failed');
     const data = await res.json();
     const features = (data.elements || []).map(el => {
-      const name = el.tags?.name || el.tags?.['name:en'];
+      const name = pickOsmPlaceName(el.tags || {});
       const lat = typeof el.lat === 'number' ? el.lat : (typeof el.center?.lat === 'number' ? el.center.lat : null);
       const lon = typeof el.lon === 'number' ? el.lon : (typeof el.center?.lon === 'number' ? el.center.lon : null);
       if (!name || typeof lat !== 'number' || typeof lon !== 'number') return null;
@@ -785,7 +785,11 @@ async function renderBackgroundPlaceNames() {
       };
     }).filter(Boolean);
 
-    if (!features.length) return;
+    if (!features.length) {
+      if (_map.getLayer('osm-place-label')) _map.removeLayer('osm-place-label');
+      if (_map.getSource('osm-place-source')) _map.removeSource('osm-place-source');
+      return;
+    }
 
     if (_map.getLayer('osm-place-label')) _map.removeLayer('osm-place-label');
     if (_map.getSource('osm-place-source')) _map.removeSource('osm-place-source');
@@ -1134,7 +1138,7 @@ async function renderSheltersOnMap() {
   const { data: shelters } = await supabase
     .from('shelters')
     .select('name,ward_number,status,current_occupancy,capacity,gps_lat,gps_lng')
-    .eq('municipality_id', _muniId);
+      .eq('municipality_id', _muniId);
 
   const features = (shelters || []).map((s, idx) => {
     const entry = _wardFeatureIndex[parseInt(s.ward_number)];
@@ -1312,9 +1316,12 @@ function initDashboardEvents() {
       mapDd.querySelectorAll('[data-ward]').forEach(item => {
         const handlePick = e => {
           e.preventDefault();
+          e.stopPropagation();
           selectWard(item.dataset.ward);
         };
         item.addEventListener('pointerdown', handlePick);
+        item.addEventListener('mousedown', handlePick);
+        item.addEventListener('click', handlePick);
       });
     });
     mapSearch.addEventListener('blur', () => {
