@@ -312,8 +312,7 @@ async function renderWardMap(neutralMode = false) {
 
   await ensureMapInitialized();
   await renderWardLayers(featureCollection);
-  await renderBackgroundPlaceNames();
-  updateMapLegend();
+  updateMapLegend(); // place names load on demand via moveend once user zooms in
   if (_mapMode === 'shelters') {
     await renderSheltersOnMap();
   } else if (_mapMode === 'projects') {
@@ -396,7 +395,15 @@ async function ensureMapInitialized() {
   _map.on('moveend', () => {
     if (_osmPlacesDebounceTimer) clearTimeout(_osmPlacesDebounceTimer);
     _osmPlacesDebounceTimer = setTimeout(() => {
-      renderBackgroundPlaceNames();
+      const z = _map.getZoom?.() || 0;
+      if (z < 10) {
+        // Zoomed out — clear place names so they don't linger from a previous zoom
+        if (_map.getLayer('osm-place-label')) _map.removeLayer('osm-place-label');
+        if (_map.getSource('osm-place-source')) _map.removeSource('osm-place-source');
+        _osmPlacesCacheKey = '';
+      } else {
+        renderBackgroundPlaceNames();
+      }
     }, 700);
   });
 }
@@ -655,7 +662,9 @@ function pickOsmPlaceName(tags = {}) {
 
 async function renderBackgroundPlaceNames() {
   if (!_map || !_mapBounds) return;
-  if ((_map.getZoom?.() || 0) < 8) return;
+  const zoom = _map.getZoom?.() || 0;
+  // Only fetch once user has zoomed in enough — avoids clutter on load and overview zoom
+  if (zoom < 10) return;
   if (Date.now() < _osmPlacesFailureBackoffUntil) return;
   if (_osmPlacesInFlight) return;
   const now = Date.now();
@@ -685,10 +694,12 @@ async function renderBackgroundPlaceNames() {
   _osmPlacesCacheKey = cacheKey;
   _osmPlacesInFlight = true;
   _osmPlacesLastFetchAt = now;
-  const zoom = _map.getZoom?.() || 8;
-  const placeTypes = zoom >= 10
-    ? 'city|town|suburb|neighbourhood|village|hamlet'
-    : 'city|town|suburb|village';
+  // Graduated place types — fewer labels at lower zoom, more detail as user zooms in
+  const placeTypes = zoom >= 13
+    ? 'suburb|neighbourhood|village|hamlet'
+    : zoom >= 11
+      ? 'town|suburb|village'
+      : 'city|town';
 
   const query = `
     [out:json][timeout:25];
@@ -772,12 +783,11 @@ async function renderBackgroundPlaceNames() {
       id: 'osm-place-label',
       type: 'symbol',
       source: 'osm-place-source',
-      minzoom: 8,
+      minzoom: 10,
       layout: {
         'text-field': ['get', 'name'],
         'text-font': ['Noto Sans Regular'],
-        'text-allow-overlap': true,
-        'text-ignore-placement': true,
+        'text-max-width': 8,
         'text-size': [
           'match', ['get', 'place'],
           'city', 13,
@@ -786,12 +796,19 @@ async function renderBackgroundPlaceNames() {
           'village', 11,
           'neighbourhood', 10,
           10
-        ]
+        ],
+        'text-padding': 6,
+        'symbol-spacing': 250
       },
       paint: {
         'text-color': '#dbe7ff',
         'text-halo-color': '#111827',
-        'text-halo-width': 1
+        'text-halo-width': 1,
+        'text-opacity': [
+          'interpolate', ['linear'], ['zoom'],
+          10, 0,
+          10.5, 1
+        ]
       }
     });
     _osmPlacesFailureBackoffUntil = 0;
