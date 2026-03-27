@@ -394,7 +394,11 @@ async function ensureMapInitialized() {
   bindMapControls();
   _map.on('moveend', () => {
     if (_osmPlacesDebounceTimer) clearTimeout(_osmPlacesDebounceTimer);
+    // Use a longer debounce so fitBounds animations complete before we act.
+    // This prevents the OSM source being torn down mid-camera-animation,
+    // which was silently aborting zoomToWard fitBounds calls.
     _osmPlacesDebounceTimer = setTimeout(() => {
+      if (_map.isMoving?.() || _map.isZooming?.()) return;
       const z = _map.getZoom?.() || 0;
       if (z < 10) {
         // Zoomed out — clear place names so they don't linger from a previous zoom
@@ -404,7 +408,7 @@ async function ensureMapInitialized() {
       } else {
         renderBackgroundPlaceNames();
       }
-    }, 700);
+    }, 900);
   });
 }
 
@@ -1278,10 +1282,20 @@ function initDashboardEvents() {
       mapSearch.value = '';
       mapDd.style.display = 'none';
     };
+
+    // Single delegated handler on the dropdown container — survives list rebuilds on every keystroke
+    mapDd.addEventListener('pointerdown', e => {
+      const item = e.target.closest('[data-ward]');
+      if (!item) return;
+      e.preventDefault();
+      e.stopPropagation();
+      selectWard(item.dataset.ward);
+    });
+
     mapSearch.addEventListener('input', () => {
       const q = mapSearch.value.trim().toLowerCase();
       if (!q) { mapDd.style.display = 'none'; return; }
-            const nums = Object.keys(_wardFeatureIndex).map(Number).sort((a, b) => a - b);
+      const nums = Object.keys(_wardFeatureIndex).map(Number).sort((a, b) => a - b);
       if (!nums.length) {
         mapDd.innerHTML = '<div style="padding:8px 12px;font-size:11px;color:var(--text3)">Map not loaded yet — complete an HVC assessment first</div>';
         mapDd.style.display = 'block';
@@ -1294,28 +1308,18 @@ function initDashboardEvents() {
         return (`ward ${wardStr}`).includes(q) || wardStr.includes(q);
       }).slice(0, 50);
       if (!matches.length) { mapDd.style.display = 'none'; return; }
-      mapDd.innerHTML = matches.map(item =>
-        `<div data-ward="${item}"
+      mapDd.innerHTML = matches.map(w =>
+        `<div data-ward="${w}"
           style="padding:6px 10px;cursor:pointer;border-bottom:1px solid var(--border);font-size:11px;transition:background .1s"
           onmouseenter="this.style.background='var(--bg3)'"
-          onmouseleave="this.style.background=''">Ward ${item}</div>`
+          onmouseleave="this.style.background=''">Ward ${w}</div>`
       ).join('');
       mapDd.style.display = 'block';
       mapDd.style.maxHeight = '220px';
       mapDd.style.overflowY = 'auto';
-      mapDd.querySelectorAll('[data-ward]').forEach(item => {
-        const handlePick = e => {
-          e.preventDefault();
-          e.stopPropagation();
-          selectWard(item.dataset.ward);
-        };
-        item.addEventListener('pointerdown', handlePick);
-        item.addEventListener('mousedown', handlePick);
-        item.addEventListener('click', handlePick);
-      });
     });
     mapSearch.addEventListener('blur', () => {
-      setTimeout(() => { mapDd.style.display = 'none'; }, 150);
+      setTimeout(() => { mapDd.style.display = 'none'; }, 200);
     });
     mapSearch.addEventListener('keydown', e => {
       if (e.key !== 'Enter') return;
