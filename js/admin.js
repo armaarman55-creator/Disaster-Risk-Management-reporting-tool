@@ -59,6 +59,19 @@ async function renderAdmin(page) {
             <div class="ph"><div class="ph-title">Municipality settings</div></div>
             <div class="pb" id="muni-settings">Loading…</div>
           </div>
+          <div class="panel">
+            <div class="ph"><div class="ph-title">Feedback</div><div class="ph-sub">Send platform feedback to support</div></div>
+            <div class="pb" id="feedback-settings">
+              <div class="fl"><span class="fl-label">Your name</span><input class="fl-input" id="fb-name" placeholder="Full name"/></div>
+              <div class="fl"><span class="fl-label">Your email</span><input class="fl-input" id="fb-email" type="email" placeholder="you@municipality.gov.za"/></div>
+              <div class="fl"><span class="fl-label">Subject</span><input class="fl-input" id="fb-subject" placeholder="Short feedback title"/></div>
+              <div class="fl"><span class="fl-label">Message</span><textarea class="fl-input" id="fb-message" rows="5" placeholder="Describe your feedback, suggestion, or issue..."></textarea></div>
+              <div style="display:flex;gap:8px;align-items:center">
+                <button class="btn btn-green btn-sm" id="send-feedback-btn">Send feedback</button>
+                <span id="fb-hint" style="font-size:11px;color:var(--text3)">Opens your email app with feedback pre-filled.</span>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -91,7 +104,44 @@ async function renderAdmin(page) {
     }
   });
   loadApiSettings();
+  bindFeedbackForm();
   document.getElementById('invite-btn')?.addEventListener('click', showInviteForm);
+}
+
+function bindFeedbackForm() {
+  const nameEl = document.getElementById('fb-name');
+  const emailEl = document.getElementById('fb-email');
+  const subjectEl = document.getElementById('fb-subject');
+  const messageEl = document.getElementById('fb-message');
+  const sendBtn = document.getElementById('send-feedback-btn');
+  if (!nameEl || !emailEl || !subjectEl || !messageEl || !sendBtn) return;
+
+  nameEl.value = _user?.full_name || '';
+  emailEl.value = _user?.email || '';
+
+  sendBtn.addEventListener('click', async () => {
+    const name = nameEl.value.trim();
+    const email = emailEl.value.trim();
+    const subject = subjectEl.value.trim();
+    const message = messageEl.value.trim();
+
+    if (!name || !email || !subject || !message) {
+      showToast('Please complete all feedback fields.', true);
+      return;
+    }
+
+    const municipality = _user?.municipalities?.name || 'Not provided';
+    const mailtoSubject = encodeURIComponent(`[DRMSA Feedback] ${subject}`);
+    const mailtoBody = encodeURIComponent(
+      `Name: ${name}\n` +
+      `Email: ${email}\n` +
+      `Municipality: ${municipality}\n\n` +
+      `${message}`
+    );
+
+    window.location.href = `mailto:support@getdiswayne.com?subject=${mailtoSubject}&body=${mailtoBody}`;
+    showToast('✓ Feedback email drafted in your email app.');
+  });
 }
 
 async function loadUsers() {
