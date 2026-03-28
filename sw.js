@@ -1,4 +1,4 @@
-const CACHE = 'drmsa-v3';
+const CACHE = 'drmsa-v5';
 const SHELL = [
   '/', '/index.html',
   '/manifest.json',
