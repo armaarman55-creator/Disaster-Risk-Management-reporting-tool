@@ -1,7 +1,7 @@
 // js/dashboard.js
-import { supabase } from './supabase.js';
 import {
   parseMarkerCoords,
+  parseMarkerCoordsList,
   getWardAtLngLat,
   flattenCoords,
   boundsFromCoords,
@@ -1412,6 +1412,7 @@ function showProjectTooltip(p, clickX, clickY) {
       ${p.cost_estimate ? `<div><strong style="color:var(--text2)">Cost:</strong> ${p.cost_estimate}</div>` : ''}
       ${p.description ? `<div style="margin-top:6px">${p.description}</div>` : ''}
       <div style="margin-top:6px;color:${linked ? '#e6edf3' : '#58a6ff'}">${linked ? '🔗 IDP linked project' : '📍 Manual project marker'}</div>
+      ${p.mitigation_id ? `<button id="wtt-remove-marker" style="margin-top:10px;width:100%;padding:8px 10px;border:1px solid #f85149;background:#f8514922;color:#f85149;border-radius:6px;cursor:pointer;font-size:11px;font-weight:700">Remove this marker</button>` : ''}
     </div>`;
   wrap.appendChild(tooltip);
   const wW = wrap.offsetWidth || 900;
@@ -1423,6 +1424,18 @@ function showProjectTooltip(p, clickX, clickY) {
   tooltip.style.left = `${x}px`;
   tooltip.style.top = `${y}px`;
   document.getElementById('wtt-close')?.addEventListener('click', e => { e.stopPropagation(); tooltip.remove(); });
+  document.getElementById('wtt-remove-marker')?.addEventListener('click', async e => {
+    e.stopPropagation();
+    const markerIdx = parseInt(p.marker_index, 10);
+    if (!p.mitigation_id || !Number.isFinite(markerIdx)) {
+      notify('Could not determine which marker to remove.', true);
+      return;
+    }
+    const okay = window.confirm(`Remove marker #${markerIdx} from "${p.base_name || p.name || 'project'}"?`);
+    if (!okay) return;
+    await removeProjectMarker(p.mitigation_id, markerIdx);
+    tooltip.remove();
+  });
 }
 
 async function startAddProjectMode() {
@@ -1484,7 +1497,7 @@ async function saveProjectMarkerAt(lngLat, wardNumFromClick, mitigationId) {
   }
   const { data: existingRow, error: existingErr } = await supabase
     .from('mitigations')
-    .select('specific_location')
+    .select('specific_location,affected_wards')
     .eq('id', projectId)
     .maybeSingle();
   if (existingErr) {
@@ -1496,8 +1509,11 @@ async function saveProjectMarkerAt(lngLat, wardNumFromClick, mitigationId) {
   const nextLocation = existingText
     ? `${existingText}\n${newEntry}`
     : newEntry;
+  const mergedCoords = parseMarkerCoordsList(nextLocation);
+  const wardNums = deriveWardNumbersFromCoords(mergedCoords);
+  if (!wardNums.length) wardNums.push(wardNum);
   const payload = {
-    affected_wards: [wardNum],
+    affected_wards: wardNums,
     specific_location: nextLocation
   };
   const { error } = await supabase.from('mitigations').update(payload).eq('id', projectId);
@@ -1506,6 +1522,61 @@ async function saveProjectMarkerAt(lngLat, wardNumFromClick, mitigationId) {
     return;
   }
   notify('Project marker saved and shared with your municipality team.');
+  await renderProjectsOnMap();
+}
+
+function deriveWardNumbersFromCoords(coordsList = []) {
+  const wards = new Set();
+  (coordsList || []).forEach(coords => {
+    const [lng, lat] = coords || [];
+    if (!Number.isFinite(lng) || !Number.isFinite(lat)) return;
+    const ward = getWardAtLngLat(_map, { lng, lat }, _wardFeatures);
+    if (Number.isFinite(ward)) wards.add(ward);
+  });
+  return [...wards];
+}
+
+async function removeProjectMarker(mitigationId, markerIndex) {
+  const projectId = String(mitigationId || '').trim();
+  const idx = parseInt(markerIndex, 10);
+  if (!projectId || !Number.isFinite(idx) || idx < 1) {
+    notify('Could not remove marker: invalid project or marker index.', true);
+    return;
+  }
+
+  const { data: row, error: readErr } = await supabase
+    .from('mitigations')
+    .select('specific_location')
+    .eq('id', projectId)
+    .maybeSingle();
+  if (readErr) {
+    notify(`Could not read marker list: ${readErr.message}`, true);
+    return;
+  }
+
+  const coords = parseMarkerCoordsList(row?.specific_location);
+  if (!coords.length || idx > coords.length) {
+    notify('Marker no longer exists or was already removed.', true);
+    return;
+  }
+
+  const remaining = coords.filter((_, i) => i !== (idx - 1));
+  const nextLocation = remaining.map(([lng, lat]) => `@map:${lat},${lng}`).join('\n');
+  const payload = {
+    specific_location: nextLocation || null,
+    affected_wards: deriveWardNumbersFromCoords(remaining)
+  };
+
+  const { error: updateErr } = await supabase
+    .from('mitigations')
+    .update(payload)
+    .eq('id', projectId);
+  if (updateErr) {
+    notify(`Could not remove marker: ${updateErr.message}`, true);
+    return;
+  }
+
+  notify('Project marker removed.');
   await renderProjectsOnMap();
 }
 
