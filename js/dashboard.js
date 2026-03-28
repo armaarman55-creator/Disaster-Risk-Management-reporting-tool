@@ -1,4 +1,5 @@
 // js/dashboard.js
+import { supabase } from './supabase.js';
 import {
   parseMarkerCoords,
   parseMarkerCoordsList,
@@ -52,6 +53,15 @@ let _selectedProjectForPlacement = null;
 let _wardFillVisible = true;
 let _trendSelectedIndex = 0;
 
+
+function getDbClient() {
+  const client = (typeof supabase !== 'undefined' && supabase) || window.supabase;
+  if (!client) {
+    throw new Error('Supabase client is not available. Reload the page to refresh cached assets.');
+  }
+  return client;
+}
+
 function notify(message, isError = false) {
   if (typeof window.showToast === 'function') {
     window.showToast(message, isError);
@@ -102,22 +112,23 @@ export async function initDashboard(user) {
 
 async function loadAssessmentData() {
   if (!_muniId) return;
+  const db = getDbClient();
 
   // Load latest assessment
-  const { data: assessments } = await supabase
+  const { data: assessments } = await db
     .from('hvc_assessments')
     .select('*')
     .eq('municipality_id', _muniId)
     .order('created_at', { ascending: false })
     .limit(5);
 
-  const { data: hazards } = await supabase
+  const { data: hazards } = await db
     .from('hvc_hazard_scores')
     .select('*')
     .eq('municipality_id', _muniId)
     .order('risk_rating', { ascending: false });
 
-  const { data: wards } = await supabase
+  const { data: wards } = await db
     .from('wards')
     .select('*')
     .eq('municipality_id', _muniId);
@@ -168,8 +179,9 @@ async function renderKPIs() {
 
   // Active shelters count
   if (_muniId) {
+    const db = getDbClient();
     try {
-      const { count: shelterCount } = await supabase
+      const { count: shelterCount } = await db
         .from('shelters')
         .select('id', { count: 'exact', head: true })
         .eq('municipality_id', _muniId)
@@ -179,7 +191,7 @@ async function renderKPIs() {
 
     // Funded mitigations count
     try {
-      const { count: idpCount } = await supabase
+      const { count: idpCount } = await db
         .from('mitigations')
         .select('id', { count: 'exact', head: true })
         .eq('municipality_id', _muniId)
@@ -206,7 +218,7 @@ function renderHazardTable() {
       <td class="hz-td hz-bar-w"><div class="hz-bar-bg"><div class="hz-bar-fg" style="width:${Math.round((h.risk_rating / 25) * 100)}%;background:${RISK_COLOURS[h.risk_band] || '#6e7681'}"></div></div></td>
       <td class="hz-td"><span class="hz-chip ${CHIP_CLASS[h.risk_band] || CHIP_CLASS[h.risk_band?.replace(/high$/i,'High')] || 'c-n'}">${CHIP_LABEL[h.risk_band] || CHIP_LABEL[h.risk_band?.replace(/high$/i,'High')] || (h.risk_band||'N/A').toUpperCase()}</span></td>
     </tr>`).join('');
-}
+  }
 
 function ratingToBand(r) {
   if (r == null) return null;
@@ -426,7 +438,7 @@ async function renderWardLayers(featureCollection) {
     const bbox = boundsFromCoords(coords);
     const centroid = { cx: (bbox.minX + bbox.maxX) / 2, cy: (bbox.minY + bbox.maxY) / 2 };
     _wardCentroids[wNum] = centroid;
-    _wardFeatureIndex[wNum] = { bbox, centroid, properties: f.properties };
+        _wardFeatureIndex[wNum] = { bbox, centroid, properties: f.properties };
     _mapBounds = _mapBounds ? extendBounds(_mapBounds, bbox) : { ...bbox };
   });
   window._drmsaWardCentroids = _wardCentroids;
@@ -539,8 +551,14 @@ function zoomToWard(wardNum) {
     notify('Map is not ready yet.', true);
     return;
   }
+  _map.resize();
   const didZoom = zoomToWardOnMap(_map, target, _wardFeatureIndex, _wardFeatures, { padding: 70, maxZoom: 13 });
   if (!didZoom) {
+    const fallbackPoint = resolveWardPoint(target);
+    if (fallbackPoint) {
+      _map.flyTo({ center: fallbackPoint, zoom: 12.5, duration: 700 });
+      return;
+    }
     notify('Ward ' + target + ' not found on map', true);
   }
 }
@@ -832,7 +850,8 @@ async function renderBackgroundPlaceNames() {
 async function renderProjectsOnMap({ switchMode = true } = {}) {
   if (!_map || !_muniId) return;
 
-  const { data: mits } = await supabase
+  const db = getDbClient();
+  const { data: mits } = await db
     .from('mitigations')
     .select('id,hazard_name,description,specific_location,affected_wards,idp_status,cost_estimate,responsible_owner,timeframe')
     .eq('municipality_id', _muniId)
@@ -859,7 +878,7 @@ async function renderProjectsOnMap({ switchMode = true } = {}) {
         'linked-awaiting', '#d29922',
         'proposed', '#58a6ff',
         'in-progress', '#d29922',
-        'completed', '#3fb950',
+                'completed', '#3fb950',
         '#58a6ff'
       ],
       'circle-stroke-width': 1.4,
@@ -1050,7 +1069,8 @@ function renderTrend(hazardIdx) {
 async function renderIDPSummary() {
   if (!_muniId) return;
   try {
-    const { data: mits } = await supabase
+    const db = getDbClient();
+    const { data: mits } = await db
       .from('mitigations')
       .select('idp_status')
       .eq('municipality_id', _muniId)
@@ -1078,7 +1098,7 @@ async function renderIDPSummary() {
       </div>
       <div style="font-size:12px;color:var(--text3);display:flex;align-items:center;gap:8px">
         <div style="flex:1;height:6px;background:var(--bg4);border-radius:3px;overflow:hidden">
-          <div style="width:${total?Math.round((funded/total)*100):0}%;height:6px;background:var(--green);border-radius:3px"></div>
+                  <div style="width:${total?Math.round((funded/total)*100):0}%;height:6px;background:var(--green);border-radius:3px"></div>
         </div>
         <span>${total ? Math.round((funded/total)*100) : 0}% funded</span>
       </div>
@@ -1092,12 +1112,13 @@ async function renderIDPSummary() {
 
 function initRealtimeRefresh() {
   if (!_muniId) return;
+  const db = getDbClient();
   // Unsubscribe any existing channel first
   if (window._dashboardChannel) {
-    supabase.removeChannel(window._dashboardChannel);
+    db.removeChannel(window._dashboardChannel);
   }
   // Subscribe to new HVC assessments for this municipality
-  window._dashboardChannel = supabase
+  window._dashboardChannel = db
     .channel('dashboard-refresh-' + _muniId)
     .on('postgres_changes', {
       event: '*',
@@ -1128,7 +1149,8 @@ function initRealtimeRefresh() {
 async function renderSheltersOnMap() {
   if (!_map || !_muniId) return;
 
-  const { data: shelters } = await supabase
+  const db = getDbClient();
+  const { data: shelters } = await db
     .from('shelters')
     .select('name,ward_number,status,current_occupancy,capacity,gps_lat,gps_lng')
       .eq('municipality_id', _muniId);
@@ -1283,18 +1305,20 @@ function initDashboardEvents() {
       mapDd.style.display = 'none';
     };
 
-    // Single delegated handler on the dropdown container — survives list rebuilds on every keystroke
-    mapDd.addEventListener('pointerdown', e => {
+    // Delegated handlers on the dropdown container — survive list rebuilds on every keystroke
+    const onWardResultSelect = e => {
       const item = e.target.closest('[data-ward]');
       if (!item) return;
       e.preventDefault();
       e.stopPropagation();
       selectWard(item.dataset.ward);
-    });
+    };
+    mapDd.addEventListener('pointerdown', onWardResultSelect);
+    mapDd.addEventListener('click', onWardResultSelect);
 
     mapSearch.addEventListener('input', () => {
       const q = mapSearch.value.trim().toLowerCase();
-      if (!q) { mapDd.style.display = 'none'; return; }
+            if (!q) { mapDd.style.display = 'none'; return; }
       const nums = Object.keys(_wardFeatureIndex).map(Number).sort((a, b) => a - b);
       if (!nums.length) {
         mapDd.innerHTML = '<div style="padding:8px 12px;font-size:11px;color:var(--text3)">Map not loaded yet — complete an HVC assessment first</div>';
@@ -1376,7 +1400,8 @@ function initDashboardEvents() {
 }
 
 async function selectAssessment(id) {
-  const { data } = await supabase.from('hvc_hazard_scores').select('*').eq('assessment_id', id).order('risk_rating', { ascending: false });
+  const db = getDbClient();
+  const { data } = await db.from('hvc_hazard_scores').select('*').eq('assessment_id', id).order('risk_rating', { ascending: false });
   if (data) { _assessmentData.hazards = data; renderHazardTable(); syncTrendSelector(); await renderWardMap(_mapMode !== 'hazard'); }
 }
 
@@ -1465,7 +1490,8 @@ async function populateProjectPlacementOptions() {
   const sel = document.getElementById('map-project-select');
   const placeBtn = document.getElementById('map-project-place');
   if (!sel) return;
-  const { data, error } = await supabase
+  const db = getDbClient();
+  const { data, error } = await db
     .from('mitigations')
     .select('id,hazard_name,idp_status,specific_location')
     .eq('municipality_id', _muniId)
@@ -1495,7 +1521,8 @@ async function saveProjectMarkerAt(lngLat, wardNumFromClick, mitigationId) {
     notify('Select a valid project and click inside a ward to place it.', true);
     return;
   }
-  const { data: existingRow, error: existingErr } = await supabase
+  const db = getDbClient();
+  const { data: existingRow, error: existingErr } = await db
     .from('mitigations')
     .select('specific_location,affected_wards')
     .eq('id', projectId)
@@ -1516,7 +1543,7 @@ async function saveProjectMarkerAt(lngLat, wardNumFromClick, mitigationId) {
     affected_wards: wardNums,
     specific_location: nextLocation
   };
-  const { error } = await supabase.from('mitigations').update(payload).eq('id', projectId);
+  const { error } = await db.from('mitigations').update(payload).eq('id', projectId);
   if (error) {
     notify(`Could not save marker to backend: ${error.message}`, true);
     return;
@@ -1544,7 +1571,8 @@ async function removeProjectMarker(mitigationId, markerIndex) {
     return;
   }
 
-  const { data: row, error: readErr } = await supabase
+  const db = getDbClient();
+  const { data: row, error: readErr } = await db
     .from('mitigations')
     .select('specific_location')
     .eq('id', projectId)
@@ -1567,7 +1595,7 @@ async function removeProjectMarker(mitigationId, markerIndex) {
     affected_wards: deriveWardNumbersFromCoords(remaining)
   };
 
-  const { error: updateErr } = await supabase
+  const { error: updateErr } = await db
     .from('mitigations')
     .update(payload)
     .eq('id', projectId);
