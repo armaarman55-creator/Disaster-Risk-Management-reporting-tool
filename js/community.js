@@ -212,7 +212,7 @@ function renderShelterCard(s) {
   const statusBadge = { open:'b-green','at-capacity':'b-red',closed:'b-gray',partial:'b-amber' };
 
   return `
-    <div class="rec-card" style="margin-bottom:12px" id="sc-${s.id}">
+    <div class="rec-card" style="margin-bottom:12px;overflow:visible;position:relative;z-index:2" id="sc-${s.id}">
       <div class="rec-head">
         <div class="rec-icon" style="background:var(--green-dim)">
           <svg viewBox="0 0 15 15" fill="none" stroke="var(--green)" stroke-width="1.5" stroke-linecap="round"><path d="M2 6l5.5-4 5.5 4v7H2z"/><rect x="5" y="9" width="3" height="4"/></svg>
@@ -513,7 +513,7 @@ function showReliefForm(existing) {
 
 function renderReliefCard(op) {
   return `
-    <div class="rec-card" style="margin-bottom:12px" id="ro-${op.id}">
+    <div class="rec-card" style="margin-bottom:12px;overflow:visible;position:relative;z-index:2">
       <div class="rec-head">
         <div class="rec-icon" style="background:var(--blue-dim)">
           <svg viewBox="0 0 15 15" fill="none" stroke="var(--blue)" stroke-width="1.5" stroke-linecap="round"><path d="M7.5 2v11M2 7.5h11"/></svg>
