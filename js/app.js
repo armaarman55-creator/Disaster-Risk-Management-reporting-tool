@@ -132,62 +132,56 @@ export function navigateTo(pageId, navItem) {
   loadPageModule(pageId);
 }
 
-// Cache-bust token — set once per full page load so all modules share the
-// same token within a session (no redundant re-fetches when switching pages),
-// but after sign-out → sign-in the token changes, forcing Chrome to discard
-// stale modules from its in-memory registry.
-const _v = Date.now();
-
 async function loadPageModule(pageId) {
   try {
     switch (pageId) {
       case 'dashboard': {
-        const m = await import(`./dashboard.js?v=${_v}`);
+        const m = await import('./dashboard.js');
         m.initDashboard(_user);
         break;
       }
       case 'community': {
-        const m = await import(`./community.js?v=${_v}`);
+        const m = await import('./community.js');
         m.initCommunity(_user);
         break;
       }
       case 'routes': {
-        const m = await import(`./routes.js?v=${_v}`);
+        const m = await import('./routes.js');
         m.initRoutes(_user);
         break;
       }
       case 'sitrep': {
-        const m = await import(`./sitrep.js?v=${_v}`);
+        const m = await import('./sitrep.js');
         m.initSitrep(_user);
         break;
       }
       case 'mopup': {
-        const m = await import(`./mopup.js?v=${_v}`);
+        const m = await import('./mopup.js');
         m.initMopup(_user);
         break;
       }
       case 'stakeholders': {
-        const m = await import(`./stakeholders.js?v=${_v}`);
+        const m = await import('./stakeholders.js');
         m.initStakeholders(_user);
         break;
       }
       case 'hvc': {
-        const m = await import(`./hvc.js?v=${_v}`);
+        const m = await import('./hvc.js');
         m.initHVC(_user);
         break;
       }
       case 'idp': {
-        const m = await import(`./idp.js?v=${_v}`);
+        const m = await import('./idp.js');
         m.initIDP(_user);
         break;
       }
       case 'admin': {
-        const m = await import(`./admin.js?v=${_v}`);
+        const m = await import('./admin.js');
         m.initAdmin(_user);
         break;
       }
       case 'profile': {
-        const m = await import(`./profile.js?v=${_v}`);
+        const m = await import('./profile.js');
         m.initProfile(_user);
         break;
       }
