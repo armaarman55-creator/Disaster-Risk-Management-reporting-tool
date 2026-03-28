@@ -1582,6 +1582,61 @@ async function exportAssessmentPDF(id, label) {
     'Tolerable':'#3fb950', 'Low':'#58a6ff', 'Negligible':'#6e7681'
   };
 
+  const PRIORITY_BG = { HIGH:'#f8514922', MEDIUM:'#d2992222', LOW:'#6e768122' };
+  const PRIORITY_BORDER = { HIGH:'#f85149', MEDIUM:'#d29922', LOW:'#6e7681' };
+
+  const subRows = scores.map((s, i) => `
+    <tr style="border-bottom:1px solid #eee;${i%2===0?'background:#f9f9f9':''}">
+      <td style="padding:5px 6px;font-weight:700;color:#1a3a6b">${i+1}</td>
+      <td style="padding:5px 6px;font-weight:600">${s.hazard_name||'—'}</td>
+      <td style="padding:5px 6px;text-align:center">${s.affected_area||'—'}</td>
+      <td style="padding:5px 6px;text-align:center">${s.probability||'—'}</td>
+      <td style="padding:5px 6px;text-align:center">${s.frequency||'—'}</td>
+      <td style="padding:5px 6px;text-align:center">${s.predictability||'—'}</td>
+      <td style="padding:5px 6px;text-align:center;font-weight:700;color:#1a3a6b">${s.hazard_score?.toFixed(2)||'—'}</td>
+      <td style="padding:5px 6px;text-align:center">${s.vp||'—'}</td>
+      <td style="padding:5px 6px;text-align:center">${s.ve||'—'}</td>
+      <td style="padding:5px 6px;text-align:center">${s.vs||'—'}</td>
+      <td style="padding:5px 6px;text-align:center">${s.vt||'—'}</td>
+      <td style="padding:5px 6px;text-align:center">${s.vn||'—'}</td>
+      <td style="padding:5px 6px;text-align:center;font-weight:700;color:#d29922">${s.vulnerability_score?.toFixed(2)||'—'}</td>
+      <td style="padding:5px 6px;text-align:center">${s.ci||'—'}</td>
+      <td style="padding:5px 6px;text-align:center">${s.cp||'—'}</td>
+      <td style="padding:5px 6px;text-align:center">${s.cq||'—'}</td>
+      <td style="padding:5px 6px;text-align:center">${s.cf||'—'}</td>
+      <td style="padding:5px 6px;text-align:center">${s.ch||'—'}</td>
+      <td style="padding:5px 6px;text-align:center">${s.cs||'—'}</td>
+      <td style="padding:5px 6px;text-align:center;font-weight:700;color:#3fb950">${s.capacity_score?.toFixed(2)||'—'}</td>
+      <td style="padding:5px 6px;text-align:center;font-weight:700">${s.resilience_index?.toFixed(3)||'—'}</td>
+    </tr>`).join('');
+
+  const priorityRows = scores.map((s, i) => {
+    const pb = PRIORITY_BG[s.priority_level] || '#6e768122';
+    const pc = PRIORITY_BORDER[s.priority_level] || '#6e7681';
+    const bc = BAND_COL_HEX[s.risk_band] || '#6e7681';
+    const wardsText = Array.isArray(s.affected_wards) && s.affected_wards.length
+      ? s.affected_wards.map(w => 'W'+w).join(', ')
+      : '—';
+    const owners = [s.primary_owner_name, s.secondary_owner_name, s.tertiary_owner_name].filter(Boolean).join(', ') || '—';
+    return \`
+    <tr style="border-bottom:1px solid #eee;\${i%2===0?'background:#f9f9f9':''}">
+      <td style="padding:5px 6px;font-weight:700;color:#1a3a6b">\${i+1}</td>
+      <td style="padding:5px 6px;font-weight:600">\${s.hazard_name||'—'}</td>
+      <td style="padding:5px 6px">
+        <span style="background:\${bc}22;border:1px solid \${bc}55;color:\${bc};padding:2px 6px;border-radius:3px;font-size:10px;font-weight:700;white-space:nowrap">\${(s.risk_band||'—').toUpperCase()}</span>
+      </td>
+      <td style="padding:5px 6px;text-align:center">\${s.importance||'—'}</td>
+      <td style="padding:5px 6px;text-align:center">\${s.urgency||'—'}</td>
+      <td style="padding:5px 6px;text-align:center">\${s.growth||'—'}</td>
+      <td style="padding:5px 6px;text-align:center;font-weight:700">\${s.priority_index?.toFixed(2)||'—'}</td>
+      <td style="padding:5px 6px;text-align:center">
+        <span style="background:\${pb};border:1px solid \${pc}55;color:\${pc};padding:2px 8px;border-radius:3px;font-size:10px;font-weight:700">\${s.priority_level||'—'}</span>
+      </td>
+      <td style="padding:5px 6px;font-size:10px;color:#555">\${wardsText}</td>
+      <td style="padding:5px 6px;font-size:10px;color:#555">\${owners}</td>
+    </tr>\`;
+  }).join('');
+
   const rows = scores.map((s, i) => `
     <tr style="border-bottom:1px solid #eee;${i%2===0?'background:#f9f9f9':''}">
       <td style="padding:6px 8px">${i+1}</td>
@@ -1656,12 +1711,50 @@ async function exportAssessmentPDF(id, label) {
       <tbody>${rows}</tbody>
     </table>
 
+    <h2>Sub-score breakdown — all scoring dimensions</h2>
+    <table>
+      <thead><tr>
+        <th>#</th><th>Hazard</th>
+        <th title="Affected Area">Aff.Area</th>
+        <th title="Probability">Prob</th>
+        <th title="Frequency">Freq</th>
+        <th title="Predictability">Pred</th>
+        <th>H.Score</th>
+        <th title="Political">Pol</th>
+        <th title="Economic">Econ</th>
+        <th title="Social">Soc</th>
+        <th title="Technological">Tech</th>
+        <th title="Environmental">Env</th>
+        <th>V.Score</th>
+        <th title="Institutional">Inst</th>
+        <th title="Programme">Prog</th>
+        <th title="Public Participation">PubP</th>
+        <th title="Financial">Fin</th>
+        <th title="Human Resources">HR</th>
+        <th title="Support Networks">Supp</th>
+        <th>C.Score</th>
+        <th>Resilience</th>
+      </tr></thead>
+      <tbody>${subRows}</tbody>
+    </table>
+
+    <h2>Priority analysis</h2>
+    <table>
+      <thead><tr>
+        <th>#</th><th>Hazard</th><th>Risk Band</th>
+        <th>Importance</th><th>Urgency</th><th>Growth</th>
+        <th>Priority Index</th><th>Priority Level</th>
+        <th>Wards Affected</th><th>Role Players</th>
+      </tr></thead>
+      <tbody>${priorityRows}</tbody>
+    </table>
+
     <div class="footer">
       ${muniName} · DRMSA HVC Assessment · Apache 2.0 Open Source ·
       HVC framework: South African DMA Act 57 of 2002 Annexure 3 ·
       Created by Diswayne Maarman
     </div>
-    </body></html>`;
+    </body></html>\`;
 
   const w = window.open('', '_blank');
   if (w) {
