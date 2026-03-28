@@ -595,6 +595,7 @@ function exportPDF() {
         <span class="cat-meta">${Object.keys(hazards).length} hazard type${Object.keys(hazards).length!==1?'s':''} · ${totalOrgs} org${totalOrgs!==1?'s':''} · ${totalCts} contact${totalCts!==1?'s':''}</span>
       </div>`;
 
+    sectionsHtml += `<div class="pdf-two-col">`;
     Object.entries(hazards).forEach(([hazard, entries]) => {
       const totalContacts = entries.reduce((t, e) => t + e.contacts.length, 0);
       let rows = '';
@@ -617,6 +618,7 @@ function exportPDF() {
         }
       });
       sectionsHtml += `
+        <div class="pdf-col-item">
         <div class="hazard-header" style="border-left:3px solid ${col}">
           <span style="${dot(col)}"></span>${hazard}
           <span class="hazard-meta">${entries.length} org${entries.length!==1?'s':''} · ${totalContacts} contact${totalContacts!==1?'s':''}</span>
@@ -633,8 +635,10 @@ function exportPDF() {
             <th style="width:8%">Via</th>
           </tr></thead>
           <tbody>${rows}</tbody>
-        </table>`;
+        </table>
+        </div>`;
     });
+    sectionsHtml += `</div>`;
   });
 
   if (unassigned.length) {
@@ -664,13 +668,17 @@ function exportPDF() {
         <span class="cat-title" style="color:#888">Unassigned</span>
         <span class="cat-meta">No hazard linked · ${unassigned.length} org${unassigned.length!==1?'s':''}</span>
       </div>
-      <table class="pdf-table">
-        <thead><tr>
-          <th>Organisation</th><th>Sector</th><th>Contact</th>
-          <th>Position</th><th>Cell</th><th>Email</th><th>After Hours</th><th>Via</th>
-        </tr></thead>
-        <tbody>${rows}</tbody>
-      </table>`;
+      <div class="pdf-two-col">
+        <div class="pdf-col-item">
+          <table class="pdf-table">
+            <thead><tr>
+              <th>Organisation</th><th>Sector</th><th>Contact</th>
+              <th>Position</th><th>Cell</th><th>Email</th><th>After Hours</th><th>Via</th>
+            </tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
+      </div>`;
   }
 
   const html = `<!DOCTYPE html>
@@ -699,6 +707,8 @@ function exportPDF() {
   .cat-meta{margin-left:auto;font-size:8px;opacity:.7;font-weight:400}
   .hazard-header{padding:5px 12px;background:#f0f4f8;display:flex;align-items:center;font-size:9px;font-weight:700;color:#1a3a6b;page-break-after:avoid;margin-top:1px}
   .hazard-meta{margin-left:auto;font-size:8px;font-weight:400;color:#888}
+  .pdf-two-col{display:grid;grid-template-columns:1fr 1fr;gap:10px;align-items:start;margin:0 0 8px}
+  .pdf-col-item{break-inside:avoid;page-break-inside:avoid}
   .pdf-table{width:100%;border-collapse:collapse;margin-bottom:1px;font-size:8.5px}
   .pdf-table thead{display:table-header-group}
   .pdf-table th{background:#1a3a6b;color:#fff;padding:5px 7px;text-align:left;font-size:7.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;white-space:nowrap}
