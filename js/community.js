@@ -1,13 +1,28 @@
 // js/community.js
 import { supabase } from './supabase.js';
 
-let _muniId = null;
+let _muniId    = null;
 let _activeTab = 'shelters';
+let _muniLogos = { main: null, dm: null, mode: 'main' };
 
 export async function initCommunity(user) {
   _muniId = user?.municipality_id;
+  await fetchMuniLogos();
   bindCommunityTabs();
   await loadTab('shelters');
+}
+
+async function fetchMuniLogos() {
+  const { data } = await supabase
+    .from('municipalities')
+    .select('logo_main_url, logo_dm_url, logo_display_mode')
+    .eq('id', _muniId)
+    .single();
+  _muniLogos = {
+    main: data?.logo_main_url || null,
+    dm:   data?.logo_dm_url   || null,
+    mode: data?.logo_display_mode || 'main'
+  };
 }
 
 function bindCommunityTabs() {
@@ -34,6 +49,80 @@ async function loadTab(tab) {
   }
 }
 
+// ── CANVAS HELPERS ────────────────────────────────────────
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y); ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
+
+function wrapText(ctx, text, maxWidth) {
+  const words = (text || '').split(' ');
+  const lines = []; let current = '';
+  words.forEach(word => {
+    const test = current ? current + ' ' + word : word;
+    if (ctx.measureText(test).width > maxWidth && current) {
+      lines.push(current); current = word;
+    } else current = test;
+  });
+  if (current) lines.push(current);
+  return lines;
+}
+
+async function loadLogoImages() {
+  const { main, dm, mode } = _muniLogos;
+  const srcs = [];
+  if (mode === 'both') { if (main) srcs.push(main); if (dm) srcs.push(dm); }
+  else if (mode === 'dm') { if (dm) srcs.push(dm); }
+  else { if (main) srcs.push(main); }
+  return Promise.all(srcs.map(src => new Promise(res => {
+    const img = new Image(); img.crossOrigin = 'anonymous';
+    img.onload = () => res(img); img.onerror = () => res(null); img.src = src;
+  })));
+}
+
+function drawNotificationHeader(ctx, logoImgs, notifTitle, muniName, date, accentColor, W) {
+  // Header band
+  ctx.fillStyle = '#161b22';
+  ctx.fillRect(0, 0, W, 90);
+  // Accent bar
+  ctx.fillStyle = accentColor;
+  ctx.fillRect(0, 0, 5, 520);
+
+  // Logos
+  let logoX = 20;
+  const logoH = 56, logoY = 17;
+  for (const img of logoImgs) {
+    if (!img) continue;
+    const aspect = img.naturalWidth / img.naturalHeight;
+    const drawW  = Math.min(logoH * aspect, 100);
+    ctx.drawImage(img, logoX, logoY, drawW, logoH);
+    logoX += drawW + 10;
+  }
+
+  // Notification title next to logos
+  const titleX = logoX + 6;
+  ctx.fillStyle = '#e6edf3';
+  ctx.font = 'bold 13px Arial, sans-serif';
+  ctx.fillText(notifTitle, titleX, 38);
+  ctx.fillStyle = '#8b949e';
+  ctx.font = '11px Arial, sans-serif';
+  ctx.fillText(muniName + ' Disaster Management', titleX, 56);
+  ctx.fillText('Generated: ' + date, titleX, 72);
+
+  // Divider
+  ctx.strokeStyle = '#30363d';
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(20, 98); ctx.lineTo(W - 20, 98); ctx.stroke();
+}
+
 // ── SHELTERS ─────────────────────────────────────────────
 async function renderShelters(body) {
   const { data: shelters } = await supabase
@@ -50,14 +139,9 @@ async function renderShelters(body) {
       ${shelters?.length ? shelters.map(s => renderShelterCard(s)).join('') : emptyState('No shelters registered yet.')}
     </div>`;
 
-  // Use requestAnimationFrame to ensure DOM is fully painted before binding
   requestAnimationFrame(() => {
     const btn = document.getElementById('add-shelter-btn');
-    if (btn) {
-      btn.onclick = () => showShelterForm(null);
-    } else {
-      console.warn('add-shelter-btn not found in DOM');
-    }
+    if (btn) btn.onclick = () => showShelterForm(null);
     bindShelterEvents(shelters || []);
   });
 }
@@ -82,22 +166,17 @@ function showShelterForm(existing) {
       <div class="fl"><span class="fl-label">Address</span><input class="fl-input" id="sh-address" value="${s.address||''}"/></div>
       <div class="frow">
         <div class="fl"><span class="fl-label">Ward number</span><input class="fl-input" type="number" id="sh-ward" value="${s.ward_number||''}"/></div>
-        <div class="fl"><span class="fl-label">Capacity</span><input class="fl-input" type="number" id="sh-capacity" value="${s.capacity||''}"/></div>
+        <div class="fl"><span class="fl-label">Capacity</span><input class="fl-input" type="number" id="sh-cap" value="${s.capacity||''}"/></div>
       </div>
       <div class="frow">
-        <div class="fl"><span class="fl-label">Contact name</span><input class="fl-input" id="sh-contact-name" value="${s.contact_name||''}"/></div>
-        <div class="fl"><span class="fl-label">Contact number</span><input class="fl-input" id="sh-contact-num" value="${s.contact_number||''}"/></div>
+        <div class="fl"><span class="fl-label">Contact name</span><input class="fl-input" id="sh-cname" value="${s.contact_name||''}"/></div>
+        <div class="fl"><span class="fl-label">Contact number</span><input class="fl-input" id="sh-cnum" value="${s.contact_number||''}"/></div>
       </div>
-      <div class="frow">
-        <div class="fl"><span class="fl-label">GPS Latitude</span><input class="fl-input" id="sh-lat" value="${s.gps_lat||''}" placeholder="-33.5869"/></div>
-        <div class="fl"><span class="fl-label">GPS Longitude</span><input class="fl-input" id="sh-lng" value="${s.gps_lng||''}" placeholder="22.2065"/></div>
-      </div>
-      <label style="display:flex;align-items:center;gap:8px;margin-bottom:12px;cursor:pointer;font-size:13px;color:var(--text2)">
-        <input type="checkbox" id="sh-wheelchair" ${s.wheelchair_accessible?'checked':''} style="width:15px;height:15px"/>
-        Wheelchair accessible
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;color:var(--text2);margin:8px 0 12px">
+        <input type="checkbox" id="sh-wc" ${s.wheelchair_accessible?'checked':''} style="width:14px;height:14px"/> Wheelchair accessible
       </label>
       <div style="display:flex;gap:8px">
-        <button class="btn btn-green btn-sm" id="save-shelter-btn" data-id="${s.id||''}">Save shelter</button>
+        <button class="btn btn-red btn-sm" id="save-shelter-btn" data-id="${s.id||''}">Save shelter</button>
         <button class="btn btn-sm" onclick="document.getElementById('shelter-form-area').innerHTML=''">Cancel</button>
       </div>
     </div>`;
@@ -105,38 +184,31 @@ function showShelterForm(existing) {
   document.getElementById('save-shelter-btn')?.addEventListener('click', async () => {
     const id   = document.getElementById('save-shelter-btn').dataset.id;
     const name = document.getElementById('sh-name')?.value.trim();
-    if (!name) { alert('Shelter name is required.'); return; }
-
+    if (!name) { alert('Shelter name required.'); return; }
     const payload = {
       municipality_id:      _muniId,
       name,
       facility_type:        document.getElementById('sh-type')?.value,
       address:              document.getElementById('sh-address')?.value,
       ward_number:          parseInt(document.getElementById('sh-ward')?.value)||null,
-      capacity:             parseInt(document.getElementById('sh-capacity')?.value)||0,
-      contact_name:         document.getElementById('sh-contact-name')?.value,
-      contact_number:       document.getElementById('sh-contact-num')?.value,
-      gps_lat:              parseFloat(document.getElementById('sh-lat')?.value)||null,
-      gps_lng:              parseFloat(document.getElementById('sh-lng')?.value)||null,
-      wheelchair_accessible: document.getElementById('sh-wheelchair')?.checked,
-      status:               'closed',
-      current_occupancy:    0,
-      is_published:         false
+      capacity:             parseInt(document.getElementById('sh-cap')?.value)||0,
+      contact_name:         document.getElementById('sh-cname')?.value,
+      contact_number:       document.getElementById('sh-cnum')?.value,
+      wheelchair_accessible:document.getElementById('sh-wc')?.checked,
+      status:               'open', current_occupancy: 0
     };
-
     const { error } = id
       ? await supabase.from('shelters').update(payload).eq('id', id)
       : await supabase.from('shelters').insert(payload);
-
     if (error) { showToast(error.message, true); return; }
     showToast('✓ Shelter saved successfully!');
-    area.innerHTML = '';
+    document.getElementById('shelter-form-area').innerHTML = '';
     await renderShelters(document.getElementById('community-body'));
   });
 }
 
 function renderShelterCard(s) {
-  const pct = s.capacity ? Math.round(((s.current_occupancy||0)/s.capacity)*100) : 0;
+  const pct         = s.capacity ? Math.round((s.current_occupancy||0) / s.capacity * 100) : 0;
   const statusBadge = { open:'b-green','at-capacity':'b-red',closed:'b-gray',partial:'b-amber' };
 
   return `
@@ -181,17 +253,94 @@ function renderShelterCard(s) {
       <div class="rec-foot">
         <button class="btn btn-green btn-sm shelter-update" data-id="${s.id}">Update</button>
         <button class="btn btn-sm shelter-edit" data-id="${s.id}">Edit details</button>
-        <button class="btn btn-sm shelter-dl" data-id="${s.id}" data-name="${s.name}">↓ Save</button>
+        <div style="position:relative;display:inline-block">
+          <button class="btn btn-sm shelter-dl-toggle" data-id="${s.id}" data-name="${s.name}">↓ Save ▾</button>
+          <div class="dl-dropdown" id="sh-drop-${s.id}" style="display:none;position:absolute;top:100%;left:0;z-index:200;background:var(--bg2);border:1px solid var(--border);border-radius:6px;min-width:160px;box-shadow:0 4px 16px rgba(0,0,0,.3);margin-top:4px">
+            <button class="btn btn-sm" style="width:100%;text-align:left;border-radius:4px 4px 0 0;border:none;background:transparent;padding:8px 12px;font-size:12px;color:var(--text)" data-sh-txt="${s.id}">📄 Text file (.txt)</button>
+            <button class="btn btn-sm" style="width:100%;text-align:left;border-radius:0 0 4px 4px;border:none;background:transparent;padding:8px 12px;font-size:12px;color:var(--text)" data-sh-png="${s.id}">🖼 Image (.png)</button>
+          </div>
+        </div>
         <button class="btn btn-sm btn-red shelter-delete" data-id="${s.id}" style="margin-left:auto">Delete</button>
       </div>
     </div>`;
 }
 
+async function downloadShelterPNG(s) {
+  const muniName = window._drmsaUser?.municipalities?.name || 'Municipality';
+  const date     = new Date().toLocaleString('en-ZA');
+  const pct      = s.capacity ? Math.round((s.current_occupancy||0) / s.capacity * 100) : 0;
+  const accentColor = s.status === 'open' ? '#3fb950' : s.status === 'at-capacity' ? '#f85149' : s.status === 'partial' ? '#d29922' : '#8b949e';
+  const statusLabel = (s.status || 'UNKNOWN').replace(/-/g, ' ').toUpperCase();
+
+  const logoImgs = await loadLogoImages();
+  const W = 900, H = 480;
+  const canvas = document.createElement('canvas');
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext('2d');
+
+  ctx.fillStyle = '#0d1117'; ctx.fillRect(0, 0, W, H);
+  drawNotificationHeader(ctx, logoImgs, 'SHELTER NOTIFICATION', muniName, date, accentColor, W);
+
+  // Status badge top-right
+  const badgeW = 200, badgeH = 34, badgeX = W - badgeW - 20, badgeY = 28;
+  ctx.fillStyle = accentColor + '33';
+  roundRect(ctx, badgeX, badgeY, badgeW, badgeH, 6); ctx.fill();
+  ctx.strokeStyle = accentColor; ctx.lineWidth = 1.5;
+  roundRect(ctx, badgeX, badgeY, badgeW, badgeH, 6); ctx.stroke();
+  ctx.fillStyle = accentColor; ctx.font = 'bold 12px Arial, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(statusLabel, badgeX + badgeW / 2, badgeY + 22);
+  ctx.textAlign = 'left';
+
+  // Shelter name
+  ctx.fillStyle = '#e6edf3'; ctx.font = 'bold 26px Arial, sans-serif';
+  ctx.fillText(s.name, 24, 136);
+
+  const fields = [
+    ['Facility type',   s.facility_type || '—'],
+    ['Address',         s.address || '—'],
+    ['Ward',            String(s.ward_number || '—')],
+    ['Capacity',        `${s.capacity || 0} persons`],
+    ['Current occupancy', `${s.current_occupancy || 0} / ${s.capacity || 0} (${pct}%)`],
+    ['Contact',         `${s.contact_name || '—'} · ${s.contact_number || '—'}`],
+    ['Wheelchair access', s.wheelchair_accessible ? 'Yes' : 'No']
+  ];
+
+  let fy = 168;
+  fields.forEach(([key, val]) => {
+    ctx.fillStyle = '#8b949e'; ctx.font = '11px Arial, sans-serif';
+    ctx.fillText(key.toUpperCase(), 24, fy);
+    ctx.fillStyle = '#c9d1d9'; ctx.font = '13px Arial, sans-serif';
+    ctx.fillText(String(val).slice(0, 90), 24, fy + 16);
+    fy += 40;
+  });
+
+  // Occupancy bar
+  const barY = H - 52, barX = 24, barW = W - 48, barH = 10;
+  ctx.fillStyle = '#21262d';
+  roundRect(ctx, barX, barY, barW, barH, 5); ctx.fill();
+  const fillW = Math.min(pct / 100 * barW, barW);
+  ctx.fillStyle = accentColor;
+  roundRect(ctx, barX, barY, fillW, barH, 5); ctx.fill();
+
+  ctx.strokeStyle = '#21262d'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(20, H - 28); ctx.lineTo(W - 20, H - 28); ctx.stroke();
+  ctx.fillStyle = '#484f58'; ctx.font = '10px Arial, sans-serif';
+  ctx.fillText('FOR OFFICIAL DISTRIBUTION — ' + muniName, 24, H - 12);
+
+  canvas.toBlob(blob => {
+    const url = URL.createObjectURL(blob);
+    const a   = Object.assign(document.createElement('a'), {
+      href: url, download: `shelter-${(s.name||'shelter').replace(/\s+/g,'-')}.png`
+    });
+    a.click(); URL.revokeObjectURL(url);
+  }, 'image/png');
+}
+
 function bindShelterEvents(shelters) {
-  // Update occupancy/status
   document.querySelectorAll('.shelter-update').forEach(btn => {
     btn.addEventListener('click', async () => {
-      const id  = btn.dataset.id;
+      const id = btn.dataset.id;
       const { error } = await supabase.from('shelters').update({
         current_occupancy: parseInt(document.getElementById(`occ-${id}`)?.value)||0,
         status:            document.getElementById(`status-${id}`)?.value,
@@ -202,7 +351,6 @@ function bindShelterEvents(shelters) {
     });
   });
 
-  // Edit full details
   document.querySelectorAll('.shelter-edit').forEach(btn => {
     btn.addEventListener('click', () => {
       const shelter = shelters.find(s => s.id === btn.dataset.id);
@@ -210,7 +358,6 @@ function bindShelterEvents(shelters) {
     });
   });
 
-  // Delete
   document.querySelectorAll('.shelter-delete').forEach(btn => {
     btn.addEventListener('click', async () => {
       if (!confirm('Delete this shelter?')) return;
@@ -220,19 +367,50 @@ function bindShelterEvents(shelters) {
     });
   });
 
-  // Download
-  document.querySelectorAll('.shelter-dl').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const el   = document.getElementById(`sc-${btn.dataset.id}`);
-      const text = el ? el.innerText : btn.dataset.name;
-      const blob = new Blob([text], {type:'text/plain'});
-      const url  = URL.createObjectURL(blob);
-      const a    = Object.assign(document.createElement('a'), {href:url, download:`DRMSA-shelter-${btn.dataset.name}.txt`});
-      a.click(); URL.revokeObjectURL(url);
+  // Download dropdown toggle
+  document.querySelectorAll('.shelter-dl-toggle').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      const id   = btn.dataset.id;
+      const drop = document.getElementById(`sh-drop-${id}`);
+      if (!drop) return;
+      document.querySelectorAll('.dl-dropdown').forEach(d => { if (d.id !== `sh-drop-${id}`) d.style.display = 'none'; });
+      drop.style.display = drop.style.display === 'none' ? 'block' : 'none';
     });
   });
 
-  // Publish toggles
+  document.addEventListener('click', () => document.querySelectorAll('.dl-dropdown').forEach(d => d.style.display = 'none'));
+
+  // Text download
+  document.querySelectorAll('[data-sh-txt]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const s = shelters.find(x => x.id === btn.dataset.shTxt);
+      if (!s) return;
+      const text = `SHELTER NOTIFICATION\n${'='.repeat(40)}\n` +
+        `Name: ${s.name}\nStatus: ${(s.status||'').toUpperCase()}\n` +
+        `Type: ${s.facility_type||'—'}\nAddress: ${s.address||'—'}\n` +
+        `Ward: ${s.ward_number||'—'}\nCapacity: ${s.capacity||0}\n` +
+        `Current occupancy: ${s.current_occupancy||0}\n` +
+        `Contact: ${s.contact_name||'—'} · ${s.contact_number||'—'}\n` +
+        `Wheelchair accessible: ${s.wheelchair_accessible?'Yes':'No'}`;
+      const blob = new Blob([text], {type:'text/plain'});
+      const url  = URL.createObjectURL(blob);
+      const a    = Object.assign(document.createElement('a'), {href:url, download:`shelter-${s.name.replace(/\s+/g,'-')}.txt`});
+      a.click(); URL.revokeObjectURL(url);
+      document.getElementById(`sh-drop-${s.id}`).style.display = 'none';
+    });
+  });
+
+  // PNG download
+  document.querySelectorAll('[data-sh-png]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const s = shelters.find(x => x.id === btn.dataset.shPng);
+      if (!s) return;
+      document.getElementById(`sh-drop-${s.id}`).style.display = 'none';
+      downloadShelterPNG(s);
+    });
+  });
+
   document.querySelectorAll('.pub-tog').forEach(tog => {
     tog.addEventListener('click', async () => {
       const track = tog.querySelector('.tog-track');
@@ -263,11 +441,7 @@ async function renderReliefOps(body) {
 
   requestAnimationFrame(() => {
     const btn = document.getElementById('add-relief-btn');
-    if (btn) {
-      btn.onclick = () => showReliefForm(null);
-    } else {
-      console.warn('add-relief-btn not found in DOM');
-    }
+    if (btn) btn.onclick = () => showReliefForm(null);
     bindReliefEvents(ops || []);
   });
 }
@@ -314,17 +488,16 @@ function showReliefForm(existing) {
     if (!name) { alert('Operation name is required.'); return; }
 
     const payload = {
-      municipality_id:  _muniId,
-      name,
-      status:           document.getElementById('ro-status')?.value,
-      hazard_name:      document.getElementById('ro-hazard')?.value,
-      ward_number:      parseInt(document.getElementById('ro-ward')?.value)||null,
+      municipality_id:    _muniId, name,
+      status:             document.getElementById('ro-status')?.value,
+      hazard_name:        document.getElementById('ro-hazard')?.value,
+      ward_number:        parseInt(document.getElementById('ro-ward')?.value)||null,
       distribution_point: document.getElementById('ro-location')?.value,
-      schedule:         document.getElementById('ro-schedule')?.value,
-      responsible_org:  document.getElementById('ro-org')?.value,
-      public_contact:   document.getElementById('ro-contact')?.value,
-      end_date:         document.getElementById('ro-end')?.value||null,
-      is_published:     false
+      schedule:           document.getElementById('ro-schedule')?.value,
+      responsible_org:    document.getElementById('ro-org')?.value,
+      public_contact:     document.getElementById('ro-contact')?.value,
+      end_date:           document.getElementById('ro-end')?.value||null,
+      is_published:       false
     };
 
     const { error } = id
@@ -340,7 +513,7 @@ function showReliefForm(existing) {
 
 function renderReliefCard(op) {
   return `
-    <div class="rec-card" style="margin-bottom:12px">
+    <div class="rec-card" style="margin-bottom:12px" id="ro-${op.id}">
       <div class="rec-head">
         <div class="rec-icon" style="background:var(--blue-dim)">
           <svg viewBox="0 0 15 15" fill="none" stroke="var(--blue)" stroke-width="1.5" stroke-linecap="round"><path d="M7.5 2v11M2 7.5h11"/></svg>
@@ -361,10 +534,78 @@ function renderReliefCard(op) {
       </div>
       <div class="rec-foot">
         <button class="btn btn-sm btn-green relief-edit" data-id="${op.id}">Edit</button>
-        <button class="btn btn-sm relief-dl" data-id="${op.id}" data-name="${op.name}">↓ Save</button>
+        <div style="position:relative;display:inline-block">
+          <button class="btn btn-sm relief-dl-toggle" data-id="${op.id}" data-name="${op.name}">↓ Save ▾</button>
+          <div class="dl-dropdown" id="ro-drop-${op.id}" style="display:none;position:absolute;top:100%;left:0;z-index:200;background:var(--bg2);border:1px solid var(--border);border-radius:6px;min-width:160px;box-shadow:0 4px 16px rgba(0,0,0,.3);margin-top:4px">
+            <button class="btn btn-sm" style="width:100%;text-align:left;border-radius:4px 4px 0 0;border:none;background:transparent;padding:8px 12px;font-size:12px;color:var(--text)" data-ro-txt="${op.id}">📄 Text file (.txt)</button>
+            <button class="btn btn-sm" style="width:100%;text-align:left;border-radius:0 0 4px 4px;border:none;background:transparent;padding:8px 12px;font-size:12px;color:var(--text)" data-ro-png="${op.id}">🖼 Image (.png)</button>
+          </div>
+        </div>
         <button class="btn btn-sm btn-red relief-delete" data-id="${op.id}" style="margin-left:auto">Delete</button>
       </div>
     </div>`;
+}
+
+async function downloadReliefPNG(op) {
+  const muniName   = window._drmsaUser?.municipalities?.name || 'Municipality';
+  const date       = new Date().toLocaleString('en-ZA');
+  const accentColor = op.status === 'active' ? '#3fb950' : op.status === 'upcoming' ? '#58a6ff' : '#8b949e';
+  const statusLabel = (op.status || 'UNKNOWN').toUpperCase();
+
+  const logoImgs = await loadLogoImages();
+  const W = 900, H = 460;
+  const canvas = document.createElement('canvas');
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext('2d');
+
+  ctx.fillStyle = '#0d1117'; ctx.fillRect(0, 0, W, H);
+  drawNotificationHeader(ctx, logoImgs, 'RELIEF OPERATION NOTIFICATION', muniName, date, accentColor, W);
+
+  // Status badge
+  const badgeW = 180, badgeH = 32, badgeX = W - badgeW - 20, badgeY = 29;
+  ctx.fillStyle = accentColor + '33';
+  roundRect(ctx, badgeX, badgeY, badgeW, badgeH, 6); ctx.fill();
+  ctx.strokeStyle = accentColor; ctx.lineWidth = 1.5;
+  roundRect(ctx, badgeX, badgeY, badgeW, badgeH, 6); ctx.stroke();
+  ctx.fillStyle = accentColor; ctx.font = 'bold 12px Arial, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(statusLabel, badgeX + badgeW / 2, badgeY + 21);
+  ctx.textAlign = 'left';
+
+  ctx.fillStyle = '#e6edf3'; ctx.font = 'bold 26px Arial, sans-serif';
+  ctx.fillText(op.name, 24, 136);
+
+  const fields = [
+    ['Hazard',              op.hazard_name || '—'],
+    ['Ward',                String(op.ward_number || '—')],
+    ['Distribution point',  op.distribution_point || '—'],
+    ['Schedule',            op.schedule || '—'],
+    ['Responsible org',     op.responsible_org || '—'],
+    ['Public contact',      op.public_contact || '—'],
+    ['End date',            op.end_date ? new Date(op.end_date).toLocaleDateString('en-ZA') : '—']
+  ];
+
+  let fy = 168;
+  fields.forEach(([key, val]) => {
+    ctx.fillStyle = '#8b949e'; ctx.font = '11px Arial, sans-serif';
+    ctx.fillText(key.toUpperCase(), 24, fy);
+    ctx.fillStyle = '#c9d1d9'; ctx.font = '13px Arial, sans-serif';
+    ctx.fillText(String(val).slice(0, 90), 24, fy + 16);
+    fy += 38;
+  });
+
+  ctx.strokeStyle = '#21262d'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(20, H - 28); ctx.lineTo(W - 20, H - 28); ctx.stroke();
+  ctx.fillStyle = '#484f58'; ctx.font = '10px Arial, sans-serif';
+  ctx.fillText('FOR OFFICIAL DISTRIBUTION — ' + muniName, 24, H - 12);
+
+  canvas.toBlob(blob => {
+    const url = URL.createObjectURL(blob);
+    const a   = Object.assign(document.createElement('a'), {
+      href: url, download: `relief-op-${(op.name||'op').replace(/\s+/g,'-')}.png`
+    });
+    a.click(); URL.revokeObjectURL(url);
+  }, 'image/png');
 }
 
 function bindReliefEvents(ops) {
@@ -374,6 +615,7 @@ function bindReliefEvents(ops) {
       if (op) showReliefForm(op);
     });
   });
+
   document.querySelectorAll('.relief-delete').forEach(btn => {
     btn.addEventListener('click', async () => {
       if (!confirm('Delete this operation?')) return;
@@ -382,17 +624,49 @@ function bindReliefEvents(ops) {
       await renderReliefOps(document.getElementById('community-body'));
     });
   });
-  // Download
-  document.querySelectorAll('.relief-dl').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const text = `RELIEF OPERATION\n${btn.dataset.name}`;
-      const blob = new Blob([text], {type:'text/plain'});
-      const url  = URL.createObjectURL(blob);
-      const a    = Object.assign(document.createElement('a'), {href:url, download:`DRMSA-relief-${btn.dataset.name}.txt`});
-      a.click(); URL.revokeObjectURL(url);
+
+  // Dropdown toggle
+  document.querySelectorAll('.relief-dl-toggle').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      const id   = btn.dataset.id;
+      const drop = document.getElementById(`ro-drop-${id}`);
+      if (!drop) return;
+      document.querySelectorAll('.dl-dropdown').forEach(d => { if (d.id !== `ro-drop-${id}`) d.style.display = 'none'; });
+      drop.style.display = drop.style.display === 'none' ? 'block' : 'none';
     });
   });
 
+  document.addEventListener('click', () => document.querySelectorAll('.dl-dropdown').forEach(d => d.style.display = 'none'));
+
+  // Text download
+  document.querySelectorAll('[data-ro-txt]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const op = ops.find(o => o.id === btn.dataset.roTxt);
+      if (!op) return;
+      const text = `RELIEF OPERATION NOTIFICATION\n${'='.repeat(40)}\n` +
+        `Operation: ${op.name}\nStatus: ${(op.status||'').toUpperCase()}\n` +
+        `Hazard: ${op.hazard_name||'—'}\nWard: ${op.ward_number||'—'}\n` +
+        `Distribution point: ${op.distribution_point||'—'}\nSchedule: ${op.schedule||'—'}\n` +
+        `Responsible org: ${op.responsible_org||'—'}\nPublic contact: ${op.public_contact||'—'}\n` +
+        `End date: ${op.end_date ? new Date(op.end_date).toLocaleDateString('en-ZA') : '—'}`;
+      const blob = new Blob([text], {type:'text/plain'});
+      const url  = URL.createObjectURL(blob);
+      const a    = Object.assign(document.createElement('a'), {href:url, download:`relief-op-${op.name.replace(/\s+/g,'-')}.txt`});
+      a.click(); URL.revokeObjectURL(url);
+      document.getElementById(`ro-drop-${op.id}`).style.display = 'none';
+    });
+  });
+
+  // PNG download
+  document.querySelectorAll('[data-ro-png]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const op = ops.find(o => o.id === btn.dataset.roPng);
+      if (!op) return;
+      document.getElementById(`ro-drop-${op.id}`).style.display = 'none';
+      downloadReliefPNG(op);
+    });
+  });
 }
 
 // ── SAWS ─────────────────────────────────────────────────
@@ -489,23 +763,11 @@ window.deactivateSAWS = async function(id) {
   await renderSAWS(document.getElementById('community-body'));
 };
 
-// ── DOWNLOAD RECORD ───────────────────────────────────────
-window._downloadRecord = function(type, id, name) {
-  const el = document.getElementById(`sc-${id}`) || document.querySelector(`[id$="${id}"]`);
-  const text = el ? el.innerText : `${type.toUpperCase()}: ${name}`;
-  const blob = new Blob([text], { type: 'text/plain' });
-  const url  = URL.createObjectURL(blob);
-  const a    = document.createElement('a');
-  a.href = url; a.download = `DRMSA-${type}-${name.replace(/\s/g,'-')}.txt`;
-  a.click(); URL.revokeObjectURL(url);
-};
-
 function emptyState(msg) {
   return `<div style="text-align:center;padding:48px 20px;color:var(--text3);font-size:12px">${msg}</div>`;
 }
 
 function showToast(msg, isError=false) {
-  // Remove existing toasts
   document.querySelectorAll('.drmsa-toast').forEach(t => t.remove());
   const t = document.createElement('div');
   t.className = 'drmsa-toast';
