@@ -4,7 +4,6 @@ import { writeAudit } from './audit.js';
 
 let _user = null;
 
-// ── FIX: define roleLabel to avoid ReferenceError ─────────
 function roleLabel(role) {
   switch(role) {
     case 'admin': return 'Administrator';
@@ -15,7 +14,6 @@ function roleLabel(role) {
   }
 }
 
-// ── FIX: Move initials function above loadUsers ─────────────
 function initials(name) {
   return (name||'?').split(' ').map(n=>n[0]).join('').toUpperCase().slice(0,2);
 }
@@ -59,6 +57,10 @@ async function renderAdmin(page) {
             <div class="ph"><div class="ph-title">Municipality settings</div></div>
             <div class="pb" id="muni-settings">Loading…</div>
           </div>
+          <div class="panel" style="margin-bottom:16px">
+            <div class="ph"><div class="ph-title">Organisation logos</div><div class="ph-sub">Displayed on downloaded forms</div></div>
+            <div class="pb" id="logo-settings">Loading…</div>
+          </div>
           <div class="panel">
             <div class="ph"><div class="ph-title">Feedback</div><div class="ph-sub">Send platform feedback to support</div></div>
             <div class="pb" id="feedback-settings">
@@ -86,8 +88,8 @@ async function renderAdmin(page) {
 
   await loadUsers();
   await loadMuniSettings();
+  await loadLogoSettings();
 
-  // Wire audit trail toggle
   document.getElementById('audit-toggle-header')?.addEventListener('click', async () => {
     const body = document.getElementById('audit-trail-body');
     const icon = document.getElementById('audit-toggle-icon');
@@ -103,8 +105,163 @@ async function renderAdmin(page) {
   document.getElementById('invite-btn')?.addEventListener('click', showInviteForm);
 }
 
+// ── LOGO SETTINGS ──────────────────────────────────────────
+async function loadLogoSettings() {
+  const el = document.getElementById('logo-settings');
+  if (!el) return;
+
+  const { data: muni } = await supabase
+    .from('municipalities')
+    .select('logo_main_url, logo_dm_url, logo_display_mode')
+    .eq('id', _user.municipality_id)
+    .single();
+
+  const logoMain = muni?.logo_main_url || '';
+  const logoDM   = muni?.logo_dm_url   || '';
+  const mode     = muni?.logo_display_mode || 'main'; // 'main' | 'dm' | 'both'
+
+  el.innerHTML = `
+    <div style="font-size:11px;color:var(--text3);margin-bottom:12px;line-height:1.6">
+      Upload logos for your organisation and disaster management unit. Choose which appear on downloaded stakeholder forms.
+      Accepted formats: PNG or JPEG, max 2 MB each.
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">
+      <!-- Main org logo -->
+      <div>
+        <div style="font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--text3);margin-bottom:6px">Main organisation logo</div>
+        <div id="logo-main-preview" style="width:100%;height:72px;background:var(--bg3);border:1px dashed var(--border);border-radius:6px;display:flex;align-items:center;justify-content:center;overflow:hidden;margin-bottom:6px">
+          ${logoMain
+            ? `<img src="${logoMain}" style="max-height:64px;max-width:100%;object-fit:contain"/>`
+            : `<span style="font-size:11px;color:var(--text3)">No logo uploaded</span>`}
+        </div>
+        <input type="file" id="logo-main-file" accept="image/png,image/jpeg" style="display:none"/>
+        <div style="display:flex;gap:6px">
+          <button class="btn btn-sm" id="logo-main-pick">Upload PNG/JPEG</button>
+          ${logoMain ? `<button class="btn btn-sm btn-red" id="logo-main-clear">Remove</button>` : ''}
+        </div>
+        <div id="logo-main-status" style="font-size:11px;color:var(--text3);margin-top:4px"></div>
+      </div>
+
+      <!-- DM logo -->
+      <div>
+        <div style="font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--text3);margin-bottom:6px">Disaster Management logo</div>
+        <div id="logo-dm-preview" style="width:100%;height:72px;background:var(--bg3);border:1px dashed var(--border);border-radius:6px;display:flex;align-items:center;justify-content:center;overflow:hidden;margin-bottom:6px">
+          ${logoDM
+            ? `<img src="${logoDM}" style="max-height:64px;max-width:100%;object-fit:contain"/>`
+            : `<span style="font-size:11px;color:var(--text3)">No logo uploaded</span>`}
+        </div>
+        <input type="file" id="logo-dm-file" accept="image/png,image/jpeg" style="display:none"/>
+        <div style="display:flex;gap:6px">
+          <button class="btn btn-sm" id="logo-dm-pick">Upload PNG/JPEG</button>
+          ${logoDM ? `<button class="btn btn-sm btn-red" id="logo-dm-clear">Remove</button>` : ''}
+        </div>
+        <div id="logo-dm-status" style="font-size:11px;color:var(--text3);margin-top:4px"></div>
+      </div>
+    </div>
+
+    <!-- Display mode -->
+    <div style="padding-top:12px;border-top:1px solid var(--border);margin-bottom:12px">
+      <div style="font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--text3);margin-bottom:8px">Show on stakeholder download form</div>
+      <div style="display:flex;flex-direction:column;gap:6px">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;color:var(--text2)">
+          <input type="radio" name="logo-mode" value="main"  ${mode==='main' ?'checked':''} style="accent-color:var(--blue)"/> Main organisation logo only
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;color:var(--text2)">
+          <input type="radio" name="logo-mode" value="dm"    ${mode==='dm'   ?'checked':''} style="accent-color:var(--blue)"/> Disaster Management logo only
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;color:var(--text2)">
+          <input type="radio" name="logo-mode" value="both"  ${mode==='both' ?'checked':''} style="accent-color:var(--blue)"/> Both logos
+        </label>
+      </div>
+      <button class="btn btn-green btn-sm" id="save-logo-mode-btn" style="margin-top:10px">Save display preference</button>
+    </div>`;
+
+  // Wire upload buttons
+  document.getElementById('logo-main-pick')?.addEventListener('click', () => document.getElementById('logo-main-file').click());
+  document.getElementById('logo-dm-pick')?.addEventListener('click',   () => document.getElementById('logo-dm-file').click());
+
+  document.getElementById('logo-main-file')?.addEventListener('change', e => uploadLogo(e.target.files[0], 'main'));
+  document.getElementById('logo-dm-file')?.addEventListener('change',   e => uploadLogo(e.target.files[0], 'dm'));
+
+  document.getElementById('logo-main-clear')?.addEventListener('click', () => clearLogo('main'));
+  document.getElementById('logo-dm-clear')?.addEventListener('click',   () => clearLogo('dm'));
+
+  document.getElementById('save-logo-mode-btn')?.addEventListener('click', async () => {
+    const selected = document.querySelector('input[name="logo-mode"]:checked')?.value || 'main';
+    const { error } = await supabase.from('municipalities')
+      .update({ logo_display_mode: selected })
+      .eq('id', _user.municipality_id);
+    if (!error) {
+      showToast('✓ Logo display preference saved');
+      await writeAudit('update', 'municipality_settings', _user.municipality_id, `Logo display mode set to: ${selected}`);
+    } else showToast(error.message, true);
+  });
+}
+
+async function uploadLogo(file, slot) {
+  // slot: 'main' | 'dm'
+  if (!file) return;
+  const statusEl  = document.getElementById(`logo-${slot}-status`);
+  const previewEl = document.getElementById(`logo-${slot}-preview`);
+
+  if (!['image/png', 'image/jpeg'].includes(file.type)) {
+    if (statusEl) { statusEl.textContent = 'Only PNG or JPEG accepted.'; statusEl.style.color = 'var(--red)'; }
+    return;
+  }
+  if (file.size > 2 * 1024 * 1024) {
+    if (statusEl) { statusEl.textContent = 'File too large — max 2 MB.'; statusEl.style.color = 'var(--red)'; }
+    return;
+  }
+
+  if (statusEl) { statusEl.textContent = 'Uploading…'; statusEl.style.color = 'var(--text3)'; }
+
+  const ext      = file.type === 'image/png' ? 'png' : 'jpg';
+  const path     = `logos/${_user.municipality_id}/${slot}.${ext}`;
+  const { error: upErr } = await supabase.storage.from('org-logos').upload(path, file, { upsert: true, contentType: file.type });
+
+  if (upErr) {
+    if (statusEl) { statusEl.textContent = `Upload failed: ${upErr.message}`; statusEl.style.color = 'var(--red)'; }
+    return;
+  }
+
+  const { data: urlData } = supabase.storage.from('org-logos').getPublicUrl(path);
+  const publicUrl = urlData?.publicUrl;
+
+  const column = slot === 'main' ? 'logo_main_url' : 'logo_dm_url';
+  const { error: dbErr } = await supabase.from('municipalities')
+    .update({ [column]: publicUrl })
+    .eq('id', _user.municipality_id);
+
+  if (dbErr) {
+    if (statusEl) { statusEl.textContent = `DB save failed: ${dbErr.message}`; statusEl.style.color = 'var(--red)'; }
+    return;
+  }
+
+  if (previewEl) previewEl.innerHTML = `<img src="${publicUrl}?t=${Date.now()}" style="max-height:64px;max-width:100%;object-fit:contain"/>`;
+  if (statusEl)  { statusEl.textContent = '✓ Logo saved'; statusEl.style.color = 'var(--green)'; }
+  await writeAudit('update', 'municipality_settings', _user.municipality_id, `Logo uploaded: ${slot}`);
+  showToast(`✓ ${slot === 'main' ? 'Main' : 'Disaster Management'} logo uploaded`);
+}
+
+async function clearLogo(slot) {
+  const column    = slot === 'main' ? 'logo_main_url' : 'logo_dm_url';
+  const previewEl = document.getElementById(`logo-${slot}-preview`);
+
+  const { error } = await supabase.from('municipalities')
+    .update({ [column]: null })
+    .eq('id', _user.municipality_id);
+
+  if (!error) {
+    if (previewEl) previewEl.innerHTML = `<span style="font-size:11px;color:var(--text3)">No logo uploaded</span>`;
+    showToast(`✓ Logo removed`);
+    await loadLogoSettings(); // re-render to update remove buttons
+  } else showToast(error.message, true);
+}
+
+// ── USERS ─────────────────────────────────────────────────
 async function loadUsers() {
-  const listEl = document.getElementById('users-list');
+  const listEl  = document.getElementById('users-list');
   const countEl = document.getElementById('users-count');
   if (!listEl) return;
 
@@ -141,7 +298,7 @@ async function loadUsers() {
               : ['disaster_officer','planner','viewer']
             ).map(r=>`<option value="${r}" ${u.role===r?'selected':''}>${roleLabel(r)}</option>`).join('')}
              </select>
-             <button class="btn btn-sm btn-red" onclick="suspendUser('${u.id}')">✕</button>` 
+             <button class="btn btn-sm btn-red" onclick="suspendUser('${u.id}')">✕</button>`
           : '<span style="font-size:10px;color:var(--text3);font-family:monospace">You</span>'}
       </div>
     </div>`).join('');
@@ -154,7 +311,7 @@ function showInviteForm() {
   area.innerHTML = `
     <div style="padding:14px 16px;background:var(--bg3);border-bottom:1px solid var(--border)">
       <div style="font-size:11px;color:var(--text3);margin-bottom:10px;line-height:1.6">
-        Invite personnel to access your municipality's DRMSA instance. Each invited user receives an email with a secure link to set their password.
+        Invite personnel to access your municipality's instance. Each invited user receives an email with a secure link to set their password.
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
         <div class="fl"><span class="fl-label">Full name</span><input class="fl-input" id="inv-name" placeholder="Full name"/></div>
@@ -193,7 +350,6 @@ function showInviteForm() {
     if (error) {
       errEl.textContent = error.message; errEl.style.display = 'block';
     } else {
-      // Show sent confirmation and clear fields for next invite
       const inviteRoleLabel = { disaster_officer: 'DRMO', planner: 'IDP Planner', viewer: 'Viewer', admin: 'Admin' }[role] || role;
       sentEl.innerHTML += `<div style="font-size:11px;color:var(--green);padding:4px 0;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px">
         <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="var(--green)" stroke-width="2" stroke-linecap="round"><polyline points="1,5 4,8 9,2"/></svg>
@@ -252,12 +408,12 @@ function loadApiSettings() {
   const el = document.getElementById('api-settings');
   if (!el) return;
 
-  const savedKey   = localStorage.getItem('drmsa_weather_key') || '';
-  const savedProv  = localStorage.getItem('drmsa_weather_provider') || 'openweathermap';
+  const savedKey  = localStorage.getItem('drmsa_weather_key') || '';
+  const savedProv = localStorage.getItem('drmsa_weather_provider') || 'openweathermap';
 
   el.innerHTML = `
     <div style="font-size:12px;color:var(--text2);line-height:1.7;margin-bottom:14px">
-      DRMSA supports plugging in your own weather API key for severe weather warnings.
+      Supports plugging in your own weather API key for severe weather warnings.
       Recommended free options for South Africa:
       <ul style="margin:8px 0 0 16px;color:var(--text3)">
         <li><strong style="color:var(--text2)">OpenWeatherMap</strong> — free tier, good SA coverage · openweathermap.org</li>
@@ -324,22 +480,19 @@ async function testWeatherApi() {
     let url, data;
     if (provider === 'openweathermap') {
       url = `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lng}&appid=${key}&units=metric`;
-      const res = await fetch(url);
-      data = await res.json();
+      const res = await fetch(url); data = await res.json();
       if (data.cod !== 200) throw new Error(data.message || 'API error');
       result.style.color='var(--green)';
       result.textContent = `✓ Connected — ${data.name}: ${Math.round(data.main.temp)}°C, ${data.weather[0].description}`;
     } else if (provider === 'weatherapi') {
       url = `https://api.weatherapi.com/v1/current.json?key=${key}&q=${lat},${lng}`;
-      const res = await fetch(url);
-      data = await res.json();
+      const res = await fetch(url); data = await res.json();
       if (data.error) throw new Error(data.error.message);
       result.style.color='var(--green)';
       result.textContent = `✓ Connected — ${data.location.name}: ${data.current.temp_c}°C, ${data.current.condition.text}`;
     } else if (provider === 'tomorrow') {
       url = `https://api.tomorrow.io/v4/weather/realtime?location=${lat},${lng}&apikey=${key}`;
-      const res = await fetch(url);
-      data = await res.json();
+      const res = await fetch(url); data = await res.json();
       if (data.code) throw new Error(data.message);
       result.style.color='var(--green)';
       result.textContent = `✓ Connected — Temp: ${data.data?.values?.temperature}°C`;
@@ -439,6 +592,7 @@ async function loadAuditTrail(body) {
           <option value="road_closure">Road closure</option>
           <option value="relief_op">Relief op</option>
           <option value="stakeholder">Stakeholder</option>
+          <option value="municipality_settings">Municipality settings</option>
         </select>
         <button class="btn btn-sm" id="audit-apply-filter">Filter</button>
         <button class="btn btn-sm" id="audit-export-btn">↓ Export CSV</button>
@@ -531,7 +685,7 @@ function exportAuditCSV(entries) {
   const url  = URL.createObjectURL(blob);
   const a    = Object.assign(document.createElement('a'), {
     href: url,
-    download: `DRMSA-audit-trail-${new Date().toISOString().slice(0,10)}.csv`
+    download: `audit-trail-${new Date().toISOString().slice(0,10)}.csv`
   });
   a.click();
   URL.revokeObjectURL(url);
