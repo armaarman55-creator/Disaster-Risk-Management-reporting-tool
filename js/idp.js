@@ -996,6 +996,88 @@ function exportAllMitsPDF(mits) {
   const awaiting = mits.filter(m=>m.idp_status==='linked-awaiting').length;
   const proposed = mits.filter(m=>m.idp_status==='proposed').length;
 
+  // ── Summary register rows ────────────────────────────────────────
+  const STATUS_COL_MAP = { 'linked-funded':'#3fb950','linked-awaiting':'#d29922','proposed':'#888','in-progress':'#58a6ff' };
+  const BAND_COL_IDP   = { 'Extremely High':'#f85149','High':'#d29922','Tolerable':'#3fb950','Low':'#58a6ff','Negligible':'#6e7681' };
+
+  const summaryRows = mits.map((m, i) => {
+    const sc = STATUS_COL_MAP[m.idp_status] || '#888';
+    const bc = BAND_COL_IDP[m.risk_band] || '#6e7681';
+    const wardsText = Array.isArray(m.affected_wards) && m.affected_wards.length
+      ? m.affected_wards.map(w => 'W'+w).join(', ')
+      : '—';
+    const rr = m.risk_reduction_pct ? '~'+m.risk_reduction_pct+'%' : '—';
+    return `<tr style="border-bottom:1px solid #eee;${i%2===0?'background:#f9f9f9':''}">
+      <td style="padding:5px 7px;font-weight:600">${m.hazard_name||'—'}</td>
+      <td style="padding:5px 7px;text-align:center">
+        ${m.risk_band ? `<span style="color:${bc};font-weight:700;font-size:10px">${m.risk_band}</span>` : '—'}
+      </td>
+      <td style="padding:5px 7px">${m.mitigation_type||'—'}</td>
+      <td style="padding:5px 7px;font-size:10px;color:#555">${m.idp_kpa?.split(' — ')[0]||'—'}</td>
+      <td style="padding:5px 7px;font-size:10px">${wardsText}</td>
+      <td style="padding:5px 7px;text-align:center">
+        <span style="background:${sc}22;border:1px solid ${sc}55;color:${sc};padding:2px 6px;border-radius:3px;font-size:10px;font-weight:700">${(m.idp_status||'—').toUpperCase()}</span>
+      </td>
+      <td style="padding:5px 7px;font-size:10px">${m.cost_estimate||'—'}</td>
+      <td style="padding:5px 7px;text-align:center;font-weight:700;color:#1a3a6b">${rr}</td>
+      <td style="padding:5px 7px;font-size:10px;color:#555">${m.responsible_owner||'—'}</td>
+    </tr>`;
+  }).join('');
+
+  // ── Financial summary ─────────────────────────────────────────────────────
+  function parseCost(val) {
+    if (!val) return null;
+    const n = parseFloat(String(val).replace(/[^0-9.]/g,''));
+    if (isNaN(n)) return null;
+    const s = String(val).toLowerCase();
+    if (s.includes('m')) return n * 1e6;
+    if (s.includes('k')) return n * 1e3;
+    return n;
+  }
+  function fmtCost(n) {
+    if (n === null) return '—';
+    if (n >= 1e6) return 'R ' + (n/1e6).toFixed(1) + 'm';
+    if (n >= 1e3) return 'R ' + (n/1e3).toFixed(0) + 'k';
+    return 'R ' + n.toFixed(0);
+  }
+
+  let totalCost = 0, fundedCost = 0, awaitingCost = 0, proposedCost = 0, hasAnyCost = false;
+  mits.forEach(m => {
+    const c = parseCost(m.cost_estimate);
+    if (c !== null) {
+      hasAnyCost = true;
+      totalCost += c;
+      if (m.idp_status === 'linked-funded')   fundedCost   += c;
+      else if (m.idp_status === 'linked-awaiting') awaitingCost += c;
+      else proposedCost += c;
+    }
+  });
+  const totalCostLabel    = hasAnyCost ? fmtCost(totalCost)    : 'Not specified';
+  const fundedCostLabel   = hasAnyCost ? fmtCost(fundedCost)   : '—';
+  const awaitingCostLabel = hasAnyCost ? fmtCost(awaitingCost) : '—';
+  const proposedCostLabel = hasAnyCost ? fmtCost(proposedCost) : '—';
+  const budgetGap = awaitingCost + proposedCost;
+  const budgetGapNote = hasAnyCost && budgetGap > 0
+    ? `<br><strong style="color:#d29922">Budget gap (unfunded + awaiting):</strong> <span style="color:#d29922;font-weight:700">${fmtCost(budgetGap)}</span>`
+    : '';
+
+  // KPA cost blocks
+  const kpaMap = {};
+  mits.forEach(m => {
+    const kpa = m.idp_kpa?.split(' — ')[0] || 'Unassigned';
+    if (!kpaMap[kpa]) kpaMap[kpa] = { total: 0, count: 0 };
+    const c = parseCost(m.cost_estimate);
+    if (c !== null) kpaMap[kpa].total += c;
+    kpaMap[kpa].count++;
+  });
+  const kpaBlocks = Object.entries(kpaMap).map(([kpa, v]) =>
+    `<div style="background:#f0f4f8;border-radius:6px;padding:10px 14px;min-width:140px;flex:1">
+      <div style="font-size:11px;font-weight:700;color:#1a3a6b;margin-bottom:4px">${kpa}</div>
+      <div style="font-size:18px;font-weight:800;color:#111">${fmtCost(v.total)}</div>
+      <div style="font-size:10px;color:#888;margin-top:2px">${v.count} mitigation${v.count!==1?'s':''}</div>
+    </div>`
+  ).join('');
+
   const html = `<html><head><title>IDP Mitigation Register — ${muniName}</title>
   <style>
     body{font-family:Arial,sans-serif;padding:32px;max-width:860px;margin:0 auto;font-size:12px}
@@ -1023,6 +1105,35 @@ function exportAllMitsPDF(mits) {
     <div class="stat"><div class="stat-n" style="color:#d29922">${awaiting}</div><div class="stat-l">Awaiting</div></div>
     <div class="stat"><div class="stat-n" style="color:#888">${proposed}</div><div class="stat-l">Proposed</div></div>
   </div>
+  <h2 style="font-size:14px;color:#1a3a6b;margin:20px 0 8px;padding-bottom:4px;border-bottom:2px solid #1a3a6b">Summary register</h2>
+  <table style="width:100%;border-collapse:collapse;font-size:11px;margin-bottom:20px">
+    <thead><tr style="background:#1a3a6b;color:#fff">
+      <th style="padding:7px 8px;text-align:left">Hazard</th>
+      <th style="padding:7px 8px">Risk Band</th>
+      <th style="padding:7px 8px">Type</th>
+      <th style="padding:7px 8px">KPA</th>
+      <th style="padding:7px 8px">Wards</th>
+      <th style="padding:7px 8px">Status</th>
+      <th style="padding:7px 8px">Cost</th>
+      <th style="padding:7px 8px">Risk Red.</th>
+      <th style="padding:7px 8px">Responsible</th>
+    </tr></thead>
+    <tbody>${summaryRows}</tbody>
+  </table>
+
+  <h2 style="font-size:14px;color:#1a3a6b;margin:20px 0 8px;padding-bottom:4px;border-bottom:2px solid #1a3a6b">Financial & IDP budget summary</h2>
+  <div style="display:flex;gap:16px;margin-bottom:16px;flex-wrap:wrap">
+    ${kpaBlocks}
+  </div>
+  <div style="background:#f0f4ff;border-left:3px solid #1a3a6b;padding:10px 14px;font-size:11px;border-radius:0 4px 4px 0;margin-bottom:20px">
+    <strong>Total estimated cost:</strong> ${totalCostLabel} &nbsp;|&nbsp;
+    <strong>Funded:</strong> ${fundedCostLabel} &nbsp;|&nbsp;
+    <strong>Awaiting budget:</strong> ${awaitingCostLabel} &nbsp;|&nbsp;
+    <strong>Proposed (unfunded):</strong> ${proposedCostLabel}
+    ${budgetGapNote}
+  </div>
+
+  <h2 style="font-size:14px;color:#1a3a6b;margin:20px 0 8px;padding-bottom:4px;border-bottom:2px solid #1a3a6b">Mitigation detail records</h2>
   ${body}
   <footer>
     <span>DRMSA Disaster Risk Management Platform · ${muniName} Disaster Management Centre</span>
