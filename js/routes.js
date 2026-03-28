@@ -61,7 +61,7 @@ function renderClosureCard(c) {
   const statusColour = { closed:'var(--red)', partial:'var(--amber)', open:'var(--green)' };
 
   return `
-    <div class="rec-card" id="closure-${c.id}" style="margin-bottom:12px;border-left:3px solid ${statusColour[c.status]||'var(--border)'}">
+    <div class="rec-card" id="closure-${c.id}" style="margin-bottom:12px;border-left:3px solid ${statusColour[c.status]||'var(--border)'};overflow:visible;position:relative;z-index:2">
       <div class="rec-head">
         <div>
           <div class="rec-name">${c.road_name}</div>
