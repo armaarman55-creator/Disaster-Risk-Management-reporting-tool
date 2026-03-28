@@ -4,6 +4,7 @@ import { showDownloadMenu } from './download.js';
 
 let _muniId = null;
 let _orgs    = [];
+let _muniLogos = { main: null, dm: null, mode: 'main' }; // loaded once per render
 
 const SECTORS = [
   'Fire Brigade / Fire Services',
@@ -105,15 +106,27 @@ export async function initStakeholders(user) {
   await renderStakeholders();
 }
 
+async function fetchMuniLogos() {
+  const { data } = await supabase
+    .from('municipalities')
+    .select('logo_main_url, logo_dm_url, logo_display_mode')
+    .eq('id', _muniId)
+    .single();
+  _muniLogos = {
+    main: data?.logo_main_url || null,
+    dm:   data?.logo_dm_url   || null,
+    mode: data?.logo_display_mode || 'main'
+  };
+}
+
 async function renderStakeholders() {
   const body = document.getElementById('stakeholders-body');
   if (!body) return;
 
-  const { data: orgs } = await supabase
-    .from('stakeholder_orgs')
-    .select('*, stakeholder_contacts(*)')
-    .eq('municipality_id', _muniId)
-    .order('sector');
+  const [{ data: orgs }] = await Promise.all([
+    supabase.from('stakeholder_orgs').select('*, stakeholder_contacts(*)').eq('municipality_id', _muniId).order('sector'),
+    fetchMuniLogos()
+  ]);
 
   _orgs = orgs || [];
 
@@ -143,7 +156,7 @@ async function renderStakeholders() {
     document.getElementById('export-dl-btn')?.addEventListener('click', function() {
       const muniName = window._drmsaUser?.municipalities?.name || 'Municipality';
       showDownloadMenu(this, {
-        filename: `DRMSA-stakeholders-${muniName.replace(/\s+/g,'-')}`,
+        filename: `stakeholders-${muniName.replace(/\s+/g,'-')}`,
         getPDF:     () => exportPDF(),
         getCSVRows: () => getStakeholderCSVRows(),
         getDocHTML: () => getStakeholderDocHTML(muniName)
@@ -154,9 +167,9 @@ async function renderStakeholders() {
 }
 
 function filterBySector() {
-  const sector = document.getElementById('sector-filter')?.value;
+  const sector   = document.getElementById('sector-filter')?.value;
   const filtered = sector ? _orgs.filter(o => o.sector === sector) : _orgs;
-  const list = document.getElementById('orgs-list');
+  const list     = document.getElementById('orgs-list');
   if (list) {
     list.innerHTML = filtered.length
       ? filtered.map(org => renderOrgCard(org)).join('')
@@ -166,7 +179,7 @@ function filterBySector() {
 }
 
 function renderOrgCard(org) {
-  const contacts = org.stakeholder_contacts || [];
+  const contacts   = org.stakeholder_contacts || [];
   const orgHazards = Array.isArray(org.hazard_types) ? org.hazard_types : [];
   return `
     <div class="panel" style="margin-bottom:12px" id="org-${org.id}">
@@ -228,7 +241,7 @@ function showOrgForm(existing) {
   if (!area) return;
   if (area.innerHTML && !existing) { area.innerHTML = ''; return; }
 
-  const org = existing || {};
+  const org        = existing || {};
   const orgHazards = Array.isArray(org.hazard_types) ? org.hazard_types : [];
 
   area.innerHTML = `
@@ -306,10 +319,10 @@ function showContactForm(orgId, existing) {
   if (!area) return;
   if (area.innerHTML && !existing) { area.innerHTML = ''; return; }
 
-  const ct = existing || {};
+  const ct        = existing || {};
   const nameParts = (ct.full_name||'').split(' ');
-  const ctFirst = nameParts[0]||'';
-  const ctLast  = nameParts.slice(1).join(' ')||'';
+  const ctFirst   = nameParts[0]||'';
+  const ctLast    = nameParts.slice(1).join(' ')||'';
   const ctHazards = Array.isArray(ct.hazard_types) ? ct.hazard_types : [];
 
   area.innerHTML = `
@@ -421,7 +434,7 @@ function bindOrgEvents() {
 
 // ── HAZARD GROUPING LOGIC ─────────────────────────────────
 function buildHazardGroups() {
-  const groups    = {};
+  const groups     = {};
   const unassigned = [];
 
   _orgs.forEach(org => {
@@ -433,14 +446,11 @@ function buildHazardGroups() {
       (Array.isArray(c.hazard_types) ? c.hazard_types : []).forEach(h => allHazards.add(h));
     });
 
-    if (allHazards.size === 0) {
-      unassigned.push(org);
-      return;
-    }
+    if (allHazards.size === 0) { unassigned.push(org); return; }
 
     allHazards.forEach(hazard => {
       if (!groups[hazard]) groups[hazard] = [];
-      const orgOwns = orgHazards.includes(hazard);
+      const orgOwns        = orgHazards.includes(hazard);
       const relevantContacts = orgOwns
         ? contacts
         : contacts.filter(c => Array.isArray(c.hazard_types) && c.hazard_types.includes(hazard));
@@ -452,11 +462,9 @@ function buildHazardGroups() {
   return { groups, unassigned };
 }
 
-// Builds a two-level structure: category → hazard → [{org, contacts, via}]
-// Used by PDF and Word exports so output is grouped by category first.
 function buildCategoryGroups() {
   const { groups, unassigned } = buildHazardGroups();
-  const catGroups = {}; // category → { hazard → entries[] }
+  const catGroups = {};
 
   Object.entries(groups).forEach(([hazard, entries]) => {
     const cat = getHazardCategory(hazard) || 'Other';
@@ -464,15 +472,31 @@ function buildCategoryGroups() {
     catGroups[cat][hazard] = entries;
   });
 
-  // Preserve the defined category order from HAZARD_CATEGORIES
   const ordered = {};
   Object.keys(HAZARD_CATEGORIES).forEach(cat => {
     if (catGroups[cat]) ordered[cat] = catGroups[cat];
   });
-  // Append any 'Other' that didn't match
   if (catGroups['Other']) ordered['Other'] = catGroups['Other'];
 
   return { catGroups: ordered, unassigned };
+}
+
+// ── LOGO HTML HELPER ──────────────────────────────────────
+// Returns the <img> tag(s) to embed in PDF header based on admin display mode.
+// We embed as <img src="url"> — assumes public URLs from Supabase storage.
+function buildLogoHeaderHTML() {
+  const { main, dm, mode } = _muniLogos;
+  const imgStyle = 'max-height:52px;max-width:120px;object-fit:contain;display:block';
+
+  if (mode === 'both' && main && dm) {
+    return `<div style="display:flex;align-items:center;gap:10px">
+      <img src="${main}" style="${imgStyle}"/>
+      <img src="${dm}"   style="${imgStyle}"/>
+    </div>`;
+  }
+  if (mode === 'dm' && dm) return `<img src="${dm}" style="${imgStyle}"/>`;
+  if (main)               return `<img src="${main}" style="${imgStyle}"/>`;
+  return ''; // no logos configured
 }
 
 // ── EXPORT HELPERS ────────────────────────────────────────
@@ -578,13 +602,14 @@ function getStakeholderDocHTML(muniName) {
 function exportPDF() {
   const { catGroups, unassigned } = buildCategoryGroups();
   const muniName = window._drmsaUser?.municipalities?.name || 'Municipality';
-  const date = new Date().toLocaleString('en-ZA');
-  const dot = col => `display:inline-block;width:8px;height:8px;border-radius:50%;background:${col};margin-right:8px;vertical-align:middle`;
+  const date     = new Date().toLocaleString('en-ZA');
+  const dot      = col => `display:inline-block;width:8px;height:8px;border-radius:50%;background:${col};margin-right:8px;vertical-align:middle`;
+  const logoHtml = buildLogoHeaderHTML();
 
   let sectionsHtml = '';
 
   Object.entries(catGroups).forEach(([cat, hazards]) => {
-    const col = CAT_COLOURS[cat] || '#888';
+    const col      = CAT_COLOURS[cat] || '#888';
     const totalOrgs = Object.values(hazards).reduce((t, e) => t + e.length, 0);
     const totalCts  = Object.values(hazards).reduce((t, e) => t + e.reduce((tt, x) => tt + x.contacts.length, 0), 0);
 
@@ -698,7 +723,8 @@ function exportPDF() {
   }
   @media print{.print-btn{display:none}}
   .pdf-header{border-bottom:2px solid #1a3a6b;padding-bottom:12px;margin-bottom:16px;display:flex;align-items:flex-start;justify-content:space-between}
-  .pdf-brand{font-size:17px;font-weight:800;color:#1a3a6b}
+  .pdf-header-left{display:flex;align-items:center;gap:14px}
+  .pdf-header-text{}
   .pdf-doc-type{font-size:8px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#666;margin-top:2px}
   .pdf-muni{font-size:12px;font-weight:700;color:#111;margin-top:5px}
   .pdf-meta{font-size:8px;color:#888;margin-top:2px}
@@ -726,17 +752,18 @@ function exportPDF() {
 <body>
 <button class="print-btn" onclick="window.print()">&#8659; Save as PDF / Print (Landscape A4)</button>
 <div class="pdf-header">
-  <div>
-    <div class="pdf-brand">DRMSA</div>
-    <div class="pdf-doc-type">Stakeholder Directory — Hazard Response Reference</div>
-    <div class="pdf-muni">${muniName}</div>
-    <div class="pdf-meta">Generated: ${date} · Disaster Management Centre · CONFIDENTIAL — FOR OFFICIAL USE</div>
+  <div class="pdf-header-left">
+    ${logoHtml}
+    <div class="pdf-header-text">
+      <div class="pdf-doc-type">Stakeholder Directory — Hazard Response Reference</div>
+      <div class="pdf-muni">${muniName}</div>
+      <div class="pdf-meta">Generated: ${date} · Disaster Management Centre · CONFIDENTIAL — FOR OFFICIAL USE</div>
+    </div>
   </div>
-  <svg viewBox="0 0 40 40" fill="none" width="36" height="36"><polygon points="20,34 4,10 36,10" fill="#1a3a6b"/></svg>
 </div>
 ${sectionsHtml}
 <div class="pdf-footer">
-  <span>DRMSA Disaster Risk Management Platform · ${muniName} Disaster Management Centre</span>
+  <span>${muniName} Disaster Management Centre</span>
   <span>Generated ${date}</span>
 </div>
 </body>
@@ -746,6 +773,7 @@ ${sectionsHtml}
   if (w) { w.document.write(html); w.document.close(); }
   showToast('✓ PDF preview opened — click Print to save as PDF');
 }
+
 function emptyState(msg) {
   return `<div style="text-align:center;padding:48px 20px;color:var(--text3);font-size:12px">${msg}</div>`;
 }
