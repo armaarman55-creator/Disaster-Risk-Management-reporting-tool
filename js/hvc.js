@@ -1611,31 +1611,31 @@ async function exportAssessmentPDF(id, label) {
     </tr>`).join('');
 
   const priorityRows = scores.map((s, i) => {
-    const pb = PRIORITY_BG[s.priority_level] || '#6e768122';
-    const pc = PRIORITY_BORDER[s.priority_level] || '#6e7681';
-    const bc = BAND_COL_HEX[s.risk_band] || '#6e7681';
-    const wardsText = Array.isArray(s.affected_wards) && s.affected_wards.length
-      ? s.affected_wards.map(w => 'W'+w).join(', ')
-      : '—';
-    const owners = [s.primary_owner_name, s.secondary_owner_name, s.tertiary_owner_name].filter(Boolean).join(', ') || '—';
-    return \`
-    <tr style="border-bottom:1px solid #eee;\${i%2===0?'background:#f9f9f9':''}">
-      <td style="padding:5px 6px;font-weight:700;color:#1a3a6b">\${i+1}</td>
-      <td style="padding:5px 6px;font-weight:600">\${s.hazard_name||'—'}</td>
-      <td style="padding:5px 6px">
-        <span style="background:\${bc}22;border:1px solid \${bc}55;color:\${bc};padding:2px 6px;border-radius:3px;font-size:10px;font-weight:700;white-space:nowrap">\${(s.risk_band||'—').toUpperCase()}</span>
-      </td>
-      <td style="padding:5px 6px;text-align:center">\${s.importance||'—'}</td>
-      <td style="padding:5px 6px;text-align:center">\${s.urgency||'—'}</td>
-      <td style="padding:5px 6px;text-align:center">\${s.growth||'—'}</td>
-      <td style="padding:5px 6px;text-align:center;font-weight:700">\${s.priority_index?.toFixed(2)||'—'}</td>
-      <td style="padding:5px 6px;text-align:center">
-        <span style="background:\${pb};border:1px solid \${pc}55;color:\${pc};padding:2px 8px;border-radius:3px;font-size:10px;font-weight:700">\${s.priority_level||'—'}</span>
-      </td>
-      <td style="padding:5px 6px;font-size:10px;color:#555">\${wardsText}</td>
-      <td style="padding:5px 6px;font-size:10px;color:#555">\${owners}</td>
-    </tr>\`;
-  }).join('');
+  const pb = PRIORITY_BG[s.priority_level] || '#6e768122';
+  const pc = PRIORITY_BORDER[s.priority_level] || '#6e7681';
+  const bc = BAND_COL_HEX[s.risk_band] || '#6e7681';
+  const wardsText = Array.isArray(s.affected_wards) && s.affected_wards.length
+    ? s.affected_wards.map(w => 'W'+w).join(', ')
+    : '—';
+  const owners = [s.primary_owner_name, s.secondary_owner_name, s.tertiary_owner_name].filter(Boolean).join(', ') || '—';
+  return `
+  <tr style="border-bottom:1px solid #eee;${i%2===0?'background:#f9f9f9':''}">
+    <td style="padding:5px 6px;font-weight:700;color:#1a3a6b">${i+1}</td>
+    <td style="padding:5px 6px;font-weight:600">${s.hazard_name||'—'}</td>
+    <td style="padding:5px 6px">
+      <span style="background:${bc}22;border:1px solid ${bc}55;color:${bc};padding:2px 6px;border-radius:3px;font-size:10px;font-weight:700;white-space:nowrap">${(s.risk_band||'—').toUpperCase()}</span>
+    </td>
+    <td style="padding:5px 6px;text-align:center">${s.importance||'—'}</td>
+    <td style="padding:5px 6px;text-align:center">${s.urgency||'—'}</td>
+    <td style="padding:5px 6px;text-align:center">${s.growth||'—'}</td>
+    <td style="padding:5px 6px;text-align:center;font-weight:700">${s.priority_index?.toFixed(2)||'—'}</td>
+    <td style="padding:5px 6px;text-align:center">
+      <span style="background:${pb};border:1px solid ${pc}55;color:${pc};padding:2px 8px;border-radius:3px;font-size:10px;font-weight:700">${s.priority_level||'—'}</span>
+    </td>
+    <td style="padding:5px 6px;font-size:10px;color:#555">${wardsText}</td>
+    <td style="padding:5px 6px;font-size:10px;color:#555">${owners}</td>
+  </tr>`;
+}).join('');
 
   const rows = scores.map((s, i) => `
     <tr style="border-bottom:1px solid #eee;${i%2===0?'background:#f9f9f9':''}">
@@ -1749,12 +1749,12 @@ async function exportAssessmentPDF(id, label) {
       <tbody>${priorityRows}</tbody>
     </table>
 
-    <div class="footer">
-      ${muniName} · DRMSA HVC Assessment · Apache 2.0 Open Source ·
-      HVC framework: South African DMA Act 57 of 2002 Annexure 3 ·
-      Created by Diswayne Maarman
-    </div>
-    </body></html>\`;
+      <div class="footer">
+    ${muniName} · DRMSA HVC Assessment · Apache 2.0 Open Source ·
+    HVC framework: South African DMA Act 57 of 2002 ·
+    Created by Diswayne Maarman
+  </div>
+  </body></html>`;
 
   const w = window.open('', '_blank');
   if (w) {
