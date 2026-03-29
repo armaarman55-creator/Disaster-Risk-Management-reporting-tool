@@ -7,6 +7,7 @@
  * @param {object} options
  *   title        {string}  - Document title
  *   getPDF       {fn}      - Calls window.print() on a generated HTML page
+ *   getXLSXBlob  {fn}      - Returns Blob for native .xlsx download
  *   getCSVRows   {fn}      - Returns array of arrays for CSV
  *   getDocHTML   {fn}      - Returns HTML string for Word-compatible .doc
  *   filename     {string}  - Base filename without extension
@@ -30,9 +31,21 @@ export function showDownloadMenu(btn, options) {
   ].join(';');
 
   const items = [];
-  if (options.getPDF)     items.push({ label: '↓ PDF',               icon: '#f85149', fn: options.getPDF });
-  if (options.getCSVRows) items.push({ label: '↓ Excel / CSV',        icon: '#3fb950', fn: () => downloadCSV(options.getCSVRows(), options.filename) });
-  if (options.getDocHTML) items.push({ label: '↓ Word (.doc)',         icon: '#58a6ff', fn: () => downloadDoc(options.getDocHTML(), options.filename) });
+   if (options.getPDF) items.push({ label: '↓ PDF', icon: '#f85149', fn: options.getPDF });
+  if (options.getXLSXBlob) {
+    items.push({
+      label: '↓ Excel (.xlsx)',
+      icon: '#3fb950',
+      fn: () => downloadXLSX(options.getXLSXBlob(), options.filename)
+    });
+  } else if (options.getCSVRows) {
+    items.push({
+      label: '↓ Excel / CSV',
+      icon: '#3fb950',
+      fn: () => downloadCSV(options.getCSVRows(), options.filename)
+    });
+  }
+  if (options.getDocHTML) items.push({ label: '↓ Word (.doc)', icon: '#58a6ff', fn: () => downloadDoc(options.getDocHTML(), options.filename) });
 
   menu.innerHTML = `
     <div style="padding:8px 12px;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--text3);border-bottom:1px solid var(--border)">
@@ -124,6 +137,27 @@ function downloadDoc(html, filename) {
     download: `${filename}-${new Date().toISOString().slice(0,10)}.doc`
   }).click();
   URL.revokeObjectURL(url);
+}
+
+function downloadXLSX(blobOrPromise, filename) {
+  Promise.resolve(blobOrPromise).then(blob => {
+    const xlsxBlob = blob instanceof Blob
+      ? blob
+      : new Blob([blob], {
+          type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        });
+    const url = URL.createObjectURL(xlsxBlob);
+    const a = Object.assign(document.createElement('a'), {
+      href: url,
+      download: `${filename}-${new Date().toISOString().slice(0,10)}.xlsx`
+    });
+    a.click();
+    URL.revokeObjectURL(url);
+  }).catch(err => {
+    // eslint-disable-next-line no-console
+    console.error('XLSX download failed', err);
+    alert('Failed to generate Excel file. Please try CSV export.');
+  });
 }
 
 /**
