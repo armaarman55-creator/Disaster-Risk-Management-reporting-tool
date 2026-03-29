@@ -357,13 +357,7 @@ function renderShelterCard(s) {
       <div class="rec-foot">
         <button class="btn btn-green btn-sm shelter-update" data-id="${s.id}">Update</button>
         <button class="btn btn-sm shelter-edit" data-id="${s.id}">Edit details</button>
-        <div style="position:relative;display:inline-block">
-          <button class="btn btn-sm shelter-dl-toggle" data-id="${s.id}" data-name="${s.name}">↓ Save ▾</button>
-          <div class="dl-dropdown" id="sh-drop-${s.id}" style="display:none;position:absolute;top:100%;left:0;z-index:200;background:var(--bg2);border:1px solid var(--border);border-radius:6px;min-width:160px;box-shadow:0 4px 16px rgba(0,0,0,.3);margin-top:4px">
-            <button class="btn btn-sm" style="width:100%;text-align:left;border-radius:4px 4px 0 0;border:none;background:transparent;padding:8px 12px;font-size:12px;color:var(--text)" data-sh-txt="${s.id}">📄 Text file (.txt)</button>
-            <button class="btn btn-sm" style="width:100%;text-align:left;border-radius:0 0 4px 4px;border:none;background:transparent;padding:8px 12px;font-size:12px;color:var(--text)" data-sh-png="${s.id}">🖼 Image (.png)</button>
-          </div>
-        </div>
+        <button class="btn btn-sm shelter-dl-toggle" data-id="${s.id}">↓ Save ▾</button>
         <button class="btn btn-sm btn-red shelter-delete" data-id="${s.id}" style="margin-left:auto">Delete</button>
       </div>
     </div>`;
@@ -471,49 +465,49 @@ function bindShelterEvents(shelters) {
     });
   });
 
-  // Download dropdown toggle
+  // Download dropdown — fixed position, escapes card overflow
   document.querySelectorAll('.shelter-dl-toggle').forEach(btn => {
     btn.addEventListener('click', e => {
       e.stopPropagation();
-      const id   = btn.dataset.id;
-      const drop = document.getElementById(`sh-drop-${id}`);
-      if (!drop) return;
-      document.querySelectorAll('.dl-dropdown').forEach(d => { if (d.id !== `sh-drop-${id}`) d.style.display = 'none'; });
-      drop.style.display = drop.style.display === 'none' ? 'block' : 'none';
+      const id = btn.dataset.id;
+      const existing = document.getElementById('shared-dl-drop');
+      if (existing && existing.dataset.forId === id) { existing.remove(); return; }
+      if (existing) existing.remove();
+
+      const rect = btn.getBoundingClientRect();
+      const drop = document.createElement('div');
+      drop.id = 'shared-dl-drop';
+      drop.dataset.forId = id;
+      drop.style.cssText = `position:fixed;top:${rect.bottom + 4}px;left:${rect.left}px;z-index:9999;background:var(--bg2);border:1px solid var(--border);border-radius:6px;min-width:170px;overflow:hidden;box-shadow:0 6px 20px rgba(0,0,0,.35)`;
+      drop.innerHTML = `
+        <button data-sh-txt="${id}" style="display:block;width:100%;text-align:left;background:transparent;border:none;border-bottom:1px solid var(--border);padding:9px 14px;font-size:12px;color:var(--text);cursor:pointer;font-family:monospace">📄 Text file (.txt)</button>
+        <button data-sh-png="${id}" style="display:block;width:100%;text-align:left;background:transparent;border:none;padding:9px 14px;font-size:12px;color:var(--text);cursor:pointer;font-family:monospace">🖼 Image (.png)</button>`;
+
+      drop.querySelector('[data-sh-txt]').addEventListener('click', () => {
+        const s = shelters.find(x => x.id === id); drop.remove(); if (!s) return;
+        const text = `SHELTER NOTIFICATION\n${'='.repeat(40)}\n` +
+          `Name: ${s.name}\nStatus: ${(s.status||'').toUpperCase()}\n` +
+          `Type: ${s.facility_type||'—'}\nAddress: ${s.address||'—'}\n` +
+          `Ward: ${s.ward_number||'—'}\nCapacity: ${s.capacity||0}\n` +
+          `Current occupancy: ${s.current_occupancy||0}\n` +
+          `Contact: ${s.contact_name||'—'} · ${s.contact_number||'—'}\n` +
+          `Wheelchair accessible: ${s.wheelchair_accessible?'Yes':'No'}`;
+        const blob = new Blob([text], {type:'text/plain'});
+        const url  = URL.createObjectURL(blob);
+        Object.assign(document.createElement('a'), {href:url, download:`shelter-${s.name.replace(/\s+/g,'-')}.txt`}).click();
+        URL.revokeObjectURL(url);
+      });
+
+      drop.querySelector('[data-sh-png]').addEventListener('click', () => {
+        const s = shelters.find(x => x.id === id); drop.remove(); if (!s) return;
+        downloadShelterPNG(s);
+      });
+
+      document.body.appendChild(drop);
     });
   });
 
-  document.addEventListener('click', () => document.querySelectorAll('.dl-dropdown').forEach(d => d.style.display = 'none'));
-
-  // Text download
-  document.querySelectorAll('[data-sh-txt]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const s = shelters.find(x => x.id === btn.dataset.shTxt);
-      if (!s) return;
-      const text = `SHELTER NOTIFICATION\n${'='.repeat(40)}\n` +
-        `Name: ${s.name}\nStatus: ${(s.status||'').toUpperCase()}\n` +
-        `Type: ${s.facility_type||'—'}\nAddress: ${s.address||'—'}\n` +
-        `Ward: ${s.ward_number||'—'}\nCapacity: ${s.capacity||0}\n` +
-        `Current occupancy: ${s.current_occupancy||0}\n` +
-        `Contact: ${s.contact_name||'—'} · ${s.contact_number||'—'}\n` +
-        `Wheelchair accessible: ${s.wheelchair_accessible?'Yes':'No'}`;
-      const blob = new Blob([text], {type:'text/plain'});
-      const url  = URL.createObjectURL(blob);
-      const a    = Object.assign(document.createElement('a'), {href:url, download:`shelter-${s.name.replace(/\s+/g,'-')}.txt`});
-      a.click(); URL.revokeObjectURL(url);
-      document.getElementById(`sh-drop-${s.id}`).style.display = 'none';
-    });
-  });
-
-  // PNG download
-  document.querySelectorAll('[data-sh-png]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const s = shelters.find(x => x.id === btn.dataset.shPng);
-      if (!s) return;
-      document.getElementById(`sh-drop-${s.id}`).style.display = 'none';
-      downloadShelterPNG(s);
-    });
-  });
+  document.addEventListener('click', () => document.getElementById('shared-dl-drop')?.remove());
 
   document.querySelectorAll('.pub-tog').forEach(tog => {
     tog.addEventListener('click', async () => {
@@ -638,13 +632,7 @@ function renderReliefCard(op) {
       </div>
       <div class="rec-foot">
         <button class="btn btn-sm btn-green relief-edit" data-id="${op.id}">Edit</button>
-        <div style="position:relative;display:inline-block">
-          <button class="btn btn-sm relief-dl-toggle" data-id="${op.id}" data-name="${op.name}">↓ Save ▾</button>
-          <div class="dl-dropdown" id="ro-drop-${op.id}" style="display:none;position:absolute;top:100%;left:0;z-index:200;background:var(--bg2);border:1px solid var(--border);border-radius:6px;min-width:160px;box-shadow:0 4px 16px rgba(0,0,0,.3);margin-top:4px">
-            <button class="btn btn-sm" style="width:100%;text-align:left;border-radius:4px 4px 0 0;border:none;background:transparent;padding:8px 12px;font-size:12px;color:var(--text)" data-ro-txt="${op.id}">📄 Text file (.txt)</button>
-            <button class="btn btn-sm" style="width:100%;text-align:left;border-radius:0 0 4px 4px;border:none;background:transparent;padding:8px 12px;font-size:12px;color:var(--text)" data-ro-png="${op.id}">🖼 Image (.png)</button>
-          </div>
-        </div>
+        <button class="btn btn-sm relief-dl-toggle" data-id="${op.id}">↓ Save ▾</button>
         <button class="btn btn-sm btn-red relief-delete" data-id="${op.id}" style="margin-left:auto">Delete</button>
       </div>
     </div>`;
@@ -726,48 +714,48 @@ function bindReliefEvents(ops) {
     });
   });
 
-  // Dropdown toggle
+  // Download dropdown — fixed position, escapes card overflow
   document.querySelectorAll('.relief-dl-toggle').forEach(btn => {
     btn.addEventListener('click', e => {
       e.stopPropagation();
-      const id   = btn.dataset.id;
-      const drop = document.getElementById(`ro-drop-${id}`);
-      if (!drop) return;
-      document.querySelectorAll('.dl-dropdown').forEach(d => { if (d.id !== `ro-drop-${id}`) d.style.display = 'none'; });
-      drop.style.display = drop.style.display === 'none' ? 'block' : 'none';
+      const id = btn.dataset.id;
+      const existing = document.getElementById('shared-dl-drop');
+      if (existing && existing.dataset.forId === id) { existing.remove(); return; }
+      if (existing) existing.remove();
+
+      const rect = btn.getBoundingClientRect();
+      const drop = document.createElement('div');
+      drop.id = 'shared-dl-drop';
+      drop.dataset.forId = id;
+      drop.style.cssText = `position:fixed;top:${rect.bottom + 4}px;left:${rect.left}px;z-index:9999;background:var(--bg2);border:1px solid var(--border);border-radius:6px;min-width:170px;overflow:hidden;box-shadow:0 6px 20px rgba(0,0,0,.35)`;
+      drop.innerHTML = `
+        <button data-ro-txt="${id}" style="display:block;width:100%;text-align:left;background:transparent;border:none;border-bottom:1px solid var(--border);padding:9px 14px;font-size:12px;color:var(--text);cursor:pointer;font-family:monospace">📄 Text file (.txt)</button>
+        <button data-ro-png="${id}" style="display:block;width:100%;text-align:left;background:transparent;border:none;padding:9px 14px;font-size:12px;color:var(--text);cursor:pointer;font-family:monospace">🖼 Image (.png)</button>`;
+
+      drop.querySelector('[data-ro-txt]').addEventListener('click', () => {
+        const op = ops.find(o => o.id === id); drop.remove(); if (!op) return;
+        const text = `RELIEF OPERATION NOTIFICATION\n${'='.repeat(40)}\n` +
+          `Operation: ${op.name}\nStatus: ${(op.status||'').toUpperCase()}\n` +
+          `Hazard: ${op.hazard_name||'—'}\nWard: ${op.ward_number||'—'}\n` +
+          `Distribution point: ${op.distribution_point||'—'}\nSchedule: ${op.schedule||'—'}\n` +
+          `Responsible org: ${op.responsible_org||'—'}\nPublic contact: ${op.public_contact||'—'}\n` +
+          `End date: ${op.end_date ? new Date(op.end_date).toLocaleDateString('en-ZA') : '—'}`;
+        const blob = new Blob([text], {type:'text/plain'});
+        const url  = URL.createObjectURL(blob);
+        Object.assign(document.createElement('a'), {href:url, download:`relief-op-${op.name.replace(/\s+/g,'-')}.txt`}).click();
+        URL.revokeObjectURL(url);
+      });
+
+      drop.querySelector('[data-ro-png]').addEventListener('click', () => {
+        const op = ops.find(o => o.id === id); drop.remove(); if (!op) return;
+        downloadReliefPNG(op);
+      });
+
+      document.body.appendChild(drop);
     });
   });
 
-  document.addEventListener('click', () => document.querySelectorAll('.dl-dropdown').forEach(d => d.style.display = 'none'));
-
-  // Text download
-  document.querySelectorAll('[data-ro-txt]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const op = ops.find(o => o.id === btn.dataset.roTxt);
-      if (!op) return;
-      const text = `RELIEF OPERATION NOTIFICATION\n${'='.repeat(40)}\n` +
-        `Operation: ${op.name}\nStatus: ${(op.status||'').toUpperCase()}\n` +
-        `Hazard: ${op.hazard_name||'—'}\nWard: ${op.ward_number||'—'}\n` +
-        `Distribution point: ${op.distribution_point||'—'}\nSchedule: ${op.schedule||'—'}\n` +
-        `Responsible org: ${op.responsible_org||'—'}\nPublic contact: ${op.public_contact||'—'}\n` +
-        `End date: ${op.end_date ? new Date(op.end_date).toLocaleDateString('en-ZA') : '—'}`;
-      const blob = new Blob([text], {type:'text/plain'});
-      const url  = URL.createObjectURL(blob);
-      const a    = Object.assign(document.createElement('a'), {href:url, download:`relief-op-${op.name.replace(/\s+/g,'-')}.txt`});
-      a.click(); URL.revokeObjectURL(url);
-      document.getElementById(`ro-drop-${op.id}`).style.display = 'none';
-    });
-  });
-
-  // PNG download
-  document.querySelectorAll('[data-ro-png]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const op = ops.find(o => o.id === btn.dataset.roPng);
-      if (!op) return;
-      document.getElementById(`ro-drop-${op.id}`).style.display = 'none';
-      downloadReliefPNG(op);
-    });
-  });
+  document.addEventListener('click', () => document.getElementById('shared-dl-drop')?.remove());
 }
 
 // ── SAWS ─────────────────────────────────────────────────
