@@ -343,8 +343,7 @@ async function downloadClosurePNG(c) {
   ctx.fillText('Road Closure Notice', 20, bodyTop + 38);
 
   // ── LEFT: Body paragraph
-  const boldPhrases = [c.road_name, muniName + ' Disaster Management Centre', c.road_name];
-  const bodyLines = wrapTextBlocks(ctx, [
+  const bodyLines = wrapRichText(ctx, [
     { text: c.road_name, bold: true },
     { text: ' is closed to all traffic.', bold: false }
   ], SPLIT - 40, 13);
@@ -359,8 +358,8 @@ async function downloadClosurePNG(c) {
   ];
 
   let ty = bodyTop + 62;
-  drawRichLine(ctx, bodyLines, 20, ty, 13, '#1a1a1a');
-  ty += 22;
+  bodyLines.forEach(line => { drawRichLine(ctx, line, 20, ty, 13, '#1a1a1a'); ty += 20; });
+  ty += 4;
   const para2Lines = wrapRichText(ctx, para2, SPLIT - 40, 13);
   para2Lines.forEach(line => { drawRichLine(ctx, line, 20, ty, 13, '#1a1a1a'); ty += 20; });
 
@@ -398,8 +397,7 @@ async function downloadClosurePNG(c) {
     { label: 'Status',            value: null, badge: true, badgeText: statusLabel, badgeBg: statusBg },
     { label: 'Authority',         value: c.authority || '—' },
     { label: 'Closed since',      value: c.closed_since ? new Date(c.closed_since).toLocaleString('en-ZA') : '—' },
-    { label: 'Expected reopening',value: c.expected_reopen || 'Unknown' },
-    { label: 'Wards affected',    value: Array.isArray(c.affected_wards) ? c.affected_wards.join(', ') : c.affected_wards || '—' }
+    { label: 'Expected reopening',value: c.expected_reopen || 'Unknown' }
   ];
 
   let ry = bodyTop + 18;
@@ -488,9 +486,7 @@ function wrapText(ctx, text, maxWidth) {
   if (current) lines.push(current);
   return lines;
 }
-function wrapTextBlocks(ctx, segments, maxWidth, fontSize) {
-  return wrapRichText(ctx, segments, maxWidth, fontSize);
-}
+
 function wrapRichText(ctx, segments, maxWidth, fontSize) {
   const words = [];
   segments.forEach(seg => {
@@ -592,6 +588,7 @@ function bindClosureEvents() {
       drop.id = 'shared-dl-drop';
       drop.dataset.forId = id;
       drop.style.cssText = `position:fixed;top:${rect.bottom + 4}px;left:${rect.left}px;z-index:9999;background:var(--bg2);border:1px solid var(--border);border-radius:6px;min-width:170px;overflow:hidden;box-shadow:0 6px 20px rgba(0,0,0,.35)`;
+      drop.addEventListener('click', e => e.stopPropagation());
       drop.innerHTML = `
         <button data-dl-text="${id}" style="display:block;width:100%;text-align:left;background:transparent;border:none;border-bottom:1px solid var(--border);padding:9px 14px;font-size:12px;color:var(--text);cursor:pointer;font-family:monospace">📄 Text file (.txt)</button>
         <button data-dl-png="${id}"  style="display:block;width:100%;text-align:left;background:transparent;border:none;padding:9px 14px;font-size:12px;color:var(--text);cursor:pointer;font-family:monospace">🖼 Image (.png)</button>`;
