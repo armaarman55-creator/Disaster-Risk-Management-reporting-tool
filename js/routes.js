@@ -102,13 +102,7 @@ function renderClosureCard(c) {
       <div class="rec-foot">
         <button class="btn btn-sm btn-green closure-save" data-id="${c.id}">Save changes</button>
         <button class="btn btn-sm closure-email" data-id="${c.id}">✉ Email</button>
-        <div style="position:relative;display:inline-block">
-          <button class="btn btn-sm closure-dl-toggle" data-id="${c.id}" data-name="${c.road_name}">↓ Save ▾</button>
-          <div class="dl-dropdown" id="dl-drop-${c.id}" style="display:none;position:absolute;top:100%;left:0;z-index:200;background:var(--bg2);border:1px solid var(--border);border-radius:6px;min-width:160px;box-shadow:0 4px 16px rgba(0,0,0,.3);margin-top:4px">
-            <button class="btn btn-sm" style="width:100%;text-align:left;border-radius:4px 4px 0 0;border:none;background:transparent;padding:8px 12px;font-size:12px;color:var(--text)" data-dl-text="${c.id}">📄 Text file (.txt)</button>
-            <button class="btn btn-sm" style="width:100%;text-align:left;border-radius:0 0 4px 4px;border:none;background:transparent;padding:8px 12px;font-size:12px;color:var(--text)" data-dl-png="${c.id}">🖼 Image (.png)</button>
-          </div>
-        </div>
+        <button class="btn btn-sm closure-dl-toggle" data-id="${c.id}">↓ Save ▾</button>
         <button class="btn btn-sm closure-edit" data-id="${c.id}" style="margin-left:auto">Edit</button>
         <button class="btn btn-sm btn-red closure-delete" data-id="${c.id}">Delete</button>
       </div>
@@ -580,56 +574,54 @@ function bindClosureEvents() {
     });
   });
 
-  // Download dropdown toggle
+  // Download dropdown toggle — fixed-position so it escapes card overflow
   document.querySelectorAll('.closure-dl-toggle').forEach(btn => {
     btn.addEventListener('click', e => {
       e.stopPropagation();
-      const id  = btn.dataset.id;
-      const drop = document.getElementById(`dl-drop-${id}`);
-      if (!drop) return;
-      // Close all others
-      document.querySelectorAll('.dl-dropdown').forEach(d => { if (d.id !== `dl-drop-${id}`) d.style.display = 'none'; });
-      drop.style.display = drop.style.display === 'none' ? 'block' : 'none';
-    });
-  });
+      const id   = btn.dataset.id;
+      const existing = document.getElementById('shared-dl-drop');
+      if (existing && existing.dataset.forId === id) {
+        existing.remove(); return;
+      }
+      if (existing) existing.remove();
 
-  // Close dropdowns on outside click
-  document.addEventListener('click', () => {
-    document.querySelectorAll('.dl-dropdown').forEach(d => d.style.display = 'none');
-  });
+      const rect = btn.getBoundingClientRect();
+      const drop = document.createElement('div');
+      drop.id = 'shared-dl-drop';
+      drop.dataset.forId = id;
+      drop.style.cssText = `position:fixed;top:${rect.bottom + 4}px;left:${rect.left}px;z-index:9999;background:var(--bg2);border:1px solid var(--border);border-radius:6px;min-width:170px;overflow:hidden;box-shadow:0 6px 20px rgba(0,0,0,.35)`;
+      drop.innerHTML = `
+        <button data-dl-text="${id}" style="display:block;width:100%;text-align:left;background:transparent;border:none;border-bottom:1px solid var(--border);padding:9px 14px;font-size:12px;color:var(--text);cursor:pointer;font-family:monospace">📄 Text file (.txt)</button>
+        <button data-dl-png="${id}"  style="display:block;width:100%;text-align:left;background:transparent;border:none;padding:9px 14px;font-size:12px;color:var(--text);cursor:pointer;font-family:monospace">🖼 Image (.png)</button>`;
 
-  // Text download
-  document.querySelectorAll('[data-dl-text]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const c = _closures.find(x => x.id === btn.dataset.dlText);
-      if (!c) return;
-      const alt  = c.alternative_routes?.[0];
-      const text = `ROUTE CLOSURE NOTIFICATION\n${'='.repeat(40)}\n` +
-        `Road: ${c.road_name}\nStatus: ${(c.status||'').toUpperCase()}\n` +
-        `Reason: ${c.reason||'N/A'}\nAuthority: ${c.authority||'N/A'}\n` +
-        `Closed since: ${c.closed_since ? new Date(c.closed_since).toLocaleString('en-ZA') : 'N/A'}\n` +
-        `Expected reopening: ${c.expected_reopen||'Unknown'}\n` +
-        `Wards affected: ${Array.isArray(c.affected_wards) ? c.affected_wards.join(', ') : c.affected_wards||'N/A'}` +
-        (alt ? `\n\nALTERNATIVE ROUTE:\n${alt.description}\nExtra distance: ${alt.extra_distance||'?'} km · ${alt.vehicle_suitability||'All vehicles'}` : '');
-      const blob = new Blob([text], { type: 'text/plain' });
-      const url  = URL.createObjectURL(blob);
-      const a    = Object.assign(document.createElement('a'), {
-        href: url,
-        download: `route-closure-${(c.road_name||'route').replace(/\s+/g,'-')}.txt`
+      drop.querySelector('[data-dl-text]').addEventListener('click', () => {
+        const c = _closures.find(x => x.id === id); drop.remove(); if (!c) return;
+        const alt  = c.alternative_routes?.[0];
+        const text = `ROUTE CLOSURE NOTIFICATION\n${'='.repeat(40)}\n` +
+          `Road: ${c.road_name}\nStatus: ${(c.status||'').toUpperCase()}\n` +
+          `Reason: ${c.reason||'N/A'}\nAuthority: ${c.authority||'N/A'}\n` +
+          `Closed since: ${c.closed_since ? new Date(c.closed_since).toLocaleString('en-ZA') : 'N/A'}\n` +
+          `Expected reopening: ${c.expected_reopen||'Unknown'}\n` +
+          `Wards affected: ${Array.isArray(c.affected_wards) ? c.affected_wards.join(', ') : c.affected_wards||'N/A'}` +
+          (alt ? `\n\nALTERNATIVE ROUTE:\n${alt.description}\nExtra distance: ${alt.extra_distance||'?'} km · ${alt.vehicle_suitability||'All vehicles'}` : '');
+        const blob = new Blob([text], { type: 'text/plain' });
+        const url  = URL.createObjectURL(blob);
+        const a    = Object.assign(document.createElement('a'), { href: url, download: `route-closure-${(c.road_name||'route').replace(/\s+/g,'-')}.txt` });
+        a.click(); URL.revokeObjectURL(url);
       });
-      a.click(); URL.revokeObjectURL(url);
-      document.getElementById(`dl-drop-${c.id}`).style.display = 'none';
+
+      drop.querySelector('[data-dl-png]').addEventListener('click', () => {
+        const c = _closures.find(x => x.id === id); drop.remove(); if (!c) return;
+        downloadClosurePNG(c);
+      });
+
+      document.body.appendChild(drop);
     });
   });
 
-  // PNG download
-  document.querySelectorAll('[data-dl-png]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const c = _closures.find(x => x.id === btn.dataset.dlPng);
-      if (!c) return;
-      document.getElementById(`dl-drop-${c.id}`).style.display = 'none';
-      downloadClosurePNG(c);
-    });
+  // Close shared dropdown on outside click
+  document.addEventListener('click', () => {
+    document.getElementById('shared-dl-drop')?.remove();
   });
 
   document.querySelectorAll('.closure-edit').forEach(btn => {
