@@ -1,27 +1,12 @@
 // js/routes.js
 import { supabase } from './supabase.js';
 
-let _muniId   = null;
+let _muniId = null;
 let _closures = [];
-let _muniLogos = { main: null, dm: null, mode: 'main' };
 
 export async function initRoutes(user) {
   _muniId = user?.municipality_id;
-  await fetchMuniLogos();
   await renderRoutes();
-}
-
-async function fetchMuniLogos() {
-  const { data } = await supabase
-    .from('municipalities')
-    .select('logo_main_url, logo_dm_url, logo_display_mode')
-    .eq('id', _muniId)
-    .single();
-  _muniLogos = {
-    main: data?.logo_main_url || null,
-    dm:   data?.logo_dm_url   || null,
-    mode: data?.logo_display_mode || 'main'
-  };
 }
 
 async function renderRoutes() {
@@ -57,15 +42,15 @@ async function renderRoutes() {
 }
 
 function renderClosureCard(c) {
-  const alt          = c.alternative_routes?.[0];
+  const alt = c.alternative_routes?.[0];
   const statusColour = { closed:'var(--red)', partial:'var(--amber)', open:'var(--green)' };
 
   return `
-    <div class="rec-card" id="closure-${c.id}" style="margin-bottom:12px;border-left:3px solid ${statusColour[c.status]||'var(--border)'}">
+    <div class="rec-card" id="closure-${c.id}" style="margin-bottom:12px;border-left:3px solid ${statusColour[c.status]||'var(--border)'};overflow:visible;position:relative;z-index:2">
       <div class="rec-head">
         <div>
           <div class="rec-name">${c.road_name}</div>
-          <div class="rec-meta">${c.reason||'No reason'} · Ward${Array.isArray(c.affected_wards)?'s '+c.affected_wards.join(', '):' '+c.affected_wards||'?'}</div>
+          <div class="rec-meta">${c.reason || 'No reason'} · ${formatWardsLabel(c.affected_wards)}</div>
         </div>
         <div class="rec-badges">
           <span class="badge ${c.status==='closed'?'b-red':c.status==='partial'?'b-amber':'b-green'}">${(c.status||'unknown').toUpperCase()}</span>
@@ -102,47 +87,67 @@ function renderClosureCard(c) {
       <div class="rec-foot">
         <button class="btn btn-sm btn-green closure-save" data-id="${c.id}">Save changes</button>
         <button class="btn btn-sm closure-email" data-id="${c.id}">✉ Email</button>
-        <button class="btn btn-sm closure-dl-toggle" data-id="${c.id}">↓ Save ▾</button>
+        <button class="btn btn-sm closure-dl" data-id="${c.id}" data-name="${c.road_name}">↓ Save</button>
         <button class="btn btn-sm closure-edit" data-id="${c.id}" style="margin-left:auto">Edit</button>
         <button class="btn btn-sm btn-red closure-delete" data-id="${c.id}">Delete</button>
       </div>
     </div>`;
 }
 
-// ── ADD ALT ROUTE FORM ────────────────────────────────────
 function showAddAltRouteForm(closureId, containerId) {
   const area = document.getElementById(containerId || `alt-area-${closureId}`);
   if (!area) return;
+
   area.innerHTML = `
-    <div style="background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:12px;margin-top:8px">
-      <div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:10px">Add alternative route</div>
-      <div class="fl"><span class="fl-label">Route description</span><textarea class="fl-textarea" id="alt-desc-${closureId}" rows="3" placeholder="Describe the alternative route…"></textarea></div>
+    <div style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:14px">
+      <div style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:10px;font-family:Inter,system-ui,sans-serif">Alternative route details</div>
+      <div class="fl"><span class="fl-label">Route description</span>
+        <textarea class="fl-textarea" id="alt-desc-${closureId}" rows="2" placeholder="e.g. Turn left at Main St, continue via Oak Ave to rejoin R62..."></textarea>
+      </div>
       <div class="frow">
-        <div class="fl"><span class="fl-label">Extra distance (km)</span><input class="fl-input" type="number" id="alt-dist-${closureId}" placeholder="e.g. 4.5"/></div>
+        <div class="fl"><span class="fl-label">Extra distance (km)</span><input class="fl-input" type="number" id="alt-dist-${closureId}" placeholder="e.g. 4"/></div>
         <div class="fl"><span class="fl-label">Vehicle suitability</span>
-          <select class="fl-sel" id="alt-suit-${closureId}">
-            <option>All vehicles</option><option>Passenger vehicles only</option><option>Light delivery only</option><option>No heavy vehicles</option>
+          <select class="fl-sel" id="alt-veh-${closureId}">
+            <option>All vehicles</option>
+            <option>Light vehicles only</option>
+            <option>4x4 only</option>
+            <option>No heavy vehicles</option>
           </select>
         </div>
       </div>
+      <div class="fl"><span class="fl-label">Road condition</span>
+        <select class="fl-sel" id="alt-cond-${closureId}">
+          <option>Good</option><option>Fair</option><option>Poor</option><option>Gravel</option>
+        </select>
+      </div>
       <div style="display:flex;gap:8px;margin-top:8px">
-        <button class="btn btn-green btn-sm" id="save-alt-${closureId}" data-closure="${closureId}">Save route</button>
+        <button class="btn btn-green btn-sm" id="save-alt-${closureId}">Save route</button>
         <button class="btn btn-sm" onclick="document.getElementById('alt-area-${closureId}').innerHTML='<button class=\\'btn btn-sm btn-green add-alt-btn\\' data-closure=\\'${closureId}\\'>+ Add alternative route</button>'">Cancel</button>
       </div>
     </div>`;
 
+  // Bind save button immediately after rendering
   document.getElementById(`save-alt-${closureId}`)?.addEventListener('click', async () => {
     const desc = document.getElementById(`alt-desc-${closureId}`)?.value.trim();
     if (!desc) { alert('Please enter a route description.'); return; }
+
     const { error } = await supabase.from('alternative_routes').insert({
-      closure_id:         closureId,
-      municipality_id:    _muniId,
-      description:        desc,
-      extra_distance:     parseFloat(document.getElementById(`alt-dist-${closureId}`)?.value)||null,
-      vehicle_suitability: document.getElementById(`alt-suit-${closureId}`)?.value
+      closure_id:          closureId,
+      municipality_id:     _muniId,
+      description:         desc,
+      extra_distance:      parseInt(document.getElementById(`alt-dist-${closureId}`)?.value) || null,
+      vehicle_suitability: document.getElementById(`alt-veh-${closureId}`)?.value,
+      road_condition:      document.getElementById(`alt-cond-${closureId}`)?.value,
+      is_published:        false
     });
-    if (!error) { showToast('✓ Alternative route saved!'); await renderRoutes(); }
+
+    if (!error) { showToast('✓ Alternative route saved successfully!'); await renderRoutes(); }
     else showToast('Error: ' + error.message, true);
+  });
+
+  // Re-bind add-alt buttons after any DOM change
+  document.querySelectorAll('.add-alt-btn').forEach(btn => {
+    btn.addEventListener('click', () => showAddAltRouteForm(btn.dataset.closure));
   });
 }
 
@@ -152,44 +157,45 @@ function showAddClosureForm() {
   if (area.innerHTML) { area.innerHTML = ''; return; }
 
   area.innerHTML = `
-    <div class="rec-card" style="margin-bottom:16px;border:1px solid var(--red-mid)">
-      <div class="rec-head"><div class="rec-name">Add new road closure</div></div>
+    <div class="rec-card" style="margin-bottom:16px;border:1px solid var(--red)">
+      <div class="rec-head"><div class="rec-name">New road closure</div></div>
       <div style="padding:16px">
         <div class="frow">
-          <div class="fl"><span class="fl-label">Road / street name</span><input class="fl-input" id="new-road-name" placeholder="e.g. Main Road, Knysna"/></div>
+          <div class="fl"><span class="fl-label">Road name / number</span><input class="fl-input" id="new-road-name" placeholder="e.g. R62 Main Road, Schoemanshoek"/></div>
           <div class="fl"><span class="fl-label">Status</span>
             <select class="fl-sel" id="new-road-status">
               <option value="closed">Fully closed</option>
               <option value="partial">Partial / Caution</option>
-              <option value="open">Reopened</option>
             </select>
           </div>
         </div>
-        <div class="fl"><span class="fl-label">Reason for closure</span><input class="fl-input" id="new-road-reason" placeholder="e.g. Flood damage, sinkholes"/></div>
+        <div class="fl"><span class="fl-label">Reason for closure</span><input class="fl-input" id="new-road-reason" placeholder="e.g. Flash flood damage to road surface"/></div>
         <div class="frow">
+          <div class="fl"><span class="fl-label">Affected wards (comma separated)</span><input class="fl-input" id="new-road-wards" placeholder="e.g. 1, 4, 7"/></div>
           <div class="fl"><span class="fl-label">Authority</span>
             <select class="fl-sel" id="new-road-auth">
               <option>SANRAL</option><option>DRPW</option><option>Municipal</option><option>SAPS</option><option>Traffic</option>
             </select>
           </div>
-          <div class="fl"><span class="fl-label">Expected reopening</span><input class="fl-input" id="new-road-reopen" placeholder="e.g. 25 Mar 2025"/></div>
         </div>
-        <div class="fl"><span class="fl-label">Wards affected (comma-separated)</span><input class="fl-input" id="new-road-wards" placeholder="e.g. 3, 7, 12"/></div>
+        <div class="fl"><span class="fl-label">Expected reopening</span><input class="fl-input" id="new-road-reopen" placeholder="e.g. 25 March 2025 or Unknown"/></div>
         <div style="display:flex;gap:8px;margin-top:8px">
-          <button class="btn btn-red btn-sm" id="save-new-closure-btn">Save closure</button>
+          <button class="btn btn-green btn-sm" id="save-new-closure-btn">Save closure</button>
           <button class="btn btn-sm" onclick="document.getElementById('add-closure-area').innerHTML=''">Cancel</button>
         </div>
       </div>
     </div>`;
 
   document.getElementById('save-new-closure-btn')?.addEventListener('click', async () => {
-    const name = document.getElementById('new-road-name')?.value.trim();
-    if (!name) { alert('Road name is required.'); return; }
-    const wardsRaw = document.getElementById('new-road-wards')?.value || '';
-    const wards    = wardsRaw.split(',').map(w => w.trim()).filter(Boolean);
+    const roadName = document.getElementById('new-road-name')?.value.trim();
+    if (!roadName) { alert('Road name is required.'); return; }
+
+    const wardsRaw = document.getElementById('new-road-wards')?.value;
+    const wards = wardsRaw ? wardsRaw.split(',').map(w=>w.trim()).filter(Boolean) : [];
+
     const { error } = await supabase.from('road_closures').insert({
       municipality_id: _muniId,
-      road_name:       name,
+      road_name:       roadName,
       status:          document.getElementById('new-road-status')?.value,
       reason:          document.getElementById('new-road-reason')?.value,
       affected_wards:  wards,
@@ -198,6 +204,7 @@ function showAddClosureForm() {
       closed_since:    new Date().toISOString(),
       is_published:    false
     });
+
     if (!error) { area.innerHTML = ''; showToast('✓ Road closure saved successfully!'); await renderRoutes(); }
     else showToast('Error saving closure: ' + error.message, true);
   });
@@ -251,298 +258,24 @@ function showEditClosureForm(closure) {
         expected_reopen: document.getElementById('edit-road-reopen')?.value,
         updated_at:      new Date().toISOString()
       }).eq('id', id);
-      if (!error) { document.getElementById('add-closure-area').innerHTML = ''; showToast('✓ Closure updated successfully!'); await renderRoutes(); }
-      else showToast('Error: ' + error.message, true);
+      if (!error) {
+        document.getElementById('add-closure-area').innerHTML = '';
+        showToast('✓ Closure updated successfully!');
+        await renderRoutes();
+      } else {
+        showToast('Error: ' + error.message, true);
+      }
     });
   });
 }
 
-// ── PNG IMAGE DOWNLOAD ────────────────────────────────────
-async function downloadClosurePNG(c) {
-  const alt         = c.alternative_routes?.[0];
-  const muniName    = window._drmsaUser?.municipalities?.name || 'Municipality';
-  const date        = new Date().toLocaleString('en-ZA');
-  const statusLabel = { closed:'FULLY CLOSED', partial:'PARTIAL CLOSURE', open:'REOPENED' }[c.status] || (c.status||'').toUpperCase();
-  const accentColor = { closed:'#1a3a6b', partial:'#7a5200', open:'#1a6b3a' }[c.status] || '#1a3a6b';
-  const statusBg    = { closed:'#c0392b', partial:'#d4860a', open:'#1a6b3a' }[c.status] || '#555';
-
-  const logoImgs = await loadLogoImages();
-
-  // Canvas dimensions: 900 wide, height depends on alt route
-  const W = 900;
-  const HAS_ALT = !!alt;
-  const H = HAS_ALT ? 580 : 480;
-  const SPLIT = Math.round(W * 0.63); // left column width
-  const HDR_H = 76;  // header row height
-  const FTR_H = 32;  // footer bar height
-
-  const canvas = document.createElement('canvas');
-  canvas.width = W; canvas.height = H;
-  const ctx = canvas.getContext('2d');
-
-  // ── Background
-  ctx.fillStyle = '#f0eeea';
-  ctx.fillRect(0, 0, W, H);
-
-  // ── Top accent bar
-  ctx.fillStyle = accentColor;
-  ctx.fillRect(0, 0, W, 6);
-
-  // ── Header row (white)
-  ctx.fillStyle = '#ffffff';
-  ctx.fillRect(0, 6, W, HDR_H);
-  ctx.strokeStyle = '#d0ccc4';
-  ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.moveTo(0, 6 + HDR_H); ctx.lineTo(W, 6 + HDR_H); ctx.stroke();
-
-  // Logos in header
-  let logoX = 16;
-  for (const img of logoImgs) {
-    if (!img) continue;
-    const aspect = img.naturalWidth / img.naturalHeight;
-    const drawH  = 48;
-    const drawW  = Math.min(drawH * aspect, 90);
-    ctx.drawImage(img, logoX, 6 + (HDR_H - drawH) / 2, drawW, drawH);
-    logoX += drawW + 10;
-  }
-
-  // Municipality name + subtitle in header
-  const hTextX = logoX + 6;
-  ctx.fillStyle = '#333333';
-  ctx.font = 'bold 13px Arial, sans-serif';
-  ctx.fillText(muniName, hTextX, 6 + 28);
-  ctx.fillStyle = '#888888';
-  ctx.font = '11px Arial, sans-serif';
-  ctx.fillText('Disaster Management Centre', hTextX, 6 + 46);
-
-  // Issue date top-right
-  ctx.fillStyle = '#aaaaaa';
-  ctx.font = '10px Arial, sans-serif';
-  ctx.textAlign = 'right';
-  ctx.fillText('Issued: ' + date, W - 16, 6 + 26);
-  ctx.fillText('FOR OFFICIAL USE', W - 16, 6 + 42);
-  ctx.textAlign = 'left';
-
-  const bodyTop = 6 + HDR_H;
-  const bodyH   = H - bodyTop - FTR_H;
-
-  // ── Left column background
-  ctx.fillStyle = '#fafaf8';
-  ctx.fillRect(0, bodyTop, SPLIT, bodyH);
-
-  // ── Right column background (already #f0eeea from base)
-
-  // ── Divider between columns
-  ctx.strokeStyle = '#d0ccc4';
-  ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.moveTo(SPLIT, bodyTop); ctx.lineTo(SPLIT, H - FTR_H); ctx.stroke();
-
-  // ── LEFT: Title
-  ctx.fillStyle = accentColor;
-  ctx.font = 'bold 26px Arial, sans-serif';
-  ctx.fillText('Road Closure Notice', 20, bodyTop + 38);
-
-  // ── LEFT: Body paragraph
-  const boldPhrases = [c.road_name, muniName + ' Disaster Management Centre', c.road_name];
-  const bodyLines = wrapTextBlocks(ctx, [
-    { text: c.road_name, bold: true },
-    { text: ' is closed to all traffic.', bold: false }
-  ], SPLIT - 40, 13);
-
-  const para2 = [
-    { text: 'The ', bold: false },
-    { text: muniName + ' Disaster Management Centre', bold: true },
-    { text: ' notifies road users of the closure of ', bold: false },
-    { text: c.road_name, bold: true },
-    { text: c.reason ? ' due to ' : '.', bold: false },
-    ...(c.reason ? [{ text: c.reason, bold: true }, { text: '.', bold: false }] : [])
-  ];
-
-  let ty = bodyTop + 62;
-  drawRichLine(ctx, bodyLines, 20, ty, 13, '#1a1a1a');
-  ty += 22;
-  const para2Lines = wrapRichText(ctx, para2, SPLIT - 40, 13);
-  para2Lines.forEach(line => { drawRichLine(ctx, line, 20, ty, 13, '#1a1a1a'); ty += 20; });
-
-  // ── LEFT: Alternative route box
-  if (alt) {
-    const altY = ty + 14;
-    const altH = 72 + (alt.extra_distance ? 20 : 0);
-    ctx.fillStyle = '#e8f0e4';
-    ctx.fillRect(20, altY, SPLIT - 40, altH);
-    ctx.fillStyle = '#3a7d44';
-    ctx.fillRect(20, altY, 4, altH);
-    ctx.strokeStyle = '#b8d4b8';
-    ctx.lineWidth = 1;
-    ctx.strokeRect(20, altY, SPLIT - 40, altH);
-
-    ctx.fillStyle = '#3a7d44';
-    ctx.font = 'bold 10px Arial, sans-serif';
-    ctx.fillText('ALTERNATIVE ROUTE', 32, altY + 18);
-
-    ctx.fillStyle = '#1a1a1a';
-    ctx.font = '12px Arial, sans-serif';
-    const altLines = wrapText(ctx, alt.description, SPLIT - 80);
-    altLines.slice(0, 2).forEach((line, i) => ctx.fillText(line, 32, altY + 36 + i * 18));
-
-    if (alt.extra_distance) {
-      ctx.fillStyle = '#555555';
-      ctx.font = '11px Arial, sans-serif';
-      ctx.fillText(`+${alt.extra_distance} km · ${alt.vehicle_suitability || 'All vehicles'}`, 32, altY + altH - 10);
-    }
-  }
-
-  // ── RIGHT: Detail fields
-  const RX = SPLIT + 16;
-  const fieldDefs = [
-    { label: 'Status',            value: null, badge: true, badgeText: statusLabel, badgeBg: statusBg },
-    { label: 'Authority',         value: c.authority || '—' },
-    { label: 'Closed since',      value: c.closed_since ? new Date(c.closed_since).toLocaleString('en-ZA') : '—' },
-    { label: 'Expected reopening',value: c.expected_reopen || 'Unknown' },
-    { label: 'Wards affected',    value: Array.isArray(c.affected_wards) ? c.affected_wards.join(', ') : c.affected_wards || '—' }
-  ];
-
-  let ry = bodyTop + 18;
-  fieldDefs.forEach(f => {
-    ctx.fillStyle = '#888888';
-    ctx.font = 'bold 9px Arial, sans-serif';
-    ctx.fillText(f.label.toUpperCase(), RX, ry);
-    ry += 14;
-    if (f.badge) {
-      ctx.fillStyle = f.badgeBg;
-      const bw = ctx.measureText(f.badgeText).width + 16;
-      roundRect(ctx, RX, ry - 11, bw, 18, 3);
-      ctx.fill();
-      ctx.fillStyle = '#ffffff';
-      ctx.font = 'bold 10px Arial, sans-serif';
-      ctx.fillText(f.badgeText, RX + 8, ry + 3);
-      ry += 22;
-    } else {
-      ctx.fillStyle = '#1a1a1a';
-      ctx.font = '12px Arial, sans-serif';
-      const valLines = wrapText(ctx, String(f.value), W - SPLIT - 32);
-      valLines.slice(0, 2).forEach(line => { ctx.fillText(line, RX, ry); ry += 16; });
-      ry += 4;
-    }
-    ry += 8;
-  });
-
-  // Issued by (bottom of right col)
-  const issuedY = H - FTR_H - 52;
-  ctx.strokeStyle = '#c8c4bc';
-  ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.moveTo(RX, issuedY); ctx.lineTo(W - 16, issuedY); ctx.stroke();
-  ctx.fillStyle = '#888888';
-  ctx.font = 'bold 9px Arial, sans-serif';
-  ctx.fillText('ISSUED BY', RX, issuedY + 14);
-  ctx.fillStyle = '#333333';
-  ctx.font = '11px Arial, sans-serif';
-  ctx.fillText(muniName, RX, issuedY + 28);
-  ctx.fillStyle = '#666666';
-  ctx.font = '10px Arial, sans-serif';
-  ctx.fillText('Disaster Management', RX, issuedY + 42);
-
-  // ── Footer bar
-  ctx.fillStyle = accentColor;
-  ctx.fillRect(0, H - FTR_H, W, FTR_H);
-  ctx.fillStyle = '#aac4f0';
-  ctx.font = '10px Arial, sans-serif';
-  ctx.fillText(muniName + ' Disaster Management Centre', 16, H - FTR_H + 20);
-  ctx.textAlign = 'right';
-  ctx.fillText('Generated: ' + date, W - 16, H - FTR_H + 20);
-  ctx.textAlign = 'left';
-
-  canvas.toBlob(blob => {
-    const url = URL.createObjectURL(blob);
-    const a   = Object.assign(document.createElement('a'), {
-      href: url,
-      download: `road-closure-notice-${(c.road_name||'route').replace(/\s+/g,'-')}.png`
-    });
-    a.click(); URL.revokeObjectURL(url);
-  }, 'image/png');
-}
-
-// ── CANVAS HELPERS ────────────────────────────────────────
-function roundRect(ctx, x, y, w, h, r) {
-  ctx.beginPath();
-  ctx.moveTo(x + r, y); ctx.lineTo(x + w - r, y);
-  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
-  ctx.lineTo(x + w, y + h - r);
-  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
-  ctx.lineTo(x + r, y + h);
-  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
-  ctx.lineTo(x, y + r);
-  ctx.quadraticCurveTo(x, y, x + r, y);
-  ctx.closePath();
-}
-
-function wrapText(ctx, text, maxWidth) {
-  const words = (text || '').split(' ');
-  const lines = []; let current = '';
-  words.forEach(word => {
-    const test = current ? current + ' ' + word : word;
-    if (ctx.measureText(test).width > maxWidth && current) {
-      lines.push(current); current = word;
-    } else current = test;
-  });
-  if (current) lines.push(current);
-  return lines;
-}
-
-function wrapRichText(ctx, segments, maxWidth, fontSize) {
-  const words = [];
-  segments.forEach(seg => {
-    seg.text.split(' ').forEach(w => { if (w) words.push({ text: w, bold: seg.bold }); });
-  });
-  const lines = []; let current = [];
-  const lineW = segs => {
-    let w = 0, first = true;
-    segs.forEach(seg => {
-      ctx.font = (seg.bold ? 'bold ' : '') + fontSize + 'px Arial, sans-serif';
-      w += ctx.measureText((first ? '' : ' ') + seg.text).width;
-      first = false;
-    });
-    return w;
-  };
-  words.forEach(word => {
-    const test = [...current, word];
-    if (lineW(test) > maxWidth && current.length) { lines.push(current); current = [word]; }
-    else current = test;
-  });
-  if (current.length) lines.push(current);
-  return lines;
-}
-
-function drawRichLine(ctx, segments, x, y, fontSize, color) {
-  let cx = x; let first = true;
-  segments.forEach(seg => {
-    ctx.font = (seg.bold ? 'bold ' : '') + fontSize + 'px Arial, sans-serif';
-    ctx.fillStyle = color;
-    const txt = (first ? '' : ' ') + seg.text;
-    ctx.fillText(txt, cx, y);
-    cx += ctx.measureText(txt).width;
-    first = false;
-  });
-}
-
-async function loadLogoImages() {
-  const { main, dm, mode } = _muniLogos;
-  const srcs = [];
-  if (mode === 'both') { if (main) srcs.push(main); if (dm) srcs.push(dm); }
-  else if (mode === 'dm') { if (dm) srcs.push(dm); }
-  else { if (main) srcs.push(main); }
-  return Promise.all(srcs.map(src => new Promise(res => {
-    const img = new Image(); img.crossOrigin = 'anonymous';
-    img.onload = () => res(img); img.onerror = () => res(null); img.src = src;
-  })));
-}
-
-// ── BIND EVENTS ───────────────────────────────────────────
 function bindClosureEvents() {
+  // Add alt route buttons
   document.querySelectorAll('.add-alt-btn').forEach(btn => {
     btn.addEventListener('click', () => showAddAltRouteForm(btn.dataset.closure));
   });
 
+  // Save closure
   document.querySelectorAll('.closure-save').forEach(btn => {
     btn.addEventListener('click', async () => {
       const id = btn.dataset.id;
@@ -556,17 +289,20 @@ function bindClosureEvents() {
     });
   });
 
+  // Email closure
   document.querySelectorAll('.closure-email').forEach(btn => {
     btn.addEventListener('click', () => {
       const c = _closures.find(x => x.id === btn.dataset.id);
       if (!c) return;
-      const alt     = c.alternative_routes?.[0];
+      const alt = c.alternative_routes?.[0];
       const subject = encodeURIComponent(`ROAD CLOSED — ${c.road_name}`);
-      const body    = encodeURIComponent(
+      const body = encodeURIComponent(
         `ROAD CLOSED — ${c.road_name}\n` +
-        `Reason: ${c.reason||'N/A'}\nStatus: ${(c.status||'').toUpperCase()}\n` +
+        `Reason: ${c.reason||'N/A'}\n` +
+        `Status: ${(c.status||'').toUpperCase()}\n` +
         `Closed since: ${c.closed_since ? new Date(c.closed_since).toLocaleString('en-ZA') : 'N/A'}\n` +
-        `Expected reopening: ${c.expected_reopen||'Unknown'}\nAuthority: ${c.authority||'N/A'}\n` +
+        `Expected reopening: ${c.expected_reopen||'Unknown'}\n` +
+        `Authority: ${c.authority||'N/A'}\n` +
         `Wards affected: ${Array.isArray(c.affected_wards) ? c.affected_wards.join(', ') : c.affected_wards||'N/A'}` +
         (alt ? `\n\nALTERNATIVE ROUTE:\n${alt.description}\nExtra distance: ${alt.extra_distance||'?'} km · ${alt.vehicle_suitability||'All vehicles'}` : '')
       );
@@ -574,56 +310,49 @@ function bindClosureEvents() {
     });
   });
 
-  // Download dropdown toggle — fixed-position so it escapes card overflow
-  document.querySelectorAll('.closure-dl-toggle').forEach(btn => {
-    btn.addEventListener('click', e => {
-      e.stopPropagation();
-      const id   = btn.dataset.id;
-      const existing = document.getElementById('shared-dl-drop');
-      if (existing && existing.dataset.forId === id) {
-        existing.remove(); return;
-      }
-      if (existing) existing.remove();
-
-      const rect = btn.getBoundingClientRect();
-      const drop = document.createElement('div');
-      drop.id = 'shared-dl-drop';
-      drop.dataset.forId = id;
-      drop.style.cssText = `position:fixed;top:${rect.bottom + 4}px;left:${rect.left}px;z-index:9999;background:var(--bg2);border:1px solid var(--border);border-radius:6px;min-width:170px;overflow:hidden;box-shadow:0 6px 20px rgba(0,0,0,.35)`;
-      drop.innerHTML = `
-        <button data-dl-text="${id}" style="display:block;width:100%;text-align:left;background:transparent;border:none;border-bottom:1px solid var(--border);padding:9px 14px;font-size:12px;color:var(--text);cursor:pointer;font-family:monospace">📄 Text file (.txt)</button>
-        <button data-dl-png="${id}"  style="display:block;width:100%;text-align:left;background:transparent;border:none;padding:9px 14px;font-size:12px;color:var(--text);cursor:pointer;font-family:monospace">🖼 Image (.png)</button>`;
-
-      drop.querySelector('[data-dl-text]').addEventListener('click', () => {
-        const c = _closures.find(x => x.id === id); drop.remove(); if (!c) return;
-        const alt  = c.alternative_routes?.[0];
-        const text = `ROUTE CLOSURE NOTIFICATION\n${'='.repeat(40)}\n` +
-          `Road: ${c.road_name}\nStatus: ${(c.status||'').toUpperCase()}\n` +
-          `Reason: ${c.reason||'N/A'}\nAuthority: ${c.authority||'N/A'}\n` +
-          `Closed since: ${c.closed_since ? new Date(c.closed_since).toLocaleString('en-ZA') : 'N/A'}\n` +
-          `Expected reopening: ${c.expected_reopen||'Unknown'}\n` +
-          `Wards affected: ${Array.isArray(c.affected_wards) ? c.affected_wards.join(', ') : c.affected_wards||'N/A'}` +
-          (alt ? `\n\nALTERNATIVE ROUTE:\n${alt.description}\nExtra distance: ${alt.extra_distance||'?'} km · ${alt.vehicle_suitability||'All vehicles'}` : '');
-        const blob = new Blob([text], { type: 'text/plain' });
-        const url  = URL.createObjectURL(blob);
-        const a    = Object.assign(document.createElement('a'), { href: url, download: `route-closure-${(c.road_name||'route').replace(/\s+/g,'-')}.txt` });
-        a.click(); URL.revokeObjectURL(url);
-      });
-
-      drop.querySelector('[data-dl-png]').addEventListener('click', () => {
-        const c = _closures.find(x => x.id === id); drop.remove(); if (!c) return;
-        downloadClosurePNG(c);
-      });
-
-      document.body.appendChild(drop);
+  // Download / save closure as text
+  document.querySelectorAll('.closure-dl').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const c = _closures.find(x => x.id === btn.dataset.id);
+      if (!c) return;
+      const alt = c.alternative_routes?.[0];
+      const text = `ROAD CLOSED — ${c.road_name}\n` +
+        `Reason: ${c.reason||'N/A'}\n` +
+        `Status: ${(c.status||'').toUpperCase()}\n` +
+        `Closed since: ${c.closed_since ? new Date(c.closed_since).toLocaleString('en-ZA') : 'N/A'}\n` +
+        `Expected reopening: ${c.expected_reopen||'Unknown'}\n` +
+        `Authority: ${c.authority||'N/A'}\n` +
+        `Wards affected: ${Array.isArray(c.affected_wards) ? c.affected_wards.join(', ') : c.affected_wards||'N/A'}` +
+        (alt ? `\n\nALTERNATIVE ROUTE:\n${alt.description}\nExtra distance: ${alt.extra_distance||'?'} km · ${alt.vehicle_suitability||'All vehicles'}` : '');
+      showRecordSaveMenu(btn, [
+        {
+          label: '↓ PNG',
+          icon: '#1a6dff',
+          fn: () => downloadNoticePNG({
+            filename: `DRMSA-closure-${safeFilename(c.road_name || 'route')}.png`,
+            title: (c.status === 'open' ? 'Road Reopen Notice' : 'Road Closure Notice'),
+            subtitle: c.road_name || 'Road Update',
+            bullets: [
+              `Reason: ${c.reason || 'N/A'}`,
+              `Status: ${(c.status || 'unknown').toUpperCase()}`,
+              `Expected reopening: ${c.expected_reopen || 'Unknown'}`,
+              `Authority: ${c.authority || 'N/A'}`,
+              `Wards affected: ${Array.isArray(c.affected_wards) ? c.affected_wards.join(', ') : c.affected_wards || 'N/A'}`
+            ]
+          })
+        },
+        {
+          label: '↓ Text (.txt)',
+          icon: '#3fb950',
+          fn: () => {
+            downloadTextFile(text, `DRMSA-closure-${safeFilename(c.road_name || 'route')}.txt`);
+          }
+        }
+      ]);
     });
   });
 
-  // Close shared dropdown on outside click
-  document.addEventListener('click', () => {
-    document.getElementById('shared-dl-drop')?.remove();
-  });
-
+  // Edit closure
   document.querySelectorAll('.closure-edit').forEach(btn => {
     btn.addEventListener('click', () => {
       const closure = _closures.find(x => x.id === btn.dataset.id);
@@ -631,6 +360,7 @@ function bindClosureEvents() {
     });
   });
 
+  // Delete closure
   document.querySelectorAll('.closure-delete').forEach(btn => {
     btn.addEventListener('click', async () => {
       if (!confirm('Delete this road closure and all its alternative routes?')) return;
@@ -641,6 +371,7 @@ function bindClosureEvents() {
     });
   });
 
+  // Publish toggles
   document.querySelectorAll('.pub-tog').forEach(tog => {
     tog.addEventListener('click', async () => {
       const track = tog.querySelector('.tog-track');
@@ -663,4 +394,132 @@ function showToast(msg, isError=false) {
   t.textContent = msg;
   document.body.appendChild(t);
   setTimeout(()=>{t.style.opacity='0';setTimeout(()=>t.remove(),300);},2500);
+}
+
+function showRecordSaveMenu(btn, items = []) {
+  document.getElementById('drmsa-save-menu')?.remove();
+  const menu = document.createElement('div');
+  menu.id = 'drmsa-save-menu';
+  menu.style.cssText = 'position:fixed;background:var(--bg2);border:1px solid var(--border2);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.35);z-index:9999;min-width:180px;overflow:hidden;font-family:Inter,system-ui,sans-serif';
+  menu.innerHTML = `<div style="padding:8px 12px;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--text3);border-bottom:1px solid var(--border)">Save as</div>` +
+    items.map((item, i) => `<div data-idx="${i}" style="display:flex;align-items:center;gap:10px;padding:10px 14px;cursor:pointer;font-size:13px;color:var(--text2)"><span style="width:8px;height:8px;border-radius:50%;background:${item.icon || '#58a6ff'};display:inline-block"></span>${item.label}</div>`).join('');
+  document.body.appendChild(menu);
+  const rect = btn.getBoundingClientRect();
+  const left = Math.max(8, Math.min(rect.left, window.innerWidth - 190));
+  const top = (rect.bottom + 6 + 180 > window.innerHeight)
+    ? Math.max(8, rect.top - 120)
+    : (rect.bottom + 6);
+  menu.style.left = `${left}px`;
+  menu.style.top = `${top}px`;
+  menu.querySelectorAll('[data-idx]').forEach(el => {
+    el.addEventListener('click', () => {
+      const fn = items[parseInt(el.dataset.idx, 10)]?.fn;
+      menu.remove();
+      if (fn) fn();
+    });
+  });
+  setTimeout(() => {
+    document.addEventListener('click', function close(e) {
+      if (!menu.contains(e.target)) {
+        menu.remove();
+        document.removeEventListener('click', close);
+      }
+    });
+  }, 50);
+}
+
+function downloadNoticePNG({ filename, title, subtitle, bullets = [] }) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 1200;
+  canvas.height = 700;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+  ctx.fillStyle = '#f7f8fc';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = '#003ea6';
+  ctx.fillRect(0, 0, canvas.width, 70);
+  ctx.fillRect(0, canvas.height - 56, canvas.width, 56);
+  ctx.fillStyle = '#ffffff';
+  ctx.font = '700 24px Arial';
+  ctx.fillText('Western Cape Government', 28, 44);
+  ctx.fillStyle = '#bf1e2e';
+  ctx.font = '700 54px Arial';
+  ctx.fillText(title, 40, 150);
+  ctx.fillStyle = '#26344e';
+  ctx.font = '700 36px Arial';
+  ctx.fillText(subtitle, 40, 200);
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(40, 230, 1120, 370);
+  ctx.strokeStyle = '#d8dcea';
+  ctx.lineWidth = 3;
+  ctx.strokeRect(40, 230, 1120, 370);
+  ctx.fillStyle = '#2f3444';
+  ctx.font = '500 30px Arial';
+  bullets.forEach((line, i) => {
+    const y = 285 + (i * 58);
+    ctx.fillText('•', 70, y);
+    const wrapped = wrapTextBlocks(ctx, line, 1040, 1);
+    ctx.fillText(wrapped[0] || '', 100, y);
+  });
+  ctx.fillStyle = '#ffffff';
+  ctx.font = '500 24px Arial';
+  ctx.fillText('Issued by Disaster Management • Official Notice', 20, canvas.height - 20);
+  const url = canvas.toDataURL('image/png');
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+}
+
+// Backward-compatible alias used by older cached bundles.
+function downloadClosurePNG(options) {
+  downloadNoticePNG(options);
+}
+
+function wrapTextBlocks(ctx, text, maxWidth, maxLines = 1) {
+  const words = String(text || '').split(/\s+/).filter(Boolean);
+  if (!words.length) return [''];
+  const lines = [];
+  let current = words[0];
+  for (let i = 1; i < words.length; i += 1) {
+    const next = `${current} ${words[i]}`;
+    if (ctx.measureText(next).width <= maxWidth) {
+      current = next;
+    } else {
+      lines.push(current);
+      current = words[i];
+      if (lines.length === maxLines) break;
+    }
+  }
+  if (lines.length < maxLines) lines.push(current);
+  if (lines.length > maxLines) lines.length = maxLines;
+  if (lines.length === maxLines && words.join(' ') !== lines.join(' ')) {
+    const last = lines[maxLines - 1];
+    lines[maxLines - 1] = last.length > 1 ? `${last.slice(0, -1)}…` : '…';
+  }
+  return lines;
+}
+
+function formatWardsLabel(wards) {
+  if (Array.isArray(wards) && wards.length) return `Wards ${wards.join(', ')}`;
+  if (typeof wards === 'string' && wards.trim()) return `Wards ${wards.trim()}`;
+  return 'Ward ?';
+}
+
+function safeFilename(value) {
+  return String(value || 'record')
+    .trim()
+    .replace(/[^a-z0-9-_]+/gi, '-')
+    .replace(/^-+|-+$/g, '')
+    .toLowerCase() || 'record';
+}
+
+function downloadTextFile(content, filename) {
+  const blob = new Blob([content], { type: 'text/plain' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
 }
