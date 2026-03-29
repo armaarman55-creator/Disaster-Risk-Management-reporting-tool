@@ -1,13 +1,28 @@
 // js/community.js
 import { supabase } from './supabase.js';
 
-let _muniId = null;
+let _muniId    = null;
 let _activeTab = 'shelters';
+let _muniLogos = { main: null, dm: null, mode: 'main' };
 
 export async function initCommunity(user) {
   _muniId = user?.municipality_id;
+  await fetchMuniLogos();
   bindCommunityTabs();
   await loadTab('shelters');
+}
+
+async function fetchMuniLogos() {
+  const { data } = await supabase
+    .from('municipalities')
+    .select('logo_main_url, logo_dm_url, logo_display_mode')
+    .eq('id', _muniId)
+    .single();
+  _muniLogos = {
+    main: data?.logo_main_url || null,
+    dm:   data?.logo_dm_url   || null,
+    mode: data?.logo_display_mode || 'main'
+  };
 }
 
 function bindCommunityTabs() {
@@ -34,6 +49,184 @@ async function loadTab(tab) {
   }
 }
 
+// ── CANVAS HELPERS ────────────────────────────────────────
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y); ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
+
+function wrapText(ctx, text, maxWidth) {
+  const words = (text || '').split(' ');
+  const lines = []; let current = '';
+  words.forEach(word => {
+    const test = current ? current + ' ' + word : word;
+    if (ctx.measureText(test).width > maxWidth && current) {
+      lines.push(current); current = word;
+    } else current = test;
+  });
+  if (current) lines.push(current);
+  return lines;
+}
+
+function wrapRichText(ctx, segments, maxWidth, fontSize) {
+  const words = [];
+  segments.forEach(seg => {
+    seg.text.split(' ').forEach(w => { if (w) words.push({ text: w, bold: seg.bold }); });
+  });
+  const lines = []; let current = [];
+  const lineW = segs => {
+    let w = 0, first = true;
+    segs.forEach(seg => {
+      ctx.font = (seg.bold ? 'bold ' : '') + fontSize + 'px Arial, sans-serif';
+      w += ctx.measureText((first ? '' : ' ') + seg.text).width;
+      first = false;
+    });
+    return w;
+  };
+  words.forEach(word => {
+    const test = [...current, word];
+    if (lineW(test) > maxWidth && current.length) { lines.push(current); current = [word]; }
+    else current = test;
+  });
+  if (current.length) lines.push(current);
+  return lines;
+}
+
+function drawRichLine(ctx, segments, x, y, fontSize, color) {
+  let cx = x; let first = true;
+  segments.forEach(seg => {
+    ctx.font = (seg.bold ? 'bold ' : '') + fontSize + 'px Arial, sans-serif';
+    ctx.fillStyle = color;
+    const txt = (first ? '' : ' ') + seg.text;
+    ctx.fillText(txt, cx, y);
+    cx += ctx.measureText(txt).width;
+    first = false;
+  });
+}
+
+async function loadLogoImages() {
+  const { main, dm, mode } = _muniLogos;
+  const srcs = [];
+  if (mode === 'both') { if (main) srcs.push(main); if (dm) srcs.push(dm); }
+  else if (mode === 'dm') { if (dm) srcs.push(dm); }
+  else { if (main) srcs.push(main); }
+  return Promise.all(srcs.map(src => new Promise(res => {
+    const img = new Image(); img.crossOrigin = 'anonymous';
+    img.onload = () => res(img); img.onerror = () => res(null); img.src = src;
+  })));
+}
+
+// Shared document-style canvas layout
+// Returns { ctx, W, H, SPLIT, bodyTop, bodyH, FTR_H, RX, accentColor }
+function buildNoticeCanvas(logoImgs, accentColor, muniName, date, W, H) {
+  const SPLIT  = Math.round(W * 0.63);
+  const HDR_H  = 76;
+  const FTR_H  = 32;
+  const canvas = document.createElement('canvas');
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext('2d');
+
+  // Background (light grey)
+  ctx.fillStyle = '#f0eeea'; ctx.fillRect(0, 0, W, H);
+
+  // Top accent bar
+  ctx.fillStyle = accentColor; ctx.fillRect(0, 0, W, 6);
+
+  // Header row (white)
+  ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 6, W, HDR_H);
+  ctx.strokeStyle = '#d0ccc4'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(0, 6 + HDR_H); ctx.lineTo(W, 6 + HDR_H); ctx.stroke();
+
+  // Logos in header
+  let logoX = 16;
+  for (const img of logoImgs) {
+    if (!img) continue;
+    const drawH = 48;
+    const drawW = Math.min(drawH * (img.naturalWidth / img.naturalHeight), 90);
+    ctx.drawImage(img, logoX, 6 + (HDR_H - drawH) / 2, drawW, drawH);
+    logoX += drawW + 10;
+  }
+
+  // Municipality name + subtitle
+  const hTextX = logoX + 6;
+  ctx.fillStyle = '#333333'; ctx.font = 'bold 13px Arial, sans-serif';
+  ctx.fillText(muniName, hTextX, 6 + 28);
+  ctx.fillStyle = '#888888'; ctx.font = '11px Arial, sans-serif';
+  ctx.fillText('Disaster Management Centre', hTextX, 6 + 46);
+
+  // Date top-right
+  ctx.fillStyle = '#aaaaaa'; ctx.font = '10px Arial, sans-serif';
+  ctx.textAlign = 'right';
+  ctx.fillText('Issued: ' + date, W - 16, 6 + 26);
+  ctx.fillText('FOR OFFICIAL USE', W - 16, 6 + 42);
+  ctx.textAlign = 'left';
+
+  const bodyTop = 6 + HDR_H;
+  const bodyH   = H - bodyTop - FTR_H;
+  const RX      = SPLIT + 16;
+
+  // Left column background
+  ctx.fillStyle = '#fafaf8'; ctx.fillRect(0, bodyTop, SPLIT, bodyH);
+
+  // Column divider
+  ctx.strokeStyle = '#d0ccc4'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(SPLIT, bodyTop); ctx.lineTo(SPLIT, H - FTR_H); ctx.stroke();
+
+  // Footer bar
+  ctx.fillStyle = accentColor; ctx.fillRect(0, H - FTR_H, W, FTR_H);
+  ctx.fillStyle = '#ddeeff'; ctx.font = '10px Arial, sans-serif';
+  ctx.fillText(muniName + ' Disaster Management Centre', 16, H - FTR_H + 20);
+  ctx.textAlign = 'right';
+  ctx.fillText('Generated: ' + date, W - 16, H - FTR_H + 20);
+  ctx.textAlign = 'left';
+
+  return { ctx, canvas, W, H, SPLIT, bodyTop, bodyH, FTR_H, RX, accentColor };
+}
+
+// Draw right-column detail fields
+function drawRightFields(ctx, RX, startY, W, fieldDefs) {
+  let ry = startY;
+  fieldDefs.forEach(f => {
+    ctx.fillStyle = '#888888'; ctx.font = 'bold 9px Arial, sans-serif';
+    ctx.fillText(f.label.toUpperCase(), RX, ry); ry += 14;
+    if (f.badge) {
+      ctx.fillStyle = f.badgeBg;
+      const bw = ctx.measureText(f.badgeText).width + 16;
+      roundRect(ctx, RX, ry - 11, bw, 18, 3); ctx.fill();
+      ctx.fillStyle = '#ffffff'; ctx.font = 'bold 10px Arial, sans-serif';
+      ctx.fillText(f.badgeText, RX + 8, ry + 3); ry += 22;
+    } else {
+      ctx.fillStyle = '#1a1a1a'; ctx.font = '12px Arial, sans-serif';
+      const lines = wrapText(ctx, String(f.value), W - RX - 16);
+      lines.slice(0, 2).forEach(line => { ctx.fillText(line, RX, ry); ry += 16; });
+      ry += 4;
+    }
+    ry += 8;
+  });
+  return ry;
+}
+
+// Draw "Issued by" block at bottom of right column
+function drawIssuedBy(ctx, RX, W, H, FTR_H, muniName) {
+  const issuedY = H - FTR_H - 54;
+  ctx.strokeStyle = '#c8c4bc'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(RX, issuedY); ctx.lineTo(W - 16, issuedY); ctx.stroke();
+  ctx.fillStyle = '#888888'; ctx.font = 'bold 9px Arial, sans-serif';
+  ctx.fillText('ISSUED BY', RX, issuedY + 14);
+  ctx.fillStyle = '#333333'; ctx.font = '11px Arial, sans-serif';
+  ctx.fillText(muniName, RX, issuedY + 28);
+  ctx.fillStyle = '#666666'; ctx.font = '10px Arial, sans-serif';
+  ctx.fillText('Disaster Management', RX, issuedY + 42);
+}
+
 // ── SHELTERS ─────────────────────────────────────────────
 async function renderShelters(body) {
   const { data: shelters } = await supabase
@@ -50,14 +243,9 @@ async function renderShelters(body) {
       ${shelters?.length ? shelters.map(s => renderShelterCard(s)).join('') : emptyState('No shelters registered yet.')}
     </div>`;
 
-  // Use requestAnimationFrame to ensure DOM is fully painted before binding
   requestAnimationFrame(() => {
     const btn = document.getElementById('add-shelter-btn');
-    if (btn) {
-      btn.onclick = () => showShelterForm(null);
-    } else {
-      console.warn('add-shelter-btn not found in DOM');
-    }
+    if (btn) btn.onclick = () => showShelterForm(null);
     bindShelterEvents(shelters || []);
   });
 }
@@ -82,22 +270,17 @@ function showShelterForm(existing) {
       <div class="fl"><span class="fl-label">Address</span><input class="fl-input" id="sh-address" value="${s.address||''}"/></div>
       <div class="frow">
         <div class="fl"><span class="fl-label">Ward number</span><input class="fl-input" type="number" id="sh-ward" value="${s.ward_number||''}"/></div>
-        <div class="fl"><span class="fl-label">Capacity</span><input class="fl-input" type="number" id="sh-capacity" value="${s.capacity||''}"/></div>
+        <div class="fl"><span class="fl-label">Capacity</span><input class="fl-input" type="number" id="sh-cap" value="${s.capacity||''}"/></div>
       </div>
       <div class="frow">
-        <div class="fl"><span class="fl-label">Contact name</span><input class="fl-input" id="sh-contact-name" value="${s.contact_name||''}"/></div>
-        <div class="fl"><span class="fl-label">Contact number</span><input class="fl-input" id="sh-contact-num" value="${s.contact_number||''}"/></div>
+        <div class="fl"><span class="fl-label">Contact name</span><input class="fl-input" id="sh-cname" value="${s.contact_name||''}"/></div>
+        <div class="fl"><span class="fl-label">Contact number</span><input class="fl-input" id="sh-cnum" value="${s.contact_number||''}"/></div>
       </div>
-      <div class="frow">
-        <div class="fl"><span class="fl-label">GPS Latitude</span><input class="fl-input" id="sh-lat" value="${s.gps_lat||''}" placeholder="-33.5869"/></div>
-        <div class="fl"><span class="fl-label">GPS Longitude</span><input class="fl-input" id="sh-lng" value="${s.gps_lng||''}" placeholder="22.2065"/></div>
-      </div>
-      <label style="display:flex;align-items:center;gap:8px;margin-bottom:12px;cursor:pointer;font-size:13px;color:var(--text2)">
-        <input type="checkbox" id="sh-wheelchair" ${s.wheelchair_accessible?'checked':''} style="width:15px;height:15px"/>
-        Wheelchair accessible
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;color:var(--text2);margin:8px 0 12px">
+        <input type="checkbox" id="sh-wc" ${s.wheelchair_accessible?'checked':''} style="width:14px;height:14px"/> Wheelchair accessible
       </label>
       <div style="display:flex;gap:8px">
-        <button class="btn btn-green btn-sm" id="save-shelter-btn" data-id="${s.id||''}">Save shelter</button>
+        <button class="btn btn-red btn-sm" id="save-shelter-btn" data-id="${s.id||''}">Save shelter</button>
         <button class="btn btn-sm" onclick="document.getElementById('shelter-form-area').innerHTML=''">Cancel</button>
       </div>
     </div>`;
@@ -105,42 +288,35 @@ function showShelterForm(existing) {
   document.getElementById('save-shelter-btn')?.addEventListener('click', async () => {
     const id   = document.getElementById('save-shelter-btn').dataset.id;
     const name = document.getElementById('sh-name')?.value.trim();
-    if (!name) { alert('Shelter name is required.'); return; }
-
+    if (!name) { alert('Shelter name required.'); return; }
     const payload = {
       municipality_id:      _muniId,
       name,
       facility_type:        document.getElementById('sh-type')?.value,
       address:              document.getElementById('sh-address')?.value,
       ward_number:          parseInt(document.getElementById('sh-ward')?.value)||null,
-      capacity:             parseInt(document.getElementById('sh-capacity')?.value)||0,
-      contact_name:         document.getElementById('sh-contact-name')?.value,
-      contact_number:       document.getElementById('sh-contact-num')?.value,
-      gps_lat:              parseFloat(document.getElementById('sh-lat')?.value)||null,
-      gps_lng:              parseFloat(document.getElementById('sh-lng')?.value)||null,
-      wheelchair_accessible: document.getElementById('sh-wheelchair')?.checked,
-      status:               'closed',
-      current_occupancy:    0,
-      is_published:         false
+      capacity:             parseInt(document.getElementById('sh-cap')?.value)||0,
+      contact_name:         document.getElementById('sh-cname')?.value,
+      contact_number:       document.getElementById('sh-cnum')?.value,
+      wheelchair_accessible:document.getElementById('sh-wc')?.checked,
+      status:               'open', current_occupancy: 0
     };
-
     const { error } = id
       ? await supabase.from('shelters').update(payload).eq('id', id)
       : await supabase.from('shelters').insert(payload);
-
     if (error) { showToast(error.message, true); return; }
     showToast('✓ Shelter saved successfully!');
-    area.innerHTML = '';
+    document.getElementById('shelter-form-area').innerHTML = '';
     await renderShelters(document.getElementById('community-body'));
   });
 }
 
 function renderShelterCard(s) {
-  const pct = s.capacity ? Math.round(((s.current_occupancy||0)/s.capacity)*100) : 0;
+  const pct         = s.capacity ? Math.round((s.current_occupancy||0) / s.capacity * 100) : 0;
   const statusBadge = { open:'b-green','at-capacity':'b-red',closed:'b-gray',partial:'b-amber' };
 
   return `
-    <div class="rec-card" style="margin-bottom:12px;overflow:visible;position:relative;z-index:2" id="sc-${s.id}">
+    <div class="rec-card" style="margin-bottom:12px" id="sc-${s.id}">
       <div class="rec-head">
         <div class="rec-icon" style="background:var(--green-dim)">
           <svg viewBox="0 0 15 15" fill="none" stroke="var(--green)" stroke-width="1.5" stroke-linecap="round"><path d="M2 6l5.5-4 5.5 4v7H2z"/><rect x="5" y="9" width="3" height="4"/></svg>
@@ -181,17 +357,94 @@ function renderShelterCard(s) {
       <div class="rec-foot">
         <button class="btn btn-green btn-sm shelter-update" data-id="${s.id}">Update</button>
         <button class="btn btn-sm shelter-edit" data-id="${s.id}">Edit details</button>
-        <button class="btn btn-sm shelter-dl" data-id="${s.id}" data-name="${s.name}">↓ Save</button>
+        <div style="position:relative;display:inline-block">
+          <button class="btn btn-sm shelter-dl-toggle" data-id="${s.id}" data-name="${s.name}">↓ Save ▾</button>
+          <div class="dl-dropdown" id="sh-drop-${s.id}" style="display:none;position:absolute;top:100%;left:0;z-index:200;background:var(--bg2);border:1px solid var(--border);border-radius:6px;min-width:160px;box-shadow:0 4px 16px rgba(0,0,0,.3);margin-top:4px">
+            <button class="btn btn-sm" style="width:100%;text-align:left;border-radius:4px 4px 0 0;border:none;background:transparent;padding:8px 12px;font-size:12px;color:var(--text)" data-sh-txt="${s.id}">📄 Text file (.txt)</button>
+            <button class="btn btn-sm" style="width:100%;text-align:left;border-radius:0 0 4px 4px;border:none;background:transparent;padding:8px 12px;font-size:12px;color:var(--text)" data-sh-png="${s.id}">🖼 Image (.png)</button>
+          </div>
+        </div>
         <button class="btn btn-sm btn-red shelter-delete" data-id="${s.id}" style="margin-left:auto">Delete</button>
       </div>
     </div>`;
 }
 
+async function downloadShelterPNG(s) {
+  const muniName    = window._drmsaUser?.municipalities?.name || 'Municipality';
+  const date        = new Date().toLocaleString('en-ZA');
+  const pct         = s.capacity ? Math.round((s.current_occupancy||0) / s.capacity * 100) : 0;
+  const accentColor = { open:'#1a6b3a', 'at-capacity':'#8b1a1a', partial:'#7a5200', closed:'#444444' }[s.status] || '#1a3a6b';
+  const statusBg    = { open:'#1a6b3a', 'at-capacity':'#c0392b', partial:'#d4860a', closed:'#555555' }[s.status] || '#555';
+  const statusLabel = (s.status || 'UNKNOWN').replace(/-/g, ' ').toUpperCase();
+
+  const logoImgs = await loadLogoImages();
+  const W = 900, H = 500;
+  const { ctx, canvas, SPLIT, bodyTop, FTR_H, RX } = buildNoticeCanvas(logoImgs, accentColor, muniName, date, W, H);
+
+  // ── LEFT: Title
+  ctx.fillStyle = accentColor; ctx.font = 'bold 26px Arial, sans-serif';
+  ctx.fillText('Shelter Notification', 20, bodyTop + 38);
+
+  // ── LEFT: Body paragraph
+  const para = [
+    { text: s.name, bold: true },
+    { text: ' is currently ', bold: false },
+    { text: s.status || 'open', bold: true },
+    { text: ' and available for displaced residents.', bold: false }
+  ];
+  const para2 = [
+    { text: 'The ', bold: false },
+    { text: muniName + ' Disaster Management Centre', bold: true },
+    { text: ' confirms that ', bold: false },
+    { text: s.name, bold: true },
+    { text: ', Ward ' + (s.ward_number || '—') + ', is operational as an emergency shelter.', bold: false },
+    { text: ' Capacity: ', bold: false },
+    { text: (s.capacity || 0) + ' persons', bold: true },
+    { text: '. Current occupancy: ', bold: false },
+    { text: `${s.current_occupancy || 0} / ${s.capacity || 0} (${pct}%)`, bold: true },
+    { text: '.', bold: false }
+  ];
+
+  let ty = bodyTop + 60;
+  wrapRichText(ctx, para, SPLIT - 40, 13).forEach(line => { drawRichLine(ctx, line, 20, ty, 13, '#1a1a1a'); ty += 20; });
+  ty += 6;
+  wrapRichText(ctx, para2, SPLIT - 40, 13).forEach(line => { drawRichLine(ctx, line, 20, ty, 13, '#1a1a1a'); ty += 20; });
+
+  // ── LEFT: Occupancy bar
+  ty += 14;
+  ctx.fillStyle = '#888888'; ctx.font = 'bold 9px Arial, sans-serif';
+  ctx.fillText('OCCUPANCY', 20, ty); ty += 12;
+  const barW = SPLIT - 40, barH = 10;
+  ctx.fillStyle = '#d0ccc4'; roundRect(ctx, 20, ty, barW, barH, 4); ctx.fill();
+  const fillW = Math.min(pct / 100 * barW, barW);
+  ctx.fillStyle = accentColor; roundRect(ctx, 20, ty, Math.max(fillW, 4), barH, 4); ctx.fill();
+  ctx.fillStyle = '#555555'; ctx.font = '11px Arial, sans-serif';
+  ctx.fillText(`${s.current_occupancy || 0} / ${s.capacity || 0} persons`, 20, ty + 24);
+
+  // ── RIGHT: Fields
+  drawRightFields(ctx, RX, bodyTop + 16, W, [
+    { label: 'Status',             badge: true, badgeText: statusLabel, badgeBg: statusBg },
+    { label: 'Facility type',      value: s.facility_type || '—' },
+    { label: 'Address',            value: s.address || '—' },
+    { label: 'Ward',               value: String(s.ward_number || '—') },
+    { label: 'Contact',            value: `${s.contact_name || '—'} · ${s.contact_number || '—'}` },
+    { label: 'Wheelchair access',  value: s.wheelchair_accessible ? 'Yes' : 'No' }
+  ]);
+  drawIssuedBy(ctx, RX, W, H, FTR_H, muniName);
+
+  canvas.toBlob(blob => {
+    const url = URL.createObjectURL(blob);
+    const a   = Object.assign(document.createElement('a'), {
+      href: url, download: `shelter-notice-${(s.name||'shelter').replace(/\s+/g,'-')}.png`
+    });
+    a.click(); URL.revokeObjectURL(url);
+  }, 'image/png');
+}
+
 function bindShelterEvents(shelters) {
-  // Update occupancy/status
   document.querySelectorAll('.shelter-update').forEach(btn => {
     btn.addEventListener('click', async () => {
-      const id  = btn.dataset.id;
+      const id = btn.dataset.id;
       const { error } = await supabase.from('shelters').update({
         current_occupancy: parseInt(document.getElementById(`occ-${id}`)?.value)||0,
         status:            document.getElementById(`status-${id}`)?.value,
@@ -202,7 +455,6 @@ function bindShelterEvents(shelters) {
     });
   });
 
-  // Edit full details
   document.querySelectorAll('.shelter-edit').forEach(btn => {
     btn.addEventListener('click', () => {
       const shelter = shelters.find(s => s.id === btn.dataset.id);
@@ -210,7 +462,6 @@ function bindShelterEvents(shelters) {
     });
   });
 
-  // Delete
   document.querySelectorAll('.shelter-delete').forEach(btn => {
     btn.addEventListener('click', async () => {
       if (!confirm('Delete this shelter?')) return;
@@ -220,48 +471,50 @@ function bindShelterEvents(shelters) {
     });
   });
 
-  // Download
-  document.querySelectorAll('.shelter-dl').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const s = shelters.find(x => x.id === btn.dataset.id);
-      if (!s) return;
-      showRecordSaveMenu(btn, [
-        {
-          label: '↓ PNG',
-          icon: '#1a6dff',
-          fn: () => downloadNoticePNG({
-            filename: `DRMSA-shelter-${safeFilename(s.name || 'shelter')}.png`,
-            title: 'Shelter Notice',
-            subtitle: s.name || 'Shelter',
-            bullets: [
-              `Ward: ${s.ward_number || 'N/A'}`,
-              `Address: ${s.address || 'N/A'}`,
-              `Capacity: ${s.capacity || 0}`,
-              `Contact: ${s.contact_name || 'N/A'} ${s.contact_number ? `(${s.contact_number})` : ''}`
-            ]
-          })
-        },
-        {
-          label: '↓ Text (.txt)',
-          icon: '#3fb950',
-          fn: () => {
-            const text = [
-              `SHELTER NOTICE — ${s.name || 'Shelter'}`,
-              `Ward: ${s.ward_number || 'N/A'}`,
-              `Address: ${s.address || 'N/A'}`,
-              `Capacity: ${s.capacity || 0}`,
-              `Current occupancy: ${s.current_occupancy || 0}`,
-              `Status: ${(s.status || 'unknown').toUpperCase()}`,
-              `Contact: ${s.contact_name || 'N/A'} ${s.contact_number ? `(${s.contact_number})` : ''}`
-            ].join('\n');
-            downloadTextFile(text, `DRMSA-shelter-${safeFilename(s.name || 'shelter')}.txt`);
-          }
-        }
-      ]);
+  // Download dropdown toggle
+  document.querySelectorAll('.shelter-dl-toggle').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      const id   = btn.dataset.id;
+      const drop = document.getElementById(`sh-drop-${id}`);
+      if (!drop) return;
+      document.querySelectorAll('.dl-dropdown').forEach(d => { if (d.id !== `sh-drop-${id}`) d.style.display = 'none'; });
+      drop.style.display = drop.style.display === 'none' ? 'block' : 'none';
     });
   });
 
-  // Publish toggles
+  document.addEventListener('click', () => document.querySelectorAll('.dl-dropdown').forEach(d => d.style.display = 'none'));
+
+  // Text download
+  document.querySelectorAll('[data-sh-txt]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const s = shelters.find(x => x.id === btn.dataset.shTxt);
+      if (!s) return;
+      const text = `SHELTER NOTIFICATION\n${'='.repeat(40)}\n` +
+        `Name: ${s.name}\nStatus: ${(s.status||'').toUpperCase()}\n` +
+        `Type: ${s.facility_type||'—'}\nAddress: ${s.address||'—'}\n` +
+        `Ward: ${s.ward_number||'—'}\nCapacity: ${s.capacity||0}\n` +
+        `Current occupancy: ${s.current_occupancy||0}\n` +
+        `Contact: ${s.contact_name||'—'} · ${s.contact_number||'—'}\n` +
+        `Wheelchair accessible: ${s.wheelchair_accessible?'Yes':'No'}`;
+      const blob = new Blob([text], {type:'text/plain'});
+      const url  = URL.createObjectURL(blob);
+      const a    = Object.assign(document.createElement('a'), {href:url, download:`shelter-${s.name.replace(/\s+/g,'-')}.txt`});
+      a.click(); URL.revokeObjectURL(url);
+      document.getElementById(`sh-drop-${s.id}`).style.display = 'none';
+    });
+  });
+
+  // PNG download
+  document.querySelectorAll('[data-sh-png]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const s = shelters.find(x => x.id === btn.dataset.shPng);
+      if (!s) return;
+      document.getElementById(`sh-drop-${s.id}`).style.display = 'none';
+      downloadShelterPNG(s);
+    });
+  });
+
   document.querySelectorAll('.pub-tog').forEach(tog => {
     tog.addEventListener('click', async () => {
       const track = tog.querySelector('.tog-track');
@@ -292,11 +545,7 @@ async function renderReliefOps(body) {
 
   requestAnimationFrame(() => {
     const btn = document.getElementById('add-relief-btn');
-    if (btn) {
-      btn.onclick = () => showReliefForm(null);
-    } else {
-      console.warn('add-relief-btn not found in DOM');
-    }
+    if (btn) btn.onclick = () => showReliefForm(null);
     bindReliefEvents(ops || []);
   });
 }
@@ -343,17 +592,16 @@ function showReliefForm(existing) {
     if (!name) { alert('Operation name is required.'); return; }
 
     const payload = {
-      municipality_id:  _muniId,
-      name,
-      status:           document.getElementById('ro-status')?.value,
-      hazard_name:      document.getElementById('ro-hazard')?.value,
-      ward_number:      parseInt(document.getElementById('ro-ward')?.value)||null,
+      municipality_id:    _muniId, name,
+      status:             document.getElementById('ro-status')?.value,
+      hazard_name:        document.getElementById('ro-hazard')?.value,
+      ward_number:        parseInt(document.getElementById('ro-ward')?.value)||null,
       distribution_point: document.getElementById('ro-location')?.value,
-      schedule:         document.getElementById('ro-schedule')?.value,
-      responsible_org:  document.getElementById('ro-org')?.value,
-      public_contact:   document.getElementById('ro-contact')?.value,
-      end_date:         document.getElementById('ro-end')?.value||null,
-      is_published:     false
+      schedule:           document.getElementById('ro-schedule')?.value,
+      responsible_org:    document.getElementById('ro-org')?.value,
+      public_contact:     document.getElementById('ro-contact')?.value,
+      end_date:           document.getElementById('ro-end')?.value||null,
+      is_published:       false
     };
 
     const { error } = id
@@ -369,7 +617,7 @@ function showReliefForm(existing) {
 
 function renderReliefCard(op) {
   return `
-    <div class="rec-card" style="margin-bottom:12px;overflow:visible;position:relative;z-index:2">
+    <div class="rec-card" style="margin-bottom:12px" id="ro-${op.id}">
       <div class="rec-head">
         <div class="rec-icon" style="background:var(--blue-dim)">
           <svg viewBox="0 0 15 15" fill="none" stroke="var(--blue)" stroke-width="1.5" stroke-linecap="round"><path d="M7.5 2v11M2 7.5h11"/></svg>
@@ -390,10 +638,75 @@ function renderReliefCard(op) {
       </div>
       <div class="rec-foot">
         <button class="btn btn-sm btn-green relief-edit" data-id="${op.id}">Edit</button>
-        <button class="btn btn-sm relief-dl" data-id="${op.id}" data-name="${op.name}">↓ Save</button>
+        <div style="position:relative;display:inline-block">
+          <button class="btn btn-sm relief-dl-toggle" data-id="${op.id}" data-name="${op.name}">↓ Save ▾</button>
+          <div class="dl-dropdown" id="ro-drop-${op.id}" style="display:none;position:absolute;top:100%;left:0;z-index:200;background:var(--bg2);border:1px solid var(--border);border-radius:6px;min-width:160px;box-shadow:0 4px 16px rgba(0,0,0,.3);margin-top:4px">
+            <button class="btn btn-sm" style="width:100%;text-align:left;border-radius:4px 4px 0 0;border:none;background:transparent;padding:8px 12px;font-size:12px;color:var(--text)" data-ro-txt="${op.id}">📄 Text file (.txt)</button>
+            <button class="btn btn-sm" style="width:100%;text-align:left;border-radius:0 0 4px 4px;border:none;background:transparent;padding:8px 12px;font-size:12px;color:var(--text)" data-ro-png="${op.id}">🖼 Image (.png)</button>
+          </div>
+        </div>
         <button class="btn btn-sm btn-red relief-delete" data-id="${op.id}" style="margin-left:auto">Delete</button>
       </div>
     </div>`;
+}
+
+async function downloadReliefPNG(op) {
+  const muniName    = window._drmsaUser?.municipalities?.name || 'Municipality';
+  const date        = new Date().toLocaleString('en-ZA');
+  const accentColor = { active:'#5a3a1a', upcoming:'#1a3a6b', ended:'#444444' }[op.status] || '#5a3a1a';
+  const statusBg    = { active:'#5a3a1a', upcoming:'#1a3a6b', ended:'#555555' }[op.status] || '#5a3a1a';
+  const statusLabel = (op.status || 'UNKNOWN').toUpperCase();
+
+  const logoImgs = await loadLogoImages();
+  const W = 900, H = 500;
+  const { ctx, canvas, SPLIT, bodyTop, FTR_H, RX } = buildNoticeCanvas(logoImgs, accentColor, muniName, date, W, H);
+
+  // ── LEFT: Title
+  ctx.fillStyle = accentColor; ctx.font = 'bold 26px Arial, sans-serif';
+  ctx.fillText('Relief Operation Notification', 20, bodyTop + 38);
+
+  // ── LEFT: Body paragraph
+  const para = [
+    { text: op.name, bold: true },
+    { text: ' is currently ', bold: false },
+    { text: op.status || 'active', bold: true },
+    { text: '.', bold: false }
+  ];
+  const para2 = [
+    { text: 'The ', bold: false },
+    { text: muniName + ' Disaster Management Centre', bold: true },
+    { text: ' confirms that ', bold: false },
+    { text: op.responsible_org || 'the responsible organisation', bold: true },
+    { text: ' is managing relief distribution at ', bold: false },
+    { text: op.distribution_point || 'TBC', bold: true },
+    { text: '.', bold: false },
+    ...(op.schedule ? [{ text: ' Distribution schedule: ', bold: false }, { text: op.schedule, bold: true }, { text: '.', bold: false }] : [])
+  ];
+
+  let ty = bodyTop + 60;
+  wrapRichText(ctx, para, SPLIT - 40, 13).forEach(line => { drawRichLine(ctx, line, 20, ty, 13, '#1a1a1a'); ty += 20; });
+  ty += 6;
+  wrapRichText(ctx, para2, SPLIT - 40, 13).forEach(line => { drawRichLine(ctx, line, 20, ty, 13, '#1a1a1a'); ty += 20; });
+
+  // ── RIGHT: Fields
+  drawRightFields(ctx, RX, bodyTop + 16, W, [
+    { label: 'Status',             badge: true, badgeText: statusLabel, badgeBg: statusBg },
+    { label: 'Hazard',             value: op.hazard_name || '—' },
+    { label: 'Ward',               value: String(op.ward_number || '—') },
+    { label: 'Distribution point', value: op.distribution_point || '—' },
+    { label: 'Schedule',           value: op.schedule || '—' },
+    { label: 'Public contact',     value: op.public_contact || '—' },
+    { label: 'Ends',               value: op.end_date ? new Date(op.end_date).toLocaleDateString('en-ZA') : '—' }
+  ]);
+  drawIssuedBy(ctx, RX, W, H, FTR_H, muniName);
+
+  canvas.toBlob(blob => {
+    const url = URL.createObjectURL(blob);
+    const a   = Object.assign(document.createElement('a'), {
+      href: url, download: `relief-op-notice-${(op.name||'op').replace(/\s+/g,'-')}.png`
+    });
+    a.click(); URL.revokeObjectURL(url);
+  }, 'image/png');
 }
 
 function bindReliefEvents(ops) {
@@ -403,6 +716,7 @@ function bindReliefEvents(ops) {
       if (op) showReliefForm(op);
     });
   });
+
   document.querySelectorAll('.relief-delete').forEach(btn => {
     btn.addEventListener('click', async () => {
       if (!confirm('Delete this operation?')) return;
@@ -411,49 +725,49 @@ function bindReliefEvents(ops) {
       await renderReliefOps(document.getElementById('community-body'));
     });
   });
-  // Download
-  document.querySelectorAll('.relief-dl').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const op = ops.find(x => x.id === btn.dataset.id);
-      if (!op) return;
-      showRecordSaveMenu(btn, [
-        {
-          label: '↓ PNG',
-          icon: '#1a6dff',
-          fn: () => downloadNoticePNG({
-            filename: `DRMSA-relief-${safeFilename(op.name || 'operation')}.png`,
-            title: 'Relief Operation',
-            subtitle: op.name || 'Operation',
-            bullets: [
-              `Ward: ${op.ward_number || 'N/A'}`,
-              `Hazard: ${op.hazard_name || 'N/A'}`,
-              `Location: ${op.distribution_point || 'N/A'}`,
-              `Schedule: ${op.schedule || 'N/A'}`,
-              `Status: ${(op.status || 'unknown').toUpperCase()}`
-            ]
-          })
-        },
-        {
-          label: '↓ Text (.txt)',
-          icon: '#3fb950',
-          fn: () => {
-            const text = [
-              `RELIEF OPERATION — ${op.name || 'Operation'}`,
-              `Ward: ${op.ward_number || 'N/A'}`,
-              `Hazard: ${op.hazard_name || 'N/A'}`,
-              `Location: ${op.distribution_point || 'N/A'}`,
-              `Schedule: ${op.schedule || 'N/A'}`,
-              `Responsible organisation: ${op.responsible_org || 'N/A'}`,
-              `Public contact: ${op.public_contact || 'N/A'}`,
-              `Status: ${(op.status || 'unknown').toUpperCase()}`
-            ].join('\n');
-            downloadTextFile(text, `DRMSA-relief-${safeFilename(op.name || 'operation')}.txt`);
-          }
-        }
-      ]);
+
+  // Dropdown toggle
+  document.querySelectorAll('.relief-dl-toggle').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      const id   = btn.dataset.id;
+      const drop = document.getElementById(`ro-drop-${id}`);
+      if (!drop) return;
+      document.querySelectorAll('.dl-dropdown').forEach(d => { if (d.id !== `ro-drop-${id}`) d.style.display = 'none'; });
+      drop.style.display = drop.style.display === 'none' ? 'block' : 'none';
     });
   });
 
+  document.addEventListener('click', () => document.querySelectorAll('.dl-dropdown').forEach(d => d.style.display = 'none'));
+
+  // Text download
+  document.querySelectorAll('[data-ro-txt]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const op = ops.find(o => o.id === btn.dataset.roTxt);
+      if (!op) return;
+      const text = `RELIEF OPERATION NOTIFICATION\n${'='.repeat(40)}\n` +
+        `Operation: ${op.name}\nStatus: ${(op.status||'').toUpperCase()}\n` +
+        `Hazard: ${op.hazard_name||'—'}\nWard: ${op.ward_number||'—'}\n` +
+        `Distribution point: ${op.distribution_point||'—'}\nSchedule: ${op.schedule||'—'}\n` +
+        `Responsible org: ${op.responsible_org||'—'}\nPublic contact: ${op.public_contact||'—'}\n` +
+        `End date: ${op.end_date ? new Date(op.end_date).toLocaleDateString('en-ZA') : '—'}`;
+      const blob = new Blob([text], {type:'text/plain'});
+      const url  = URL.createObjectURL(blob);
+      const a    = Object.assign(document.createElement('a'), {href:url, download:`relief-op-${op.name.replace(/\s+/g,'-')}.txt`});
+      a.click(); URL.revokeObjectURL(url);
+      document.getElementById(`ro-drop-${op.id}`).style.display = 'none';
+    });
+  });
+
+  // PNG download
+  document.querySelectorAll('[data-ro-png]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const op = ops.find(o => o.id === btn.dataset.roPng);
+      if (!op) return;
+      document.getElementById(`ro-drop-${op.id}`).style.display = 'none';
+      downloadReliefPNG(op);
+    });
+  });
 }
 
 // ── SAWS ─────────────────────────────────────────────────
@@ -550,23 +864,11 @@ window.deactivateSAWS = async function(id) {
   await renderSAWS(document.getElementById('community-body'));
 };
 
-// ── DOWNLOAD RECORD ───────────────────────────────────────
-window._downloadRecord = function(type, id, name) {
-  const el = document.getElementById(`sc-${id}`) || document.querySelector(`[id$="${id}"]`);
-  const text = el ? el.innerText : `${type.toUpperCase()}: ${name}`;
-  const blob = new Blob([text], { type: 'text/plain' });
-  const url  = URL.createObjectURL(blob);
-  const a    = document.createElement('a');
-  a.href = url; a.download = `DRMSA-${type}-${name.replace(/\s/g,'-')}.txt`;
-  a.click(); URL.revokeObjectURL(url);
-};
-
 function emptyState(msg) {
   return `<div style="text-align:center;padding:48px 20px;color:var(--text3);font-size:12px">${msg}</div>`;
 }
 
 function showToast(msg, isError=false) {
-  // Remove existing toasts
   document.querySelectorAll('.drmsa-toast').forEach(t => t.remove());
   const t = document.createElement('div');
   t.className = 'drmsa-toast';
@@ -574,98 +876,4 @@ function showToast(msg, isError=false) {
   t.textContent = msg;
   document.body.appendChild(t);
   setTimeout(() => { t.style.opacity='0'; setTimeout(() => t.remove(), 300); }, 3000);
-}
-
-function showRecordSaveMenu(btn, items = []) {
-  document.getElementById('drmsa-save-menu')?.remove();
-  const menu = document.createElement('div');
-  menu.id = 'drmsa-save-menu';
-  menu.style.cssText = 'position:fixed;background:var(--bg2);border:1px solid var(--border2);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.35);z-index:9999;min-width:180px;overflow:hidden;font-family:Inter,system-ui,sans-serif';
-  menu.innerHTML = `<div style="padding:8px 12px;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--text3);border-bottom:1px solid var(--border)">Save as</div>` +
-    items.map((item, i) => `<div data-idx="${i}" style="display:flex;align-items:center;gap:10px;padding:10px 14px;cursor:pointer;font-size:13px;color:var(--text2)"><span style="width:8px;height:8px;border-radius:50%;background:${item.icon || '#58a6ff'};display:inline-block"></span>${item.label}</div>`).join('');
-  document.body.appendChild(menu);
-  const rect = btn.getBoundingClientRect();
-  const left = Math.max(8, Math.min(rect.left, window.innerWidth - 190));
-  const top = (rect.bottom + 6 + 180 > window.innerHeight)
-    ? Math.max(8, rect.top - 120)
-    : (rect.bottom + 6);
-  menu.style.left = `${left}px`;
-  menu.style.top = `${top}px`;
-  menu.querySelectorAll('[data-idx]').forEach(el => {
-    el.addEventListener('click', () => {
-      const fn = items[parseInt(el.dataset.idx, 10)]?.fn;
-      menu.remove();
-      if (fn) fn();
-    });
-  });
-  setTimeout(() => {
-    document.addEventListener('click', function close(e) {
-      if (!menu.contains(e.target)) {
-        menu.remove();
-        document.removeEventListener('click', close);
-      }
-    });
-  }, 50);
-}
-
-function downloadNoticePNG({ filename, title, subtitle, bullets = [] }) {
-  const canvas = document.createElement('canvas');
-  canvas.width = 1200;
-  canvas.height = 700;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return;
-  ctx.fillStyle = '#f4f8ff';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-  ctx.fillStyle = '#003ea6';
-  ctx.fillRect(0, 0, canvas.width, 70);
-  ctx.fillRect(0, canvas.height - 56, canvas.width, 56);
-  ctx.fillStyle = '#ffffff';
-  ctx.font = '700 24px Arial';
-  ctx.fillText('Western Cape Government', 28, 44);
-  ctx.fillStyle = '#0f3f95';
-  ctx.font = '700 54px Arial';
-  ctx.fillText(title, 40, 150);
-  ctx.fillStyle = '#18345c';
-  ctx.font = '700 36px Arial';
-  ctx.fillText(subtitle, 40, 200);
-  ctx.fillStyle = '#ffffff';
-  ctx.fillRect(40, 230, 1120, 370);
-  ctx.strokeStyle = '#b5cdf6';
-  ctx.lineWidth = 3;
-  ctx.strokeRect(40, 230, 1120, 370);
-  ctx.fillStyle = '#243750';
-  ctx.font = '500 30px Arial';
-  bullets.forEach((line, i) => {
-    const y = 285 + (i * 58);
-    ctx.fillText('•', 70, y);
-    const maxChars = 62;
-    const text = line.length > maxChars ? `${line.slice(0, maxChars - 1)}…` : line;
-    ctx.fillText(text, 100, y);
-  });
-  ctx.fillStyle = '#ffffff';
-  ctx.font = '500 24px Arial';
-  ctx.fillText('Issued by Disaster Management • Official Notice', 20, canvas.height - 20);
-  const url = canvas.toDataURL('image/png');
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  a.click();
-}
-
-function safeFilename(value) {
-  return String(value || 'record')
-    .trim()
-    .replace(/[^a-z0-9-_]+/gi, '-')
-    .replace(/^-+|-+$/g, '')
-    .toLowerCase() || 'record';
-}
-
-function downloadTextFile(content, filename) {
-  const blob = new Blob([content], { type: 'text/plain' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
 }
