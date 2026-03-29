@@ -565,9 +565,9 @@ function bindListEvents() {
       const assessment = assessRes.data || {};
       showDownloadMenu(btn, {
         filename: `HVC-${label.replace(/\s+/g,'-')}-${muniName.replace(/\s+/g,'-')}`,
-        getPDF:     () => exportAssessmentPDF(id, label),
-        getCSVRows: () => getHVCCSVRows(scores, assessment, muniName),
-        getDocHTML: () => getHVCDocHTML(scores, assessment, muniName)
+        getPDF:      () => exportAssessmentPDF(id, label),
+        getXLSXBlob: () => getHVCXLSXBlob(scores, assessment, muniName),
+        getDocHTML:  () => getHVCDocHTML(scores, assessment, muniName)
       });
     });
   });
@@ -1312,10 +1312,10 @@ async function openAssessment(id) {
   document.getElementById('view-download-btn')?.addEventListener('click', function() {
     const muniName = _user?.municipalities?.name || 'Municipality';
     showDownloadMenu(this, {
-      filename: `HVC-${label.replace(/\s+/g,'-')}-${muniName.replace(/\s+/g,'-')}`,
-      getPDF:     () => exportAssessmentPDF(id, label),
-      getCSVRows: () => getHVCCSVRows(scores, assessment, muniName),
-      getDocHTML: () => getHVCDocHTML(scores, assessment, muniName)
+      filename:    `HVC-${label.replace(/\s+/g,'-')}-${muniName.replace(/\s+/g,'-')}`,
+      getPDF:      () => exportAssessmentPDF(id, label),
+      getXLSXBlob: () => getHVCXLSXBlob(scores, assessment, muniName),
+      getDocHTML:  () => getHVCDocHTML(scores, assessment, muniName)
     });
   });
   document.getElementById('view-delete')?.addEventListener('click', () => deleteAssessment(id, label));
@@ -1531,19 +1531,238 @@ This will permanently remove all hazard scores for this assessment. This cannot 
 }
 
 // ── DOWNLOAD HELPERS ─────────────────────────────────────
-function getHVCCSVRows(scores, assessment, muniName) {
-  const rows = [['Rank','Hazard','Category','H.Score','V.Score','C.Score','Resilience','Risk Rating','Band','Priority','Level','Wards']];
-  scores.forEach((s, i) => {
-    rows.push([
-      i+1, s.hazard_name, s.hazard_category||'',
-      s.hazard_score?.toFixed(2)||'', s.vulnerability_score?.toFixed(2)||'',
-      s.capacity_score?.toFixed(2)||'', s.resilience_index?.toFixed(3)||'',
-      s.risk_rating?.toFixed(2)||'', s.risk_band||'',
-      s.priority_index?.toFixed(2)||'', s.priority_level||'',
-      Array.isArray(s.affected_wards) ? s.affected_wards.join('; ') : ''
-    ]);
-  });
-  return rows;
+
+// Descriptor text lookup — maps numeric score (1-5) to the exact text
+// the Annexure 3 template IF-formula chains compare against.
+const _XLSX_DESCRIPTORS = {
+  affected_area: {
+    1: 'Affects only a very small part (roughly 20%)',
+    2: 'Affects a small part (roughly 40%)',
+    3: 'Affects a part (roughly 60%) ',
+    4: 'Affects a large part (roughly 80%)',
+    5: 'Affects the whole local municipality'
+  },
+  probability: {
+    1: 'Unlikely', 2: 'Possible', 3: '50/50 Chance', 4: 'Likely', 5: 'Certain'
+  },
+  frequency: {
+    1: 'Once every 5 years', 2: 'Annually', 3: 'Seasonally', 4: 'Monthly', 5: 'Weekly'
+  },
+  predictability: {
+    1: 'Predictable', 2: 'Fairly accurate ', 3: '50/50 Chance ', 4: 'Slight chance', 5: 'Cannot predict'
+  },
+  vp: {
+    1: 'Very stable',
+    2: 'Limited political instability',
+    3: 'Slight political instability and conflict',
+    4: 'Politically unstable',
+    5: 'Very politically unstable, dysfunctional political structures'
+  },
+  ve: {
+    1: 'Unlikely impact on local economy',
+    2: 'Slight impact on local economy',
+    3: 'Parts of the local economy are disrupted',
+    4: 'Local economy and economic activities are seriously disrupted',
+    5: 'Local economy and economic activities are severely disrupted'
+  },
+  vs: {
+    1: 'Unlikely impact on society',
+    2: 'Limited injuries  / discomfort  / displacement',
+    3: 'Multiple injuries / displacement of a small number of the population',
+    4: null,
+    5: null
+  },
+  vt: {
+    1: 'Unlikely impact or disruption to critical systems and services',
+    2: 'Limited impact or disruption to critical systems and services',
+    3: 'Moderate impact or disruption to critical systems and services',
+    4: 'Serious impact or disruption to critical systems and services',
+    5: 'Severe impact or disruption to critical systems and services'
+  },
+  vn: {
+    1: 'Limited impact on environmentally sensitive areas',
+    2: 'Moderate impact on environmentally sensitive areas',
+    3: 'Serious impact on environmentally sensitive areas',
+    4: 'Severe impact on environmentally sensitive areas',
+    5: 'Significant impact on environmentally sensitive areas'
+  },
+  ci: {
+    1: 'Policies, systems, processes and structures to effectively manage DRR activities largely non-existent or non-functional',
+    2: 'Limited policies, systems, processes and structures to effectively manage DRR activities',
+    3: 'Basic policies, systems, processes and structures to effectively manage DRR activities',
+    4: 'Functional policies, systems, processes and structures to effectively manage DRR activities',
+    5: 'Comprehensive policies, systems, processes and structures to effectively manage DRR activities'
+  },
+  cp: {
+    1: 'No or limited programme capacity',
+    2: 'Level 1 plan in place ',
+    3: 'Level 2 plan in place ',
+    4: 'Level 3 plan in place',
+    5: 'Integrated and proactive plans and programmes in place'
+  },
+  cq: {
+    1: 'No public participation or interest from public',
+    2: 'Limited public participation or interest from public',
+    3: 'Moderate public participation or interest from public',
+    4: 'Good public participation or interest from public',
+    5: 'Full public participation or interest from public'
+  },
+  cf: {
+    1: 'Limited or no budget allocation, severely limiting access to resources',
+    2: 'Limited or small budget allocation to support, emphasis on response and recovery activities and resources only',
+    3: 'Moderate budget allocation, considering both reactive and proactive DRM activities and resource requirements',
+    4: 'Good budget allocation, with DRR activities and resources being prioritised',
+    5: 'Budget allocation for the entire DRM spectrum with emphasis on DRR and development activities with adequate provisions'
+  },
+  ch: {
+    1: 'Limited or no training conducted, fundamental knowledge base',
+    2: 'Basic training conducted, informed understanding of the core elements of DRM ',
+    3: 'Training demonstrates detailed knowledge of the main areas of DRM',
+    4: 'Well-balanced training programme implemented to capacitate all role-players',
+    5: 'Integrated multi-disciplinary and multi-sector teams are fully trained and demonstrate knowledge of and engagement in DRM'
+  },
+  cs: {
+    1: 'No or limited support, mainly verbal understandings',
+    2: 'Some agreements in place with internal role-players and external support network',
+    3: 'Well established agreements between internal role-players and external support network',
+    4: 'Comprehensive, fully formalised and dynamic support network with signed and executable agreements',
+    5: 'Comprehensive and dynamic network in place between internal and external role-players,  tested, can be implemented '
+  },
+  importance: {
+    1: 'Not important at all', 2: 'Negligible', 3: 'Important',
+    4: 'Very important', 5: 'Critically important'
+  },
+  urgency: {
+    1: 'No immediate action required',
+    2: 'Some small interventions within the next month',
+    3: 'Some small interventions within the next week',
+    4: 'Integrated actions within the next 24 hours',
+    5: 'Immediate drastic action required'
+  },
+  growth: {
+    1: 'Situation will improve quickly ',
+    2: 'Situation will improve slowly',
+    3: 'Situation will stay the same',
+    4: 'Situation will deteriorate slowly',
+    5: 'Situation will definite deteriorate quickly'
+  }
+};
+
+function _xlsxDesc(field, score) {
+  const map = _XLSX_DESCRIPTORS[field];
+  return (map && score != null && map[score]) ? map[score] : null;
+}
+
+// Builds and downloads the official Annexure 3 HVC xlsx template populated
+// with the user's assessment data. Uses SheetJS loaded from CDN.
+async function getHVCXLSXBlob(scores, assessment, muniName) {
+  // Load SheetJS if not already present
+  if (!window.XLSX) {
+    await new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+      s.onload = resolve;
+      s.onerror = () => reject(new Error('Failed to load SheetJS'));
+      document.head.appendChild(s);
+    });
+  }
+
+  // Fetch the blank template
+  const resp = await fetch('/templates/hvc-tool.xlsx');
+  if (!resp.ok) throw new Error('HVC template not found at /templates/hvc-tool.xlsx');
+  const buffer = await resp.arrayBuffer();
+
+  const wb = window.XLSX.read(new Uint8Array(buffer), { type: 'array', cellStyles: true });
+
+  // ── Assessment Details sheet ──────────────────────────────
+  const wsDetails = wb.Sheets['Assessment Details'];
+  if (wsDetails) {
+    // Labels are in col A (A2-A5), values go in col B
+    const setCellStr = (cellRef, val) => {
+      wsDetails[cellRef] = { t: 's', v: String(val || '') };
+    };
+    setCellStr('B2', assessment.lead_assessor || '');
+    setCellStr('B3', assessment.year ? String(assessment.year) : new Date().getFullYear().toString());
+    setCellStr('B4', muniName);
+    setCellStr('B5', assessment.season || '');
+    // Update sheet range to include B column if needed
+    const range = window.XLSX.utils.decode_range(wsDetails['!ref'] || 'A1:A5');
+    range.e.c = Math.max(range.e.c, 1);
+    range.e.r = Math.max(range.e.r, 4);
+    wsDetails['!ref'] = window.XLSX.utils.encode_range(range);
+  }
+
+  // ── HVC Tool sheet ────────────────────────────────────────
+  const wsTool = wb.Sheets['HVC Tool'];
+  if (wsTool) {
+    const setCell = (col, row, val) => {
+      if (val == null) return;
+      const ref = col + row;
+      wsTool[ref] = { t: 's', v: String(val) };
+    };
+
+    // Data rows start at Excel row 11, one row per hazard score
+    scores.forEach((s, idx) => {
+      const r = 11 + idx; // Excel row number
+
+      // Hazard name
+      setCell('B', r, s.hazard_name || '');
+
+      // Role players (primary / secondary / tertiary)
+      setCell('C', r, s.primary_owner_name   || '');
+      setCell('D', r, s.secondary_owner_name || '');
+      setCell('E', r, s.tertiary_owner_name  || '');
+
+      // Hazard analysis — text descriptors into even columns
+      // Template IF formulas in odd cols (G,I,K,M) read these and compute score
+      setCell('F', r, _xlsxDesc('affected_area',  s.affected_area));
+      setCell('H', r, _xlsxDesc('probability',    s.probability));
+      setCell('J', r, _xlsxDesc('frequency',      s.frequency));
+      setCell('L', r, _xlsxDesc('predictability', s.predictability));
+
+      // Vulnerability analysis — text descriptors into even columns
+      // Template IF formulas in odd cols (P,R,T,V,X) compute sub-scores
+      setCell('O', r, _xlsxDesc('vp', s.vp));
+      setCell('Q', r, _xlsxDesc('ve', s.ve));
+      setCell('S', r, _xlsxDesc('vs', s.vs));
+      setCell('U', r, _xlsxDesc('vt', s.vt));
+      setCell('W', r, _xlsxDesc('vn', s.vn));
+
+      // Capacity analysis — text descriptors into even columns
+      // Template IF formulas in odd cols (AA,AC,AE,AG,AI,AK) compute sub-scores
+      setCell('Z',  r, _xlsxDesc('ci', s.ci));
+      setCell('AB', r, _xlsxDesc('cp', s.cp));
+      setCell('AD', r, _xlsxDesc('cq', s.cq));
+      setCell('AF', r, _xlsxDesc('cf', s.cf));
+      setCell('AH', r, _xlsxDesc('ch', s.ch));
+      setCell('AJ', r, _xlsxDesc('cs', s.cs));
+
+      // Priority analysis — text descriptors into even columns
+      // Template IF formulas in odd cols (AQ,AS,AU) compute sub-scores
+      setCell('AP', r, _xlsxDesc('importance', s.importance));
+      setCell('AR', r, _xlsxDesc('urgency',    s.urgency));
+      setCell('AT', r, _xlsxDesc('growth',     s.growth));
+
+      // Additional info column (AX) — wards + notes
+      const wardsText = Array.isArray(s.affected_wards) && s.affected_wards.length
+        ? 'Wards: ' + s.affected_wards.join(', ')
+        : '';
+      const notesText = s.notes ? (wardsText ? '\n' + s.notes : s.notes) : '';
+      setCell('AX', r, wardsText + notesText);
+    });
+
+    // Extend the sheet range to cover all data rows written
+    if (scores.length) {
+      const lastRow = 10 + scores.length;
+      const range = window.XLSX.utils.decode_range(wsTool['!ref'] || 'A1:AX11');
+      range.e.r = Math.max(range.e.r, lastRow);
+      wsTool['!ref'] = window.XLSX.utils.encode_range(range);
+    }
+  }
+
+  // Write to blob and return
+  const out  = window.XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+  return new Blob([out], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
 }
 
 function getHVCDocHTML(scores, assessment, muniName) {
@@ -1764,66 +1983,6 @@ async function exportAssessmentPDF(id, label) {
     setTimeout(() => w.print(), 500);
     showToast('✓ PDF print dialog opened');
   }
-}
-
-// ── EXPORT CSV ────────────────────────────────────────────
-async function exportAssessmentCSV(id, label) {
-  const [scoresRes, assessRes] = await Promise.all([
-    supabase.from('hvc_hazard_scores').select('*').eq('assessment_id', id).order('risk_rating', { ascending: false }),
-    supabase.from('hvc_assessments').select('*').eq('id', id).single()
-  ]);
-
-  const scores     = scoresRes.data || [];
-  const assessment = assessRes.data || {};
-  const muniName   = window._drmsaUser?.municipalities?.name || 'Municipality';
-
-  const headers = [
-    'Rank','Hazard','Category',
-    'Affected Area','Probability','Frequency','Predictability','Hazard Score',
-    'Political','Economic','Social','Technological','Environmental','Vulnerability Score',
-    'Institutional','Programme','Public Participation','Financial','People','Support Networks','Capacity Score',
-    'Resilience Index','Risk Rating','Risk Band',
-    'Importance','Urgency','Growth','Priority Index','Priority Level',
-    'Wards Affected','Notes'
-  ];
-
-  const rows = scores.map((s, i) => [
-    i+1, s.hazard_name||'', s.hazard_category||'',
-    s.affected_area||'', s.probability||'', s.frequency||'', s.predictability||'', s.hazard_score?.toFixed(2)||'',
-    s.vp||'', s.ve||'', s.vs||'', s.vt||'', s.vn||'', s.vulnerability_score?.toFixed(2)||'',
-    s.ci||'', s.cp||'', s.cq||'', s.cf||'', s.ch||'', s.cs||'', s.capacity_score?.toFixed(2)||'',
-    s.resilience_index?.toFixed(3)||'', s.risk_rating?.toFixed(2)||'', s.risk_band||'',
-    s.importance||'', s.urgency||'', s.growth||'', s.priority_index?.toFixed(2)||'', s.priority_level||'',
-    Array.isArray(s.affected_wards) ? s.affected_wards.join('; ') : '',
-    s.notes||''
-  ]);
-
-  // Add metadata header rows
-  const meta = [
-    [`DRMSA HVC Assessment Report`],
-    [`Municipality: ${muniName}`],
-    [`Assessment: ${label}`],
-    [`Season/Year: ${assessment.season||''} ${assessment.year||''}`],
-    [`Lead assessor: ${assessment.lead_assessor||''}`],
-    [`Generated: ${new Date().toLocaleString('en-ZA')}`],
-    [`DMA Act 57 of 2002 — Annexure 3`],
-    [],
-    headers
-  ];
-
-  const allRows = [...meta, ...rows];
-  const escQ = function(v) { return '"' + String(v||'').split('"').join('""') + '"'; };
-  const csv = allRows.map(function(r) { return r.map(escQ).join(','); }).join('\n');
-
-  const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
-  const url  = URL.createObjectURL(blob);
-  const a    = Object.assign(document.createElement('a'), {
-    href:     url,
-    download: 'DRMSA-HVC-' + label.replace(/\s+/g,'-') + '-' + new Date().toISOString().slice(0,10) + '.csv'
-  });
-  a.click();
-  URL.revokeObjectURL(url);
-  showToast('✓ CSV downloaded — opens in Excel');
 }
 
 function setTxt(id, val) { const el=document.getElementById(id); if(el) el.textContent=val; }
