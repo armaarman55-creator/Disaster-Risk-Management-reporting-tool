@@ -375,56 +375,9 @@ async function _loadExcelJS() {
   });
 }
 
-// Lookup table: col letter → array of [score, descriptorText] for rows 6–10
-// Row 5 is intentionally blank (score 0 / not applicable).
-// Must match the original Annexure 3 template strings character-for-character.
-const _LOOKUP_ROWS = {
-  F:  [[1,'Affects only a very small part (roughly 20%)'],[2,'Affects a small part (roughly 40%)'],[3,'Affects a part (roughly 60%) '],[4,'Affects a large part (roughly 80%)'],[5,'Affects the whole local municipality']],
-  H:  [[1,'Unlikely'],[2,'Possible'],[3,'50/50 Chance'],[4,'Likely'],[5,'Certain']],
-  J:  [[1,'Once every 5 years'],[2,'Annually'],[3,'Seasonally'],[4,'Monthly'],[5,'Weekly']],
-  L:  [[1,'Predictable'],[2,'Fairly accurate '],[3,'50/50 Chance '],[4,'Slight chance'],[5,'Cannot predict']],
-  O:  [[1,'Very stable'],[2,'Limited political instability'],[3,'Slight political instability and conflict'],[4,'Politically unstable'],[5,'Very politically unstable, dysfunctional political structures']],
-  Q:  [[1,'Unlikely impact on local economy'],[2,'Slight impact on local economy'],[3,'Parts of the local economy are disrupted'],[4,'Local economy and economic activities are seriously disrupted'],[5,'Local economy and economic activities are severely disrupted']],
-  S:  [[1,'Unlikely impact on society'],[2,'Limited injuries  / discomfort  / displacement'],[3,'Multiple injuries / displacement of a small number of the population'],[4,null],[5,null]],
-  U:  [[1,'Unlikely impact or disruption to critical systems and services'],[2,'Limited impact or disruption to critical systems and services'],[3,'Moderate impact or disruption to critical systems and services'],[4,'Serious impact or disruption to critical systems and services'],[5,'Severe impact or disruption to critical systems and services']],
-  W:  [[1,'Limited impact on environmentally sensitive areas'],[2,'Moderate impact on environmentally sensitive areas'],[3,'Serious impact on environmentally sensitive areas'],[4,'Severe impact on environmentally sensitive areas'],[5,'Significant impact on environmentally sensitive areas']],
-  Z:  [[1,'Policies, systems, processes and structures to effectively manage DRR activities largely non-existent or non-functional'],[2,'Limited policies, systems, processes and structures to effectively manage DRR activities'],[3,'Basic policies, systems, processes and structures to effectively manage DRR activities'],[4,'Functional policies, systems, processes and structures to effectively manage DRR activities'],[5,'Comprehensive policies, systems, processes and structures to effectively manage DRR activities']],
-  AB: [[1,'No or limited programme capacity'],[2,'Level 1 plan in place '],[3,'Level 2 plan in place '],[4,'Level 3 plan in place'],[5,'Integrated and proactive plans and programmes in place']],
-  AD: [[1,'No public participation or interest from public'],[2,'Limited public participation or interest from public'],[3,'Moderate public participation or interest from public'],[4,'Good public participation or interest from public'],[5,'Full public participation or interest from public']],
-  AF: [[1,'Limited or no budget allocation, severely limiting access to resources'],[2,'Limited or small budget allocation to support, emphasis on response and recovery activities and resources only'],[3,'Moderate budget allocation, considering both reactive and proactive DRM activities and resource requirements'],[4,'Good budget allocation, with DRR activities and resources being prioritised'],[5,'Budget allocation for the entire DRM spectrum with emphasis on DRR and development activities with adequate provisions']],
-  AH: [[1,'Limited or no training conducted, fundamental knowledge base'],[2,'Basic training conducted, informed understanding of the core elements of DRM '],[3,'Training demonstrates detailed knowledge of the main areas of DRM'],[4,'Well-balanced training programme implemented to capacitate all role-players'],[5,'Integrated multi-disciplinary and multi-sector teams are fully trained and demonstrate knowledge of and engagement in DRM']],
-  AJ: [[1,'No or limited support, mainly verbal understandings'],[2,'Some agreements in place with internal role-players and external support network'],[3,'Well established agreements between internal role-players and external support network'],[4,'Comprehensive, fully formalised and dynamic support network with signed and executable agreements'],[5,'Comprehensive and dynamic network in place between internal and external role-players,  tested, can be implemented ']],
-  AP: [[1,'Not important at all'],[2,'Negligible'],[3,'Important'],[4,'Very important'],[5,'Critically important']],
-  AR: [[1,'No immediate action required'],[2,'Some small interventions within the next month'],[3,'Some small interventions within the next week'],[4,'Integrated actions within the next 24 hours'],[5,'Immediate drastic action required']],
-  AT: [[1,'Situation will improve quickly '],[2,'Situation will improve slowly'],[3,'Situation will stay the same'],[4,'Situation will deteriorate slowly'],[5,'Situation will definite deteriorate quickly']],
-};
 
-// Convert column letter(s) to 1-based index (A=1, Z=26, AA=27, AX=50 …)
+// Convert column letter(s) to 1-based index (A=1, Z=26, AA=27 …)
 const _ci = (col) => { let n = 0; for (const c of col.toUpperCase()) n = n * 26 + c.charCodeAt(0) - 64; return n; };
-
-// Return descriptor text for a given input column and numeric score (1–5).
-// For vs scores 4/5 (null in template) fall back to the raw number.
-function _desc(col, score) {
-  if (score == null) return null;
-  const row = (_LOOKUP_ROWS[col] || []).find(([s]) => s === score);
-  if (!row) return null;
-  return row[1] === null ? String(score) : row[1];
-}
-
-// Build an IF-chain formula matching the template logic.
-// Lookup rows are at rows 6–10 (score 1–5). Row 5 is blank (score 0/N/A).
-// The formula outputs a NUMBER not a string so aggregate AVERAGEs work.
-function _ifFormula(inputCol, rowNum) {
-  const lookup = _LOOKUP_ROWS[inputCol];
-  if (!lookup) return '0';
-  let formula = '0';
-  for (let i = lookup.length - 1; i >= 0; i--) {
-    const score  = i + 1;           // scores 1–5
-    const refRow = 6 + i;           // rows 6–10
-    formula = `IF(${inputCol}${rowNum}=$${inputCol}$${refRow},${score},${formula})`;
-  }
-  return formula; // no leading = — caller wraps in { formula: }
-}
 
 export async function getHVCXLSXBlob(scores, assessment, muniName) {
   await _loadExcelJS();
@@ -436,10 +389,10 @@ export async function getHVCXLSXBlob(scores, assessment, muniName) {
   // ── Sheet 1: Assessment Details ───────────────────────
   const wsD = wb.addWorksheet('Assessment Details');
   wsD.getCell('A1').value = 'HVC TOOL ASSESSMENT DETAILS';
-  [['A2', 'Conducted by:',                    'B2', assessment.lead_assessor || ''],
-   ['A3', 'Date Conducted:',                  'B3', String(assessment.year || new Date().getFullYear())],
-   ['A4', 'Conducted at: Local Municipality', 'B4', muniName],
-   ['A5', 'Season:',                          'B5', assessment.season || ''],
+  [['A2','Conducted by:',                    'B2', assessment.lead_assessor || ''],
+   ['A3','Date Conducted:',                  'B3', String(assessment.year || new Date().getFullYear())],
+   ['A4','Conducted at: Local Municipality', 'B4', muniName],
+   ['A5','Season:',                          'B5', assessment.season || ''],
   ].forEach(([la, lv, va, vv]) => {
     wsD.getCell(la).value = lv;
     wsD.getCell(va).value = vv;
@@ -448,104 +401,78 @@ export async function getHVCXLSXBlob(scores, assessment, muniName) {
   // ── Sheet 2: HVC Tool ────────────────────────────────
   const ws = wb.addWorksheet('HVC Tool');
 
-  // Row 1 — title
   ws.getRow(1).getCell(_ci('B')).value = 'HAZARD, VULNERABILITY AND CAPACITY ASSESSMENT TOOL';
 
-  // Row 3 — column headers
+  // Group headers row 2
+  const groups = {
+    C:'RECOMMENDED ROLE PLAYERS', F:'HAZARD ANALYSIS', K:'VULNERABILITY ANALYSIS',
+    Q:'CAPACITY ANALYSIS', Y:'FINAL DISASTER RISK RATING', AA:'PRIORITY ANALYSIS', AF:'ADDITIONAL INFORMATION'
+  };
+  Object.entries(groups).forEach(([col, val]) => { ws.getRow(2).getCell(_ci(col)).value = val; });
+
+  // Column headers row 3
   const headers = {
     B:'HAZARD', C:'PRIMARY', D:'SECONDARY', E:'TERTIARY',
-    F:'AFFECTED AREA', H:'PROBABILITY', J:'FREQUENCY', L:'PREDICTABILITY', N:'HAZARD SCORE',
-    O:'POLITICAL', Q:'ECONOMICAL', S:'SOCIAL/HUMAN', U:'TECHNOLOGICAL', W:'ENVIRONMENTAL', Y:'VULNERABILITY SCORE',
-    Z:'INSTITUTIONAL AND MANAGEMENT CAPACITY', AB:'PROGRAMME CAPACITY', AD:'PUBLIC PARTICIPATION',
-    AF:'FINANCIAL CAPACITY', AH:'PEOPLE CAPACITY', AJ:'SUPPORT NETWORK', AL:'CAPACITY SCORE',
-    AM:'RESILIENCE INDEX', AN:'RISK RATING', AO:'RISK PROFILE',
-    AP:'IMPORTANCE', AR:'URGENCY', AT:'GROWTH', AV:'PRIORITY INDEX', AW:'PRIORITY PROFILE',
-    AX:'ADDITIONAL INFORMATION',
+    F:'AFFECTED AREA', G:'PROBABILITY', H:'FREQUENCY', I:'PREDICTABILITY', J:'HAZARD SCORE',
+    K:'POLITICAL', L:'ECONOMICAL', M:'SOCIAL/HUMAN', N:'TECHNOLOGICAL', O:'ENVIRONMENTAL', P:'VULNERABILITY SCORE',
+    Q:'INSTITUTIONAL', R:'PROGRAMME', S:'PUBLIC PARTICIPATION', T:'FINANCIAL', U:'PEOPLE', V:'SUPPORT NETWORK', W:'CAPACITY SCORE',
+    X:'RESILIENCE INDEX', Y:'RISK RATING', Z:'RISK PROFILE',
+    AA:'IMPORTANCE', AB:'URGENCY', AC:'GROWTH', AD:'PRIORITY INDEX', AE:'PRIORITY PROFILE',
+    AF:'WARDS / NOTES'
   };
   Object.entries(headers).forEach(([col, val]) => { ws.getRow(3).getCell(_ci(col)).value = val; });
 
-  // Rows 6–10 — descriptor lookup rows (score 1=row6, 2=row7, …, 5=row10)
-  // Row 5 is intentionally blank (no-score / zero row referenced by IF formula base case)
-  Object.entries(_LOOKUP_ROWS).forEach(([col, entries]) => {
-    entries.forEach(([, text], i) => {
-      if (text !== null) {
-        ws.getRow(6 + i).getCell(_ci(col)).value = text;
-      }
-    });
-  });
-
-  // Rows 6–10 — numeric score values in the score cols (right of each input col)
-  // These aren't used by the formulas but keep the sheet self-documenting
-  const scoreCols = {
-    F:'G', H:'I', J:'K', L:'M',
-    O:'P', Q:'R', S:'T', U:'V', W:'X',
-    Z:'AA', AB:'AC', AD:'AE', AF:'AG', AH:'AI', AJ:'AK',
-    AP:'AQ', AR:'AS', AT:'AU'
-  };
-  Object.values(scoreCols).forEach(scoreCol => {
-    for (let score = 1; score <= 5; score++) {
-      ws.getRow(5 + score).getCell(_ci(scoreCol)).value = score;
-    }
-  });
-
-  // Rows 12+ — one data row per hazard
+  // Data rows — write scores directly as numbers, aggregate with simple formulas
   scores.forEach((s, idx) => {
-    const r   = 12 + idx;
+    const r   = 5 + idx;
     const row = ws.getRow(r);
+    const sc  = (col, val) => { if (val != null && val !== '') row.getCell(_ci(col)).value = val; };
+    const sf  = (col, formula) => { row.getCell(_ci(col)).value = { formula, result: 0 }; };
 
-    // Helper: set plain text/number value
-    const sc = (col, val) => {
-      if (val != null && val !== '') row.getCell(_ci(col)).value = val;
-    };
-    // Helper: set formula cell with a numeric 0 result placeholder
-    const sf = (col, formula) => {
-      row.getCell(_ci(col)).value = { formula, result: 0 };
-    };
-
-    // Identity & role players
     sc('B', s.hazard_name     || '');
     sc('C', s.primary_owner   || '');
     sc('D', s.secondary_owner || '');
     sc('E', s.tertiary_owner  || '');
 
-    // Descriptor text into input cols
-    sc('F', _desc('F',  s.affected_area));
-    sc('H', _desc('H',  s.probability));
-    sc('J', _desc('J',  s.frequency));
-    sc('L', _desc('L',  s.predictability));
-    sc('O', _desc('O',  s.vp));
-    sc('Q', _desc('Q',  s.ve));
-    sc('S', _desc('S',  s.vs));
-    sc('U', _desc('U',  s.vt));
-    sc('W', _desc('W',  s.vn));
-    sc('Z',  _desc('Z',  s.ci));
-    sc('AB', _desc('AB', s.cp));
-    sc('AD', _desc('AD', s.cq));
-    sc('AF', _desc('AF', s.cf));
-    sc('AH', _desc('AH', s.ch));
-    sc('AJ', _desc('AJ', s.cs));
-    sc('AP', _desc('AP', s.importance));
-    sc('AR', _desc('AR', s.urgency));
-    sc('AT', _desc('AT', s.growth));
+    // Hazard analysis scores
+    sc('F', s.affected_area  != null ? Number(s.affected_area)  : null);
+    sc('G', s.probability    != null ? Number(s.probability)    : null);
+    sc('H', s.frequency      != null ? Number(s.frequency)      : null);
+    sc('I', s.predictability != null ? Number(s.predictability) : null);
 
-    // IF-chain score formulas in score cols — produce numbers, not strings
-    Object.entries(scoreCols).forEach(([inputCol, scoreCol]) => {
-      sf(scoreCol, _ifFormula(inputCol, r));
-    });
+    // Vulnerability scores
+    sc('K', s.vp != null ? Number(s.vp) : null);
+    sc('L', s.ve != null ? Number(s.ve) : null);
+    sc('M', s.vs != null ? Number(s.vs) : null);
+    sc('N', s.vt != null ? Number(s.vt) : null);
+    sc('O', s.vn != null ? Number(s.vn) : null);
 
-    // Aggregate formulas
-    sf('N',  `(G${r}+I${r}+K${r}+M${r})/4`);
-    sf('Y',  `(P${r}+R${r}+T${r}+V${r}+X${r})/5`);
-    sf('AL', `(AA${r}+AC${r}+AE${r}+AG${r}+AI${r}+AK${r})/6`);
-    sf('AM', `Y${r}/AL${r}`);
-    sf('AN', `N${r}*Y${r}/AL${r}`);
-    row.getCell(_ci('AO')).value = {
-      formula: `IF(AND(AN${r}>20,AN${r}<=25),"EXTREMELY HIGH",IF(AND(AN${r}>15,AN${r}<=20),"HIGH",IF(AND(AN${r}>10,AN${r}<=15),"TOLERABLE",IF(AND(AN${r}>5,AN${r}<=10),"LOW",IF(AN${r}<=5,"NEGLIGIBLE",0)))))`,
+    // Capacity scores
+    sc('Q', s.ci != null ? Number(s.ci) : null);
+    sc('R', s.cp != null ? Number(s.cp) : null);
+    sc('S', s.cq != null ? Number(s.cq) : null);
+    sc('T', s.cf != null ? Number(s.cf) : null);
+    sc('U', s.ch != null ? Number(s.ch) : null);
+    sc('V', s.cs != null ? Number(s.cs) : null);
+
+    // Priority scores
+    sc('AA', s.importance != null ? Number(s.importance) : null);
+    sc('AB', s.urgency    != null ? Number(s.urgency)    : null);
+    sc('AC', s.growth     != null ? Number(s.growth)     : null);
+
+    // Aggregates — pure arithmetic, no IF chains, no lookups
+    sf('J',  `IFERROR(AVERAGE(F${r},G${r},H${r},I${r}),"")`);
+    sf('P',  `IFERROR(AVERAGE(K${r},L${r},M${r},N${r},O${r}),"")`);
+    sf('W',  `IFERROR(AVERAGE(Q${r},R${r},S${r},T${r},U${r},V${r}),"")`);
+    sf('X',  `IFERROR(P${r}/W${r},"")`);
+    sf('Y',  `IFERROR(J${r}*P${r}/W${r},"")`);
+    row.getCell(_ci('Z')).value = {
+      formula: `IFERROR(IF(Y${r}>20,"EXTREMELY HIGH",IF(Y${r}>15,"HIGH",IF(Y${r}>10,"TOLERABLE",IF(Y${r}>5,"LOW","NEGLIGIBLE")))),"")`,
       result: ''
     };
-    sf('AV', `(AQ${r}+AS${r}+AU${r})/3`);
-    row.getCell(_ci('AW')).value = {
-      formula: `IF(AV${r}>=3.3,"HIGH",IF(AV${r}>=1.6,"MEDIUM",IF(AV${r}>=0,"LOW",0)))`,
+    sf('AD', `IFERROR(AVERAGE(AA${r},AB${r},AC${r}),"")`);
+    row.getCell(_ci('AE')).value = {
+      formula: `IFERROR(IF(AD${r}>=3.3,"HIGH",IF(AD${r}>=1.6,"MEDIUM","LOW")),"")`,
       result: ''
     };
 
@@ -553,17 +480,18 @@ export async function getHVCXLSXBlob(scores, assessment, muniName) {
     const wardsText = Array.isArray(s.affected_wards) && s.affected_wards.length
       ? 'Wards: ' + s.affected_wards.join(', ') : '';
     const combined = [wardsText, s.notes].filter(Boolean).join(' | ');
-    if (combined) sc('AX', combined);
+    if (combined) sc('AF', combined);
 
     row.commit();
   });
 
-  // Make HVC Tool the active sheet when the file opens
+  // Open on HVC Tool sheet (index 1)
   wb.views = [{ firstSheet: 1, activeTab: 1 }];
 
   const arrayBuffer = await wb.xlsx.writeBuffer();
   return new Blob([arrayBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
 }
+
 
 // ── WORD DOWNLOAD ─────────────────────────────────────────
 export function getHVCDocHTML(scores, assessment, muniName) {
