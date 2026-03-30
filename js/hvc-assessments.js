@@ -411,48 +411,47 @@ function _desc(col, score) {
   return row[1] === null ? String(score) : row[1];
 }
 
-// Build an IF-chain formula that matches the template's lookup logic:
-//   =IF(Fc=$Fc$6,score,IF(Fc=$Fc$7,score,...,IF(Fc=$Fc$10,score,0)))
-// inputCol = the text input column (e.g. "F"), scoreCol = formula result col (e.g. "G")
+// Build an IF-chain formula matching the template logic.
+// Lookup rows are at rows 6–10 (score 1–5). Row 5 is blank (score 0/N/A).
+// The formula outputs a NUMBER not a string so aggregate AVERAGEs work.
 function _ifFormula(inputCol, rowNum) {
   const lookup = _LOOKUP_ROWS[inputCol];
   if (!lookup) return '0';
-  // Build inside-out: last entry first
   let formula = '0';
   for (let i = lookup.length - 1; i >= 0; i--) {
-    const [score] = lookup[i];
-    const refRow  = 5 + i; // row 5 blank, rows 6-10 are scores 1-5
-    formula = `IF(${inputCol}${rowNum}=$${inputCol}$${refRow},"${score}",${formula})`;
+    const score  = i + 1;           // scores 1–5
+    const refRow = 6 + i;           // rows 6–10
+    formula = `IF(${inputCol}${rowNum}=$${inputCol}$${refRow},${score},${formula})`;
   }
-  return `=${formula}`;
+  return formula; // no leading = — caller wraps in { formula: }
 }
 
 export async function getHVCXLSXBlob(scores, assessment, muniName) {
   await _loadExcelJS();
 
   const wb = new window.ExcelJS.Workbook();
-  wb.creator  = 'DRMSA';
-  wb.created  = new Date();
+  wb.creator = 'DRMSA';
+  wb.created = new Date();
 
   // ── Sheet 1: Assessment Details ───────────────────────
   const wsD = wb.addWorksheet('Assessment Details');
   wsD.getCell('A1').value = 'HVC TOOL ASSESSMENT DETAILS';
-  [['A2','Conducted by:',    'B2', assessment.lead_assessor || ''],
-   ['A3','Date Conducted:',  'B3', assessment.year          || new Date().getFullYear()],
-   ['A4','Conducted at: Local Municipality', 'B4', muniName],
-   ['A5','Season:',          'B5', assessment.season        || ''],
+  [['A2', 'Conducted by:',                    'B2', assessment.lead_assessor || ''],
+   ['A3', 'Date Conducted:',                  'B3', String(assessment.year || new Date().getFullYear())],
+   ['A4', 'Conducted at: Local Municipality', 'B4', muniName],
+   ['A5', 'Season:',                          'B5', assessment.season || ''],
   ].forEach(([la, lv, va, vv]) => {
     wsD.getCell(la).value = lv;
-    wsD.getCell(va).value = String(vv);
+    wsD.getCell(va).value = vv;
   });
 
   // ── Sheet 2: HVC Tool ────────────────────────────────
   const ws = wb.addWorksheet('HVC Tool');
 
-  // --- Row 1: Title ---
-  ws.getRow(1).getCell(2).value = 'HAZARD, VULNERABILITY AND CAPACITY ASSESSMENT TOOL';
+  // Row 1 — title
+  ws.getRow(1).getCell(_ci('B')).value = 'HAZARD, VULNERABILITY AND CAPACITY ASSESSMENT TOOL';
 
-  // --- Row 3: Column headers ---
+  // Row 3 — column headers
   const headers = {
     B:'HAZARD', C:'PRIMARY', D:'SECONDARY', E:'TERTIARY',
     F:'AFFECTED AREA', H:'PROBABILITY', J:'FREQUENCY', L:'PREDICTABILITY', N:'HAZARD SCORE',
@@ -465,42 +464,51 @@ export async function getHVCXLSXBlob(scores, assessment, muniName) {
   };
   Object.entries(headers).forEach(([col, val]) => { ws.getRow(3).getCell(_ci(col)).value = val; });
 
-  // --- Rows 5–10: Descriptor lookup rows (row 5 blank = score 0, rows 6-10 = scores 1-5) ---
-  // These are what the IF formulas in score cols reference.
+  // Rows 6–10 — descriptor lookup rows (score 1=row6, 2=row7, …, 5=row10)
+  // Row 5 is intentionally blank (no-score / zero row referenced by IF formula base case)
   Object.entries(_LOOKUP_ROWS).forEach(([col, entries]) => {
-    entries.forEach(([score, text], i) => {
+    entries.forEach(([, text], i) => {
       if (text !== null) {
-        ws.getRow(5 + i + 1).getCell(_ci(col)).value = text; // row 6 = score 1, …, row 10 = score 5
-        // Also write the numeric score in the adjacent score column
+        ws.getRow(6 + i).getCell(_ci(col)).value = text;
       }
-      // Score column is one column to the right of input column for hazard/vuln/capacity/priority
     });
   });
 
-  // Also write numeric scores (1–5) in the score columns in rows 6–10
-  // These are the values the IF formula outputs
-  const scoreCols = { F:'G', H:'I', J:'K', L:'M', O:'P', Q:'R', S:'T', U:'V', W:'X', Z:'AA', AB:'AC', AD:'AE', AF:'AG', AH:'AI', AJ:'AK', AP:'AQ', AR:'AS', AT:'AU' };
-  Object.entries(scoreCols).forEach(([, scoreCol]) => {
+  // Rows 6–10 — numeric score values in the score cols (right of each input col)
+  // These aren't used by the formulas but keep the sheet self-documenting
+  const scoreCols = {
+    F:'G', H:'I', J:'K', L:'M',
+    O:'P', Q:'R', S:'T', U:'V', W:'X',
+    Z:'AA', AB:'AC', AD:'AE', AF:'AG', AH:'AI', AJ:'AK',
+    AP:'AQ', AR:'AS', AT:'AU'
+  };
+  Object.values(scoreCols).forEach(scoreCol => {
     for (let score = 1; score <= 5; score++) {
       ws.getRow(5 + score).getCell(_ci(scoreCol)).value = score;
     }
   });
 
-  // --- Rows 12+: Data rows ---
-  // For each hazard: write descriptor text in input cols, IF formulas in score cols,
-  // and aggregate formulas for Hazard Score, V Score, C Score, Resilience, Risk Rating, Priority.
+  // Rows 12+ — one data row per hazard
   scores.forEach((s, idx) => {
     const r   = 12 + idx;
     const row = ws.getRow(r);
-    const sc  = (col, val) => { if (val != null && val !== '') row.getCell(_ci(col)).value = val; };
 
-    // Identity
+    // Helper: set plain text/number value
+    const sc = (col, val) => {
+      if (val != null && val !== '') row.getCell(_ci(col)).value = val;
+    };
+    // Helper: set formula cell with a numeric 0 result placeholder
+    const sf = (col, formula) => {
+      row.getCell(_ci(col)).value = { formula, result: 0 };
+    };
+
+    // Identity & role players
     sc('B', s.hazard_name     || '');
     sc('C', s.primary_owner   || '');
     sc('D', s.secondary_owner || '');
     sc('E', s.tertiary_owner  || '');
 
-    // Descriptor text inputs
+    // Descriptor text into input cols
     sc('F', _desc('F',  s.affected_area));
     sc('H', _desc('H',  s.probability));
     sc('J', _desc('J',  s.frequency));
@@ -520,20 +528,26 @@ export async function getHVCXLSXBlob(scores, assessment, muniName) {
     sc('AR', _desc('AR', s.urgency));
     sc('AT', _desc('AT', s.growth));
 
-    // IF-chain formulas in score cols — mirror original template logic
+    // IF-chain score formulas in score cols — produce numbers, not strings
     Object.entries(scoreCols).forEach(([inputCol, scoreCol]) => {
-      row.getCell(_ci(scoreCol)).value = { formula: _ifFormula(inputCol, r).slice(1) };
+      sf(scoreCol, _ifFormula(inputCol, r));
     });
 
     // Aggregate formulas
-    row.getCell(_ci('N')).value  = { formula: `(G${r}+I${r}+K${r}+M${r})/4` };           // Hazard Score
-    row.getCell(_ci('Y')).value  = { formula: `(P${r}+R${r}+T${r}+V${r}+X${r})/5` };     // Vulnerability Score
-    row.getCell(_ci('AL')).value = { formula: `(AA${r}+AC${r}+AE${r}+AG${r}+AI${r}+AK${r})/6` }; // Capacity Score
-    row.getCell(_ci('AM')).value = { formula: `Y${r}/AL${r}` };                            // Resilience Index
-    row.getCell(_ci('AN')).value = { formula: `N${r}*Y${r}/AL${r}` };                     // Risk Rating
-    row.getCell(_ci('AO')).value = { formula: `IF(AND(AN${r}>20,AN${r}<=25),"EXTREMELY HIGH",IF(AND(AN${r}>15,AN${r}<=20),"HIGH",IF(AND(AN${r}>10,AN${r}<=15),"TOLERABLE",IF(AND(AN${r}>5,AN${r}<=10),"LOW",IF(AN${r}<=5,"NEGLIGIBLE",0)))))` };
-    row.getCell(_ci('AV')).value = { formula: `(AQ${r}+AS${r}+AU${r})/3` };               // Priority Index
-    row.getCell(_ci('AW')).value = { formula: `IF(AV${r}>=3.3,"HIGH",IF(AV${r}>=1.6,"MEDIUM",IF(AV${r}>=0,"LOW",0)))` }; // Priority Profile
+    sf('N',  `(G${r}+I${r}+K${r}+M${r})/4`);
+    sf('Y',  `(P${r}+R${r}+T${r}+V${r}+X${r})/5`);
+    sf('AL', `(AA${r}+AC${r}+AE${r}+AG${r}+AI${r}+AK${r})/6`);
+    sf('AM', `Y${r}/AL${r}`);
+    sf('AN', `N${r}*Y${r}/AL${r}`);
+    row.getCell(_ci('AO')).value = {
+      formula: `IF(AND(AN${r}>20,AN${r}<=25),"EXTREMELY HIGH",IF(AND(AN${r}>15,AN${r}<=20),"HIGH",IF(AND(AN${r}>10,AN${r}<=15),"TOLERABLE",IF(AND(AN${r}>5,AN${r}<=10),"LOW",IF(AN${r}<=5,"NEGLIGIBLE",0)))))`,
+      result: ''
+    };
+    sf('AV', `(AQ${r}+AS${r}+AU${r})/3`);
+    row.getCell(_ci('AW')).value = {
+      formula: `IF(AV${r}>=3.3,"HIGH",IF(AV${r}>=1.6,"MEDIUM",IF(AV${r}>=0,"LOW",0)))`,
+      result: ''
+    };
 
     // Wards + notes
     const wardsText = Array.isArray(s.affected_wards) && s.affected_wards.length
@@ -543,6 +557,9 @@ export async function getHVCXLSXBlob(scores, assessment, muniName) {
 
     row.commit();
   });
+
+  // Make HVC Tool the active sheet when the file opens
+  wb.views = [{ firstSheet: 1, activeTab: 1 }];
 
   const arrayBuffer = await wb.xlsx.writeBuffer();
   return new Blob([arrayBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
