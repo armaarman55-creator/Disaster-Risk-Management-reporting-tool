@@ -1,4 +1,4 @@
-// js/hvc-assessments.js — View, edit, delete assessments + all download helpers
+// js/hvc-assessments (1).js — View, edit, delete assessments + all download helpers
 import { supabase }              from './supabase.js';
 import { writeAudit }            from './audit.js';
 import { showDownloadMenu, docHeader } from './download.js';
@@ -359,11 +359,7 @@ export async function deleteAssessment(id, label, renderHVCPage) {
   await renderHVCPage();
 }
 
-// ── XLSX DOWNLOAD ─────────────────────────────────────────
-// ── XLSX DOWNLOAD (ExcelJS) ───────────────────────────────
-
-// Load ExcelJS from CDN (once). ExcelJS correctly round-trips formula cells;
-// SheetJS 0.18.x serialises them as plain strings, breaking the IF-chain scoring.
+// ── XLSX DOWNLOAD - FIXED & ENHANCED ─────────────────────
 async function _loadExcelJS() {
   if (window.ExcelJS) return;
   await new Promise((resolve, reject) => {
@@ -375,9 +371,11 @@ async function _loadExcelJS() {
   });
 }
 
-
-// Convert column letter(s) to 1-based index (A=1, Z=26, AA=27 …)
-const _ci = (col) => { let n = 0; for (const c of col.toUpperCase()) n = n * 26 + c.charCodeAt(0) - 64; return n; };
+const _ci = (col) => { 
+  let n = 0; 
+  for (const c of col.toUpperCase()) n = n * 26 + c.charCodeAt(0) - 64; 
+  return n; 
+};
 
 export async function getHVCXLSXBlob(scores, assessment, muniName) {
   await _loadExcelJS();
@@ -388,113 +386,164 @@ export async function getHVCXLSXBlob(scores, assessment, muniName) {
 
   // ── Sheet 1: Assessment Details ───────────────────────
   const wsD = wb.addWorksheet('Assessment Details');
-  wsD.getCell('A1').value = 'HVC TOOL ASSESSMENT DETAILS';
-  [['A2','Conducted by:',                    'B2', assessment.lead_assessor || ''],
-   ['A3','Date Conducted:',                  'B3', String(assessment.year || new Date().getFullYear())],
-   ['A4','Conducted at: Local Municipality', 'B4', muniName],
-   ['A5','Season:',                          'B5', assessment.season || ''],
-  ].forEach(([la, lv, va, vv]) => {
-    wsD.getCell(la).value = lv;
-    wsD.getCell(va).value = vv;
+  wsD.getCell('A1').value = 'HVC ASSESSMENT DETAILS';
+  wsD.getCell('A1').font = { bold: true, size: 14 };
+
+  const details = [
+    ['Conducted by:', assessment.lead_assessor || ''],
+    ['Municipality:', muniName],
+    ['Season:', assessment.season || ''],
+    ['Year:', assessment.year || new Date().getFullYear()],
+    ['Date Generated:', new Date().toLocaleDateString('en-ZA')],
+    ['Total Hazards Scored:', scores.length]
+  ];
+
+  details.forEach((row, i) => {
+    wsD.getCell(`A${i+3}`).value = row[0];
+    wsD.getCell(`B${i+3}`).value = row[1];
   });
 
-  // ── Sheet 2: HVC Tool ────────────────────────────────
+  // ── Sheet 2: HVC Tool (Main Data) ─────────────────────
   const ws = wb.addWorksheet('HVC Tool');
+  ws.views = [{ state: 'frozen', ySplit: 4 }]; // Freeze headers
 
-  ws.getRow(1).getCell(_ci('B')).value = 'HAZARD, VULNERABILITY AND CAPACITY ASSESSMENT TOOL';
+  // Title
+  ws.getCell('B1').value = 'HAZARD, VULNERABILITY AND CAPACITY ASSESSMENT TOOL';
+  ws.getCell('B1').font = { bold: true, size: 14 };
 
-  // Group headers row 2
+  // Group headers (Row 2)
   const groups = {
-    C:'RECOMMENDED ROLE PLAYERS', F:'HAZARD ANALYSIS', K:'VULNERABILITY ANALYSIS',
-    Q:'CAPACITY ANALYSIS', Y:'FINAL DISASTER RISK RATING', AA:'PRIORITY ANALYSIS', AF:'ADDITIONAL INFORMATION'
+    C: 'RECOMMENDED ROLE PLAYERS', 
+    F: 'HAZARD ANALYSIS', 
+    K: 'VULNERABILITY ANALYSIS',
+    Q: 'CAPACITY ANALYSIS', 
+    Y: 'FINAL DISASTER RISK RATING', 
+    AA: 'PRIORITY ANALYSIS', 
+    AF: 'ADDITIONAL INFORMATION'
   };
-  Object.entries(groups).forEach(([col, val]) => { ws.getRow(2).getCell(_ci(col)).value = val; });
+  Object.entries(groups).forEach(([col, val]) => {
+    ws.getCell(` ${_ci(col)}2`).value = val;
+    ws.getCell(` ${_ci(col)}2`).font = { bold: true };
+  });
 
-  // Column headers row 3
+  // Column headers (Row 3)
   const headers = {
-    B:'HAZARD', C:'PRIMARY', D:'SECONDARY', E:'TERTIARY',
-    F:'AFFECTED AREA', G:'PROBABILITY', H:'FREQUENCY', I:'PREDICTABILITY', J:'HAZARD SCORE',
-    K:'POLITICAL', L:'ECONOMICAL', M:'SOCIAL/HUMAN', N:'TECHNOLOGICAL', O:'ENVIRONMENTAL', P:'VULNERABILITY SCORE',
-    Q:'INSTITUTIONAL', R:'PROGRAMME', S:'PUBLIC PARTICIPATION', T:'FINANCIAL', U:'PEOPLE', V:'SUPPORT NETWORK', W:'CAPACITY SCORE',
-    X:'RESILIENCE INDEX', Y:'RISK RATING', Z:'RISK PROFILE',
-    AA:'IMPORTANCE', AB:'URGENCY', AC:'GROWTH', AD:'PRIORITY INDEX', AE:'PRIORITY PROFILE',
-    AF:'WARDS / NOTES'
+    B: 'HAZARD', C: 'PRIMARY', D: 'SECONDARY', E: 'TERTIARY',
+    F: 'AFFECTED AREA', G: 'PROBABILITY', H: 'FREQUENCY', I: 'PREDICTABILITY', J: 'HAZARD SCORE',
+    K: 'POLITICAL', L: 'ECONOMICAL', M: 'SOCIAL/HUMAN', N: 'TECHNOLOGICAL', O: 'ENVIRONMENTAL', P: 'VULNERABILITY SCORE',
+    Q: 'INSTITUTIONAL', R: 'PROGRAMME', S: 'PUBLIC PARTICIPATION', T: 'FINANCIAL', U: 'PEOPLE', V: 'SUPPORT NETWORK', W: 'CAPACITY SCORE',
+    X: 'RESILIENCE INDEX', Y: 'RISK RATING', Z: 'RISK PROFILE',
+    AA: 'IMPORTANCE', AB: 'URGENCY', AC: 'GROWTH', AD: 'PRIORITY INDEX', AE: 'PRIORITY PROFILE',
+    AF: 'WARDS / NOTES'
   };
-  Object.entries(headers).forEach(([col, val]) => { ws.getRow(3).getCell(_ci(col)).value = val; });
 
-  // Data rows — all values pre-calculated by the app and stored in Supabase.
-  // Write everything as plain numbers/strings — no formulas needed.
+  Object.entries(headers).forEach(([col, val]) => {
+    const cell = ws.getCell(`${col}3`);
+    cell.value = val;
+    cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1A3A6B' } };
+  });
+
+  // Softer color palette
+  const riskColors = {
+    'Extremely High': 'FFFFE0E0',
+    'High': 'FFFFF0E0',
+    'Tolerable': 'FFE0F0E0',
+    'Low': 'FFE0E8FF',
+    'Negligible': 'FFF0F0F0'
+  };
+
+  const priorityColors = {
+    'HIGH': 'FFFFE0E0',
+    'MEDIUM': 'FFFFF0E0',
+    'LOW': 'FFF0F0F0'
+  };
+
+  // Data rows
   scores.forEach((s, idx) => {
-    const r   = 5 + idx;
+    const r = 5 + idx;
     const row = ws.getRow(r);
-    const sc  = (col, val) => {
-      if (val != null && val !== '') row.getCell(_ci(col)).value = val;
+
+    // Helper to safely write value
+    const write = (col, value) => {
+      if (value !== null && value !== undefined) {
+        const cell = row.getCell(_ci(col));
+        cell.value = (typeof value === 'number') ? Number(value) : String(value).trim();
+      }
     };
 
-    // Identity & role players
-    sc('B', s.hazard_name     || '');
-    sc('C', s.primary_owner   || '');
-    sc('D', s.secondary_owner || '');
-    sc('E', s.tertiary_owner  || '');
+    write('B', s.hazard_name);
+    write('C', s.primary_owner);
+    write('D', s.secondary_owner);
+    write('E', s.tertiary_owner);
 
-    // Hazard analysis — individual scores
-    sc('F', s.affected_area  != null ? Number(s.affected_area)  : null);
-    sc('G', s.probability    != null ? Number(s.probability)    : null);
-    sc('H', s.frequency      != null ? Number(s.frequency)      : null);
-    sc('I', s.predictability != null ? Number(s.predictability) : null);
+    write('F', s.affected_area);
+    write('G', s.probability);
+    write('H', s.frequency);
+    write('I', s.predictability);
+    write('J', s.hazard_score);
 
-    // Hazard score (pre-calculated)
-    sc('J', s.hazard_score != null ? Number(s.hazard_score) : null);
+    write('K', s.vp); write('L', s.ve); write('M', s.vs);
+    write('N', s.vt); write('O', s.vn);
+    write('P', s.vulnerability_score);
 
-    // Vulnerability — individual scores
-    sc('K', s.vp != null ? Number(s.vp) : null);
-    sc('L', s.ve != null ? Number(s.ve) : null);
-    sc('M', s.vs != null ? Number(s.vs) : null);
-    sc('N', s.vt != null ? Number(s.vt) : null);
-    sc('O', s.vn != null ? Number(s.vn) : null);
+    write('Q', s.ci); write('R', s.cp); write('S', s.cq);
+    write('T', s.cf); write('U', s.ch); write('V', s.cs);
+    write('W', s.capacity_score);
+    write('X', s.resilience_index);
+    write('Y', s.risk_rating);
+    write('Z', s.risk_band);
 
-    // Vulnerability score (pre-calculated)
-    sc('P', s.vulnerability_score != null ? Number(s.vulnerability_score) : null);
+    write('AA', s.importance);
+    write('AB', s.urgency);
+    write('AC', s.growth);
+    write('AD', s.priority_index);
+    write('AE', s.priority_level);
 
-    // Capacity — individual scores
-    sc('Q', s.ci != null ? Number(s.ci) : null);
-    sc('R', s.cp != null ? Number(s.cp) : null);
-    sc('S', s.cq != null ? Number(s.cq) : null);
-    sc('T', s.cf != null ? Number(s.cf) : null);
-    sc('U', s.ch != null ? Number(s.ch) : null);
-    sc('V', s.cs != null ? Number(s.cs) : null);
-
-    // Capacity score, resilience, risk rating (all pre-calculated)
-    sc('W', s.capacity_score    != null ? Number(s.capacity_score)    : null);
-    sc('X', s.resilience_index  != null ? Number(s.resilience_index)  : null);
-    sc('Y', s.risk_rating       != null ? Number(s.risk_rating)       : null);
-    sc('Z', s.risk_band         || '');
-
-    // Priority — individual scores
-    sc('AA', s.importance != null ? Number(s.importance) : null);
-    sc('AB', s.urgency    != null ? Number(s.urgency)    : null);
-    sc('AC', s.growth     != null ? Number(s.growth)     : null);
-
-    // Priority index and level (pre-calculated)
-    sc('AD', s.priority_index != null ? Number(s.priority_index) : null);
-    sc('AE', s.priority_level || '');
-
-    // Wards + notes
-    const wardsText = Array.isArray(s.affected_wards) && s.affected_wards.length
+    // Wards + Notes
+    const wardsText = Array.isArray(s.affected_wards) && s.affected_wards.length 
       ? 'Wards: ' + s.affected_wards.join(', ') : '';
-    const combined = [wardsText, s.notes].filter(Boolean).join(' | ');
-    if (combined) sc('AF', combined);
+    const notesText = s.notes || '';
+    write('AF', [wardsText, notesText].filter(Boolean).join(' | '));
+
+    // Color coding - softer colors
+    if (s.risk_band) {
+      const cellZ = row.getCell(_ci('Z'));
+      cellZ.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: riskColors[s.risk_band] || 'FFF0F0F0' } };
+    }
+    if (s.priority_level) {
+      const cellAE = row.getCell(_ci('AE'));
+      cellAE.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: priorityColors[s.priority_level] || 'FFF0F0F0' } };
+    }
 
     row.commit();
   });
 
-  // Open on HVC Tool sheet (index 1)
-  wb.views = [{ firstSheet: 1, activeTab: 1 }];
+  // Auto column widths
+  ws.columns.forEach(column => {
+    let maxLength = 0;
+    column.eachCell({ includeEmpty: true }, cell => {
+      const length = cell.value ? cell.value.toString().length : 0;
+      if (length > maxLength) maxLength = length;
+    });
+    column.width = Math.min(Math.max(maxLength + 2, 12), 40);
+  });
+
+  // Summary row
+  const summaryRow = 5 + scores.length + 2;
+  ws.getCell(`B${summaryRow}`).value = 'SUMMARY';
+  ws.getCell(`B${summaryRow}`).font = { bold: true };
+  ws.getCell(`J${summaryRow}`).value = scores.length;
+  ws.getCell(`J${summaryRow}`).font = { bold: true };
 
   const arrayBuffer = await wb.xlsx.writeBuffer();
-  return new Blob([arrayBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-}
+  const blob = new Blob([arrayBuffer], { 
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
+  });
 
+  showToast(`✓ Exported ${scores.length} hazards to Excel successfully`);
+  return blob;
+}
 
 // ── WORD DOWNLOAD ─────────────────────────────────────────
 export function getHVCDocHTML(scores, assessment, muniName) {
@@ -703,4 +752,9 @@ export async function exportAssessmentPDF(id, label) {
     setTimeout(() => w.print(), 500);
     showToast('✓ PDF print dialog opened');
   }
+}
+
+// Placeholder functions (if needed elsewhere)
+function emptyState(msg) {
+  return `<div style="text-align:center;padding:48px 20px;color:var(--text3);font-size:12px">${msg}</div>`;
 }
