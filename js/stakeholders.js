@@ -279,7 +279,7 @@ function showContactForm(orgId, existing) {
   const nameParts = (ct.full_name || '').split(' ');
   const ctFirst = nameParts[0] || '';
   const ctLast = nameParts.slice(1).join(' ') || '';
-  const ctHazards = Array.isArray(ct.hazard_types) ? ctHazards : [];
+  const ctHazards = Array.isArray(ct.hazard_types) ? ct.hazard_types : [];
 
   area.innerHTML = `
     <div style="background:var(--bg3);border:1px solid var(--border2);border-radius:8px;padding:14px;margin-top:10px">
@@ -433,7 +433,7 @@ function buildCategoryGroups() {
   return { catGroups: ordered, unassigned };
 }
 
-// ── FIXED PDF EXPORT - Compact Header + Better Balancing (No Large Empty Spaces) ─────
+// ── FIXED PDF EXPORT (unchanged) ─────────────────────
 async function exportPDF() {
   const { catGroups } = buildCategoryGroups();
   const muniName = window._drmsaUser?.municipalities?.name || 'Municipality';
@@ -452,7 +452,6 @@ async function exportPDF() {
   const logoDM = muni?.logo_dm_url || null;
   const mode = muni?.logo_display_mode || 'main';
 
-  // Compact top-left logo + title
   let logoHTML = '';
   if (mode === 'both' && logoMain && logoDM) {
     logoHTML = `
@@ -466,7 +465,6 @@ async function exportPDF() {
     logoHTML = `<img src="${logoMain}" style="max-height:48px;object-fit:contain;margin-bottom:10px"/>`;
   }
 
-  // Build columns with improved balancing to minimize empty space
   let leftHTML = '';
   let rightHTML = '';
   const categories = Object.entries(catGroups || {});
@@ -532,7 +530,6 @@ async function exportPDF() {
 
     catHTML += `</div>`;
 
-    // Better height estimation for balanced columns
     const estimatedHeight = Object.keys(hazards || {}).length * 95 + 70;
 
     if (leftHeight <= rightHeight) {
@@ -723,11 +720,11 @@ async function exportPDF() {
   }
 }
 
-// ── CSV EXPORT - FIXED (Only this part was changed) ─────────────────────────────
+// ── DYNAMIC CSV EXPORT (restored & improved for Google Sheets) ─────────────────
 function getStakeholderCSVRows() {
   const rows = [];
 
-  // Header
+  // Header row - good for Google Sheets customization
   rows.push([
     "Organisation",
     "Sector",
@@ -737,8 +734,8 @@ function getStakeholderCSVRows() {
     "Organisation Hazards",
     "Contact Name",
     "Position",
-    "Cell",
-    "Direct Tel",
+    "Cell Phone",
+    "Direct Telephone",
     "Email",
     "After Hours",
     "Contact Hazards",
@@ -746,28 +743,24 @@ function getStakeholderCSVRows() {
   ]);
 
   _orgs.forEach(org => {
-    const orgHazards = Array.isArray(org.hazard_types) 
-      ? org.hazard_types.join("; ") 
-      : "";
+    const orgHazardsStr = Array.isArray(org.hazard_types) ? org.hazard_types.join("; ") : "";
 
     const contacts = org.stakeholder_contacts || [];
 
     if (contacts.length === 0) {
-      // Org with no contacts
+      // Row for organisation without contacts
       rows.push([
         org.name || "",
         org.sector || "",
         org.notes || "",
         org.general_tel || "",
         org.general_email || "",
-        orgHazards,
+        orgHazardsStr,
         "", "", "", "", "", "", "", ""
       ]);
     } else {
       contacts.forEach(contact => {
-        const ctHazards = Array.isArray(contact.hazard_types) 
-          ? contact.hazard_types.join("; ") 
-          : "";
+        const contactHazardsStr = Array.isArray(contact.hazard_types) ? contact.hazard_types.join("; ") : "";
 
         rows.push([
           org.name || "",
@@ -775,14 +768,14 @@ function getStakeholderCSVRows() {
           org.notes || "",
           org.general_tel || "",
           org.general_email || "",
-          orgHazards,
+          orgHazardsStr,
           contact.full_name || "",
           contact.position || "",
           contact.cell || "",
           contact.direct_tel || "",
           contact.email || "",
           contact.after_hours || "",
-          ctHazards,
+          contactHazardsStr,
           contact.is_primary ? "Yes" : "No"
         ]);
       });
@@ -792,7 +785,7 @@ function getStakeholderCSVRows() {
   return rows;
 }
 
-// ── DOC/HTML EXPORT (simple fallback) ─────────────────────
+// ── DOC/HTML EXPORT (simple fallback for Word) ─────────────────
 function getStakeholderDocHTML(muniName) {
   let html = `<h1>Stakeholder Directory — ${muniName}</h1>`;
   html += `<p>Generated: ${new Date().toLocaleString('en-ZA')}</p><hr>`;
@@ -801,13 +794,13 @@ function getStakeholderDocHTML(muniName) {
     html += `<h2>${org.name} — ${org.sector || '—'}</h2>`;
     if (org.notes) html += `<p><strong>Notes:</strong> ${org.notes}</p>`;
     if (org.general_tel || org.general_email) {
-      html += `<p>Tel: ${org.general_tel || '—'} | Email: ${org.general_email || '—'}</p>`;
+      html += `<p>General Tel: ${org.general_tel || '—'} | Email: ${org.general_email || '—'}</p>`;
     }
 
     const contacts = org.stakeholder_contacts || [];
     if (contacts.length > 0) {
-      html += `<table border="1" cellpadding="6" cellspacing="0" style="border-collapse:collapse">`;
-      html += `<tr><th>Contact Name</th><th>Position</th><th>Cell</th><th>Tel</th><th>Email</th><th>After Hours</th><th>Hazards</th></tr>`;
+      html += `<table border="1" cellpadding="6" cellspacing="0" style="border-collapse:collapse;width:100%">`;
+      html += `<tr><th>Contact Name</th><th>Position</th><th>Cell</th><th>Direct Tel</th><th>Email</th><th>After Hours</th><th>Hazards</th><th>Primary</th></tr>`;
       
       contacts.forEach(c => {
         const hazards = Array.isArray(c.hazard_types) ? c.hazard_types.join(", ") : "";
@@ -819,11 +812,12 @@ function getStakeholderDocHTML(muniName) {
           <td>${c.email || '—'}</td>
           <td>${c.after_hours || '—'}</td>
           <td>${hazards}</td>
+          <td>${c.is_primary ? 'Yes' : 'No'}</td>
         </tr>`;
       });
-      html += `</table><br>`;
+      html += `</table><br><br>`;
     } else {
-      html += `<p><em>No contacts listed.</em></p>`;
+      html += `<p><em>No contacts listed for this organisation.</em></p><br>`;
     }
   });
 
