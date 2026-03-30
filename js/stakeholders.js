@@ -567,7 +567,7 @@ function getStakeholderDocHTML(muniName) {
   return html;
 }
 
-// ── OPTIMIZED PDF EXPORT with Two-Column Layout + Logo Support ─────────────────────────────────────
+// ── TIGHTER PDF EXPORT with Two-Column Layout + Logo Support ─────────────────────────────────────
 async function exportPDF() {
   const { catGroups, unassigned } = buildCategoryGroups();
   const muniName = window._drmsaUser?.municipalities?.name || 'Municipality';
@@ -588,14 +588,14 @@ async function exportPDF() {
   let logoHTML = '';
   if (mode === 'both' && logoMain && logoDM) {
     logoHTML = `
-      <div style="display:flex;gap:25px;align-items:center;justify-content:center;margin:15px 0 20px 0;">
-        <img src="${logoMain}" style="max-height:58px;max-width:190px;object-fit:contain"/>
-        <img src="${logoDM}" style="max-height:58px;max-width:190px;object-fit:contain"/>
+      <div style="display:flex;gap:20px;align-items:center;justify-content:center;margin:12px 0 18px 0;">
+        <img src="${logoMain}" style="max-height:52px;max-width:170px;object-fit:contain"/>
+        <img src="${logoDM}" style="max-height:52px;max-width:170px;object-fit:contain"/>
       </div>`;
   } else if (mode === 'dm' && logoDM) {
-    logoHTML = `<div style="text-align:center;margin:15px 0 20px 0;"><img src="${logoDM}" style="max-height:68px;object-fit:contain"/></div>`;
+    logoHTML = `<div style="text-align:center;margin:12px 0 18px 0;"><img src="${logoDM}" style="max-height:62px;object-fit:contain"/></div>`;
   } else if (logoMain) {
-    logoHTML = `<div style="text-align:center;margin:15px 0 20px 0;"><img src="${logoMain}" style="max-height:68px;object-fit:contain"/></div>`;
+    logoHTML = `<div style="text-align:center;margin:12px 0 18px 0;"><img src="${logoMain}" style="max-height:62px;object-fit:contain"/></div>`;
   }
 
   let sectionsHTML = '';
@@ -695,36 +695,36 @@ async function exportPDF() {
 <title>Stakeholder Directory — ${muniName}</title>
 <style>
   *{box-sizing:border-box;margin:0;padding:0}
-  body{font-family:Arial,Helvetica,sans-serif;font-size:9.2px;color:#1a1a2e;background:#fff;line-height:1.4}
+  body{font-family:Arial,Helvetica,sans-serif;font-size:9.2px;color:#1a1a2e;background:#fff;line-height:1.35}
   @page{size:A4 landscape;margin:12mm 10mm}
-  .hazard-grid{display:grid;grid-template-columns:1fr 1fr;gap:1.8cm;margin:20px 0 30px 0;}
+  .hazard-grid{display:grid;grid-template-columns:1fr 1fr;gap:1.1cm;margin:15px 0 22px 0;}
   .hazard-column{break-inside:avoid;page-break-inside:avoid;}
-  .cat-header{font-size:13px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;padding:9px 14px;margin-bottom:12px;border-radius:4px;background:#f8f9fa;page-break-after:avoid;}
-  .hazard-header{font-size:10.5px;font-weight:700;padding:7px 12px;margin:14px 0 8px 0;background:#f0f4f8;border-left:3px solid #1a3a6b;page-break-after:avoid;}
-  .hazard-meta{font-size:8.5px;font-weight:400;color:#666;margin-left:10px;}
-  .pdf-table{width:100%;border-collapse:collapse;margin-bottom:16px;font-size:8.8px;}
-  .pdf-table th{background:#1a3a6b;color:#fff;padding:7px 9px;text-align:left;font-size:7.8px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;}
-  .pdf-table td{padding:6px 9px;border-bottom:1px solid #e5e7eb;vertical-align:top;}
+  .cat-header{font-size:12.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;padding:7px 12px;margin-bottom:9px;border-radius:4px;background:#f8f9fa;page-break-after:avoid;}
+  .hazard-header{font-size:10.2px;font-weight:700;padding:6px 10px;margin:10px 0 6px 0;background:#f0f4f8;border-left:3px solid #1a3a6b;page-break-after:avoid;}
+  .hazard-meta{font-size:8.3px;font-weight:400;color:#666;margin-left:8px;}
+  .pdf-table{width:100%;border-collapse:collapse;margin-bottom:12px;font-size:8.7px;}
+  .pdf-table th{background:#1a3a6b;color:#fff;padding:6px 8px;text-align:left;font-size:7.7px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;}
+  .pdf-table td{padding:5px 8px;border-bottom:1px solid #e5e7eb;vertical-align:top;}
   .pdf-table tr:nth-child(even) td{background:#f9fafb;}
-  .pdf-primary{font-size:7.5px;background:#e8f0fe;color:#1a3a6b;padding:1px 6px;border-radius:3px;font-weight:700;}
-  .pdf-sector{font-size:7.6px;color:#777;}
+  .pdf-primary{font-size:7.4px;background:#e8f0fe;color:#1a3a6b;padding:1px 5px;border-radius:3px;font-weight:700;}
+  .pdf-sector{font-size:7.5px;color:#777;}
 </style>
 </head>
 <body>
   <div style="text-align:center;margin-bottom:8px">
-    <div style="font-size:19px;font-weight:800;color:#1a3a6b">STAKEHOLDER DIRECTORY</div>
-    <div style="font-size:11px;color:#555">Hazard Response Reference • ${muniName}</div>
+    <div style="font-size:18px;font-weight:800;color:#1a3a6b">STAKEHOLDER DIRECTORY</div>
+    <div style="font-size:10.5px;color:#555">Hazard Response Reference • ${muniName}</div>
   </div>
   
   ${logoHTML}
   
-  <div style="font-size:9px;color:#777;text-align:center;margin-bottom:25px">
+  <div style="font-size:8.8px;color:#777;text-align:center;margin-bottom:20px">
     Generated: ${date} • Disaster Management Centre • CONFIDENTIAL — FOR OFFICIAL USE
   </div>
 
   ${sectionsHTML}
 
-  <div style="margin-top:35px;padding-top:15px;border-top:2px solid #ddd;font-size:8.5px;color:#888;text-align:center">
+  <div style="margin-top:30px;padding-top:12px;border-top:2px solid #ddd;font-size:8.4px;color:#888;text-align:center">
     ${muniName} Disaster Management Centre • DRMSA Platform
   </div>
 </body>
