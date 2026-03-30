@@ -720,7 +720,7 @@ async function exportPDF() {
   }
 }
 
-// ── RESTORED DYNAMIC CSV EXPORT (matches your example) ─────────────────────
+// ── FIXED CSV EXPORT - Matches your example + full contact info ─────────────────
 function getStakeholderCSVRows() {
   const rows = [];
 
@@ -740,27 +740,32 @@ function getStakeholderCSVRows() {
     "Primary"
   ]);
 
-  // Build rows per hazard (as in your example)
   const { catGroups } = buildCategoryGroups();
 
   Object.entries(catGroups).forEach(([category, hazards]) => {
     Object.entries(hazards).forEach(([hazard, entries]) => {
       entries.forEach(entry => {
         const org = entry.org;
-        const via = entry.via;   // "ORG" or "CONTACT"
+        const via = entry.via;
 
         if (via === "ORG") {
-          // Organisation-level assignment
+          // Organisation-level hazard assignment
           rows.push([
             category,
             hazard,
             "ORG",
             org.name || "",
             org.sector || "",
-            "", "", "", "", "", "", ""
+            "",                    // Contact Name
+            "",                    // Position
+            "",                    // Cell
+            "",                    // Direct Tel
+            "",                    // Email
+            "",                    // After Hours
+            ""                     // Primary
           ]);
         } else {
-          // Contact-level assignment
+          // Contact-level hazard assignment
           entry.contacts.forEach(contact => {
             rows.push([
               category,
