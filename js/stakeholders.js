@@ -867,3 +867,6 @@ function showToast(msg, isError=false) {
   document.body.appendChild(t);
   setTimeout(() => { t.style.opacity='0'; setTimeout(() => t.remove(), 300); }, 3000);
 }
+
+// Export alias so app.js can call initStakeholders as well as initCommunity
+export { initCommunity as initStakeholders };
