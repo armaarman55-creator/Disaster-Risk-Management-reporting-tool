@@ -360,7 +360,11 @@ export async function deleteAssessment(id, label, renderHVCPage) {
 }
 
 // ── XLSX DOWNLOAD ─────────────────────────────────────────
-// Descriptor strings must match the template lookup rows (rows 5–10) character-for-character,
+// ── XLSX DOWNLOAD (ExcelJS) ───────────────────────────────
+// ExcelJS preserves formula cells on read/write — SheetJS 0.18.x serialises them
+// as cached string values, breaking the IF-chain scoring in the template.
+//
+// Descriptor strings must match template lookup rows (rows 5–10) character-for-character,
 // including any trailing spaces present in the xlsx cells.
 const _XLSX_DESCRIPTORS = {
   affected_area: {
@@ -489,98 +493,114 @@ function _xlsxDesc(field, score) {
   return val || null;
 }
 
-export async function getHVCXLSXBlob(scores, assessment, muniName) {
-  if (!window.XLSX) {
-    await new Promise((resolve, reject) => {
-      const s = document.createElement('script');
-      s.src = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
-      s.onload = resolve;
-      s.onerror = () => reject(new Error('Failed to load SheetJS'));
-      document.head.appendChild(s);
-    });
-  }
+// Load ExcelJS from CDN (once). ExcelJS correctly round-trips formula cells;
+// SheetJS 0.18.x serialises them as plain strings, breaking the IF-chain scoring.
+async function _loadExcelJS() {
+  if (window.ExcelJS) return;
+  await new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js';
+    s.onload = resolve;
+    s.onerror = () => reject(new Error('Failed to load ExcelJS'));
+    document.head.appendChild(s);
+  });
+}
 
-  const resp = await fetch('/templates/__hvc-tool.xlsx');
+export async function getHVCXLSXBlob(scores, assessment, muniName) {
+  await _loadExcelJS();
+
+  // Fetch the template from public/templates/
+  const resp = await fetch('/templates/hvc-tool.xlsx');
   if (!resp.ok) throw new Error(`HVC template fetch failed: ${resp.status} ${resp.statusText}`);
   const buffer = await resp.arrayBuffer();
 
-  // Do NOT use cellStyles:true — corrupts multi-sheet workbooks on write in SheetJS 0.18.x
-  const wb = window.XLSX.read(new Uint8Array(buffer), { type: 'array' });
+  const wb = new window.ExcelJS.Workbook();
+  await wb.xlsx.load(buffer);
 
-  // Assessment Details sheet — labels in col A (A2–A5), values go in col B
-  const wsDetails = wb.Sheets['Assessment Details'];
+  // ── Assessment Details sheet ───────────────────────────
+  // Labels in col A (rows 2–5), user values go in col B.
+  const wsDetails = wb.getWorksheet('Assessment Details');
   if (wsDetails) {
-    const sc = (ref, val) => { wsDetails[ref] = { t: 's', v: String(val ?? '') }; };
-    sc('B2', assessment.lead_assessor || '');
-    sc('B3', assessment.year          || new Date().getFullYear());
-    sc('B4', muniName);
-    sc('B5', assessment.season        || '');
-    const dr = window.XLSX.utils.decode_range(wsDetails['!ref'] || 'A1:A5');
-    dr.e.c = Math.max(dr.e.c, 1);
-    dr.e.r = Math.max(dr.e.r, 4);
-    wsDetails['!ref'] = window.XLSX.utils.encode_range(dr);
+    const sv = (row, val) => { wsDetails.getRow(row).getCell(2).value = String(val ?? ''); };
+    sv(2, assessment.lead_assessor || '');
+    sv(3, assessment.year          || new Date().getFullYear());
+    sv(4, muniName);
+    sv(5, assessment.season        || '');
   }
 
-  // HVC Tool sheet
-  // Rows 1–3: headers | Rows 5–10: lookup descriptor strings | Row 11: blank | Row 12+: data rows
-  // Write descriptor text into input cols; template IF-chains score them automatically.
-  const wsTool = wb.Sheets['HVC Tool'];
+  // ── HVC Tool sheet ─────────────────────────────────────
+  // Template structure (verified against Annexure 3 xlsx):
+  //   Rows 1–3  : title / group headers / column headers
+  //   Row  4    : blank
+  //   Rows 5–10 : lookup rows — exact descriptor strings the IF-formulas compare against
+  //   Row  11   : blank gap
+  //   Row  12+  : data rows — formula cells in score cols (G,I,K,M,P,R,T,V,X,AA,AC,AE,AG,AI,AK,AQ,AS,AU)
+  //
+  // We write descriptor text into the INPUT cols only. ExcelJS preserves the
+  // existing formula objects in the score cols so Excel recalculates them on open.
+  //
+  // Column letter → 1-based index helper
+  const colIdx = (letter) => {
+    let n = 0;
+    for (const ch of letter.toUpperCase()) n = n * 26 + ch.charCodeAt(0) - 64;
+    return n;
+  };
+
+  const wsTool = wb.getWorksheet('HVC Tool');
   if (wsTool) {
-    const sc = (col, row, val) => {
-      if (val == null || val === '') return;
-      wsTool[col + row] = { t: 's', v: String(val) };
-    };
-
     scores.forEach((s, idx) => {
-      const r = 12 + idx;
+      const rowNum = 12 + idx;
+      const row    = wsTool.getRow(rowNum);
 
-      sc('B', r, s.hazard_name     || '');
-      sc('C', r, s.primary_owner   || '');
-      sc('D', r, s.secondary_owner || '');
-      sc('E', r, s.tertiary_owner  || '');
+      const sc = (col, val) => {
+        if (val == null || val === '') return;
+        row.getCell(colIdx(col)).value = String(val);
+      };
 
-      // Hazard analysis (IF-formula score cols: G I K M)
-      sc('F', r, _xlsxDesc('affected_area',  s.affected_area));
-      sc('H', r, _xlsxDesc('probability',    s.probability));
-      sc('J', r, _xlsxDesc('frequency',      s.frequency));
-      sc('L', r, _xlsxDesc('predictability', s.predictability));
+      // Identity & role players (plain text cols — no formula)
+      sc('B', s.hazard_name     || '');
+      sc('C', s.primary_owner   || '');
+      sc('D', s.secondary_owner || '');
+      sc('E', s.tertiary_owner  || '');
 
-      // Vulnerability / PESTE (IF-formula score cols: P R T V X)
-      sc('O', r, _xlsxDesc('vp', s.vp));
-      sc('Q', r, _xlsxDesc('ve', s.ve));
-      sc('S', r, _xlsxDesc('vs', s.vs));
-      sc('U', r, _xlsxDesc('vt', s.vt));
-      sc('W', r, _xlsxDesc('vn', s.vn));
+      // Hazard analysis — input cols F H J L (formula score cols G I K M left intact)
+      sc('F', _xlsxDesc('affected_area',  s.affected_area));
+      sc('H', _xlsxDesc('probability',    s.probability));
+      sc('J', _xlsxDesc('frequency',      s.frequency));
+      sc('L', _xlsxDesc('predictability', s.predictability));
 
-      // Capacity (IF-formula score cols: AA AC AE AG AI AK)
-      sc('Z',  r, _xlsxDesc('ci', s.ci));
-      sc('AB', r, _xlsxDesc('cp', s.cp));
-      sc('AD', r, _xlsxDesc('cq', s.cq));
-      sc('AF', r, _xlsxDesc('cf', s.cf));
-      sc('AH', r, _xlsxDesc('ch', s.ch));
-      sc('AJ', r, _xlsxDesc('cs', s.cs));
+      // Vulnerability / PESTE — input cols O Q S U W (formula score cols P R T V X left intact)
+      sc('O', _xlsxDesc('vp', s.vp));
+      sc('Q', _xlsxDesc('ve', s.ve));
+      sc('S', _xlsxDesc('vs', s.vs));
+      sc('U', _xlsxDesc('vt', s.vt));
+      sc('W', _xlsxDesc('vn', s.vn));
 
-      // Priority index (IF-formula score cols: AQ AS AU)
-      sc('AP', r, _xlsxDesc('importance', s.importance));
-      sc('AR', r, _xlsxDesc('urgency',    s.urgency));
-      sc('AT', r, _xlsxDesc('growth',     s.growth));
+      // Capacity — input cols Z AB AD AF AH AJ (formula score cols AA AC AE AG AI AK left intact)
+      sc('Z',  _xlsxDesc('ci', s.ci));
+      sc('AB', _xlsxDesc('cp', s.cp));
+      sc('AD', _xlsxDesc('cq', s.cq));
+      sc('AF', _xlsxDesc('cf', s.cf));
+      sc('AH', _xlsxDesc('ch', s.ch));
+      sc('AJ', _xlsxDesc('cs', s.cs));
 
+      // Priority index — input cols AP AR AT (formula score cols AQ AS AU left intact)
+      sc('AP', _xlsxDesc('importance', s.importance));
+      sc('AR', _xlsxDesc('urgency',    s.urgency));
+      sc('AT', _xlsxDesc('growth',     s.growth));
+
+      // Additional info — wards and notes in free-text column AX
       const wardsText = Array.isArray(s.affected_wards) && s.affected_wards.length
         ? 'Wards: ' + s.affected_wards.join(', ') : '';
       const combined  = [wardsText, s.notes].filter(Boolean).join(' | ');
-      if (combined) sc('AX', r, combined);
-    });
+      if (combined) sc('AX', combined);
 
-    if (scores.length) {
-      const lastRow = 11 + scores.length;
-      const tr = window.XLSX.utils.decode_range(wsTool['!ref'] || 'A1:AX97');
-      tr.e.r = Math.max(tr.e.r, lastRow);
-      wsTool['!ref'] = window.XLSX.utils.encode_range(tr);
-    }
+      row.commit();
+    });
   }
 
-  const out = window.XLSX.write(wb, { bookType: 'xlsx', type: 'array', bookSST: false });
-  return new Blob([out], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  const arrayBuffer = await wb.xlsx.writeBuffer();
+  return new Blob([arrayBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
 }
 
 // ── WORD DOWNLOAD ─────────────────────────────────────────
