@@ -422,32 +422,41 @@ export async function getHVCXLSXBlob(scores, assessment, muniName) {
   };
   Object.entries(headers).forEach(([col, val]) => { ws.getRow(3).getCell(_ci(col)).value = val; });
 
-  // Data rows — write scores directly as numbers, aggregate with simple formulas
+  // Data rows — all values pre-calculated by the app and stored in Supabase.
+  // Write everything as plain numbers/strings — no formulas needed.
   scores.forEach((s, idx) => {
     const r   = 5 + idx;
     const row = ws.getRow(r);
-    const sc  = (col, val) => { if (val != null && val !== '') row.getCell(_ci(col)).value = val; };
-    const sf  = (col, formula) => { row.getCell(_ci(col)).value = { formula, result: 0 }; };
+    const sc  = (col, val) => {
+      if (val != null && val !== '') row.getCell(_ci(col)).value = val;
+    };
 
+    // Identity & role players
     sc('B', s.hazard_name     || '');
     sc('C', s.primary_owner   || '');
     sc('D', s.secondary_owner || '');
     sc('E', s.tertiary_owner  || '');
 
-    // Hazard analysis scores
+    // Hazard analysis — individual scores
     sc('F', s.affected_area  != null ? Number(s.affected_area)  : null);
     sc('G', s.probability    != null ? Number(s.probability)    : null);
     sc('H', s.frequency      != null ? Number(s.frequency)      : null);
     sc('I', s.predictability != null ? Number(s.predictability) : null);
 
-    // Vulnerability scores
+    // Hazard score (pre-calculated)
+    sc('J', s.hazard_score != null ? Number(s.hazard_score) : null);
+
+    // Vulnerability — individual scores
     sc('K', s.vp != null ? Number(s.vp) : null);
     sc('L', s.ve != null ? Number(s.ve) : null);
     sc('M', s.vs != null ? Number(s.vs) : null);
     sc('N', s.vt != null ? Number(s.vt) : null);
     sc('O', s.vn != null ? Number(s.vn) : null);
 
-    // Capacity scores
+    // Vulnerability score (pre-calculated)
+    sc('P', s.vulnerability_score != null ? Number(s.vulnerability_score) : null);
+
+    // Capacity — individual scores
     sc('Q', s.ci != null ? Number(s.ci) : null);
     sc('R', s.cp != null ? Number(s.cp) : null);
     sc('S', s.cq != null ? Number(s.cq) : null);
@@ -455,26 +464,20 @@ export async function getHVCXLSXBlob(scores, assessment, muniName) {
     sc('U', s.ch != null ? Number(s.ch) : null);
     sc('V', s.cs != null ? Number(s.cs) : null);
 
-    // Priority scores
+    // Capacity score, resilience, risk rating (all pre-calculated)
+    sc('W', s.capacity_score    != null ? Number(s.capacity_score)    : null);
+    sc('X', s.resilience_index  != null ? Number(s.resilience_index)  : null);
+    sc('Y', s.risk_rating       != null ? Number(s.risk_rating)       : null);
+    sc('Z', s.risk_band         || '');
+
+    // Priority — individual scores
     sc('AA', s.importance != null ? Number(s.importance) : null);
     sc('AB', s.urgency    != null ? Number(s.urgency)    : null);
     sc('AC', s.growth     != null ? Number(s.growth)     : null);
 
-    // Aggregates — pure arithmetic, no IF chains, no lookups
-    sf('J',  `IFERROR(AVERAGE(F${r},G${r},H${r},I${r}),"")`);
-    sf('P',  `IFERROR(AVERAGE(K${r},L${r},M${r},N${r},O${r}),"")`);
-    sf('W',  `IFERROR(AVERAGE(Q${r},R${r},S${r},T${r},U${r},V${r}),"")`);
-    sf('X',  `IFERROR(P${r}/W${r},"")`);
-    sf('Y',  `IFERROR(J${r}*P${r}/W${r},"")`);
-    row.getCell(_ci('Z')).value = {
-      formula: `IFERROR(IF(Y${r}>20,"EXTREMELY HIGH",IF(Y${r}>15,"HIGH",IF(Y${r}>10,"TOLERABLE",IF(Y${r}>5,"LOW","NEGLIGIBLE")))),"")`,
-      result: ''
-    };
-    sf('AD', `IFERROR(AVERAGE(AA${r},AB${r},AC${r}),"")`);
-    row.getCell(_ci('AE')).value = {
-      formula: `IFERROR(IF(AD${r}>=3.3,"HIGH",IF(AD${r}>=1.6,"MEDIUM","LOW")),"")`,
-      result: ''
-    };
+    // Priority index and level (pre-calculated)
+    sc('AD', s.priority_index != null ? Number(s.priority_index) : null);
+    sc('AE', s.priority_level || '');
 
     // Wards + notes
     const wardsText = Array.isArray(s.affected_wards) && s.affected_wards.length
