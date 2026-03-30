@@ -1676,96 +1676,95 @@ async function getHVCXLSXBlob(scores, assessment, muniName) {
   if (!resp.ok) throw new Error('HVC template not found at /templates/hvc-tool.xlsx');
   const buffer = await resp.arrayBuffer();
 
-  const wb = window.XLSX.read(new Uint8Array(buffer), { type: 'array', cellStyles: true });
+  // Do NOT use cellStyles:true — it corrupts multi-sheet workbooks on write in SheetJS 0.18.x
+  const wb = window.XLSX.read(new Uint8Array(buffer), { type: 'array' });
 
   // ── Assessment Details sheet ──────────────────────────────
+  // Labels are in col A (A2–A5), values go next to them in col B
   const wsDetails = wb.Sheets['Assessment Details'];
   if (wsDetails) {
-    // Labels are in col A (A2-A5), values go in col B
-    const setCellStr = (cellRef, val) => {
-      wsDetails[cellRef] = { t: 's', v: String(val || '') };
-    };
-    setCellStr('B2', assessment.lead_assessor || '');
-    setCellStr('B3', assessment.year ? String(assessment.year) : new Date().getFullYear().toString());
-    setCellStr('B4', muniName);
-    setCellStr('B5', assessment.season || '');
-    // Update sheet range to include B column if needed
-    const range = window.XLSX.utils.decode_range(wsDetails['!ref'] || 'A1:A5');
-    range.e.c = Math.max(range.e.c, 1);
-    range.e.r = Math.max(range.e.r, 4);
-    wsDetails['!ref'] = window.XLSX.utils.encode_range(range);
+    const sc = (ref, val) => { wsDetails[ref] = { t: 's', v: String(val || '') }; };
+    sc('B2', assessment.lead_assessor || '');
+    sc('B3', assessment.year          || new Date().getFullYear());
+    sc('B4', muniName);
+    sc('B5', assessment.season        || '');
+    // Ensure the sheet range covers column B
+    const dr = window.XLSX.utils.decode_range(wsDetails['!ref'] || 'A1:A5');
+    dr.e.c = Math.max(dr.e.c, 1);
+    dr.e.r = Math.max(dr.e.r, 4);
+    wsDetails['!ref'] = window.XLSX.utils.encode_range(dr);
   }
 
   // ── HVC Tool sheet ────────────────────────────────────────
+  // Template structure:
+  //   Rows 1–3  : title / group headers / column headers
+  //   Row  4    : blank
+  //   Rows 5–10 : score descriptor lookup rows (referenced by IF formulas)
+  //   Row  11   : blank gap
+  //   Row  12+  : DATA ROWS — IF formulas for scores already present here
+  // We write text descriptors into the input columns (F,H,J,L,O,Q,S,U,W,Z,AB,AD,AF,AH,AJ,AP,AR,AT)
+  // The template's IF formulas in adjacent odd cols convert them to numeric scores automatically.
   const wsTool = wb.Sheets['HVC Tool'];
   if (wsTool) {
-    const setCell = (col, row, val) => {
-      if (val == null) return;
-      const ref = col + row;
-      wsTool[ref] = { t: 's', v: String(val) };
+    const sc = (col, row, val) => {
+      if (val == null || val === '') return;
+      wsTool[col + row] = { t: 's', v: String(val) };
     };
 
-    // Data rows start at Excel row 11, one row per hazard score
+    // First data row is 12 (row 11 is a blank gap between descriptors and formula rows)
     scores.forEach((s, idx) => {
-      const r = 11 + idx; // Excel row number
+      const r = 12 + idx;
 
-      // Hazard name
-      setCell('B', r, s.hazard_name || '');
+      // Hazard name and role players
+      sc('B', r, s.hazard_name     || '');
+      sc('C', r, s.primary_owner   || '');
+      sc('D', r, s.secondary_owner || '');
+      sc('E', r, s.tertiary_owner  || '');
 
-      // Role players (primary / secondary / tertiary)
-      setCell('C', r, s.primary_owner   || '');
-      setCell('D', r, s.secondary_owner || '');
-      setCell('E', r, s.tertiary_owner  || '');
+      // Hazard analysis — descriptor text into input cols; IF formulas in G,I,K,M score them
+      sc('F', r, _xlsxDesc('affected_area',  s.affected_area));
+      sc('H', r, _xlsxDesc('probability',    s.probability));
+      sc('J', r, _xlsxDesc('frequency',      s.frequency));
+      sc('L', r, _xlsxDesc('predictability', s.predictability));
 
-      // Hazard analysis — text descriptors into even columns
-      // Template IF formulas in odd cols (G,I,K,M) read these and compute score
-      setCell('F', r, _xlsxDesc('affected_area',  s.affected_area));
-      setCell('H', r, _xlsxDesc('probability',    s.probability));
-      setCell('J', r, _xlsxDesc('frequency',      s.frequency));
-      setCell('L', r, _xlsxDesc('predictability', s.predictability));
+      // Vulnerability — IF formulas in P,R,T,V,X score them
+      sc('O', r, _xlsxDesc('vp', s.vp));
+      sc('Q', r, _xlsxDesc('ve', s.ve));
+      sc('S', r, _xlsxDesc('vs', s.vs));
+      sc('U', r, _xlsxDesc('vt', s.vt));
+      sc('W', r, _xlsxDesc('vn', s.vn));
 
-      // Vulnerability analysis — text descriptors into even columns
-      // Template IF formulas in odd cols (P,R,T,V,X) compute sub-scores
-      setCell('O', r, _xlsxDesc('vp', s.vp));
-      setCell('Q', r, _xlsxDesc('ve', s.ve));
-      setCell('S', r, _xlsxDesc('vs', s.vs));
-      setCell('U', r, _xlsxDesc('vt', s.vt));
-      setCell('W', r, _xlsxDesc('vn', s.vn));
+      // Capacity — IF formulas in AA,AC,AE,AG,AI,AK score them
+      sc('Z',  r, _xlsxDesc('ci', s.ci));
+      sc('AB', r, _xlsxDesc('cp', s.cp));
+      sc('AD', r, _xlsxDesc('cq', s.cq));
+      sc('AF', r, _xlsxDesc('cf', s.cf));
+      sc('AH', r, _xlsxDesc('ch', s.ch));
+      sc('AJ', r, _xlsxDesc('cs', s.cs));
 
-      // Capacity analysis — text descriptors into even columns
-      // Template IF formulas in odd cols (AA,AC,AE,AG,AI,AK) compute sub-scores
-      setCell('Z',  r, _xlsxDesc('ci', s.ci));
-      setCell('AB', r, _xlsxDesc('cp', s.cp));
-      setCell('AD', r, _xlsxDesc('cq', s.cq));
-      setCell('AF', r, _xlsxDesc('cf', s.cf));
-      setCell('AH', r, _xlsxDesc('ch', s.ch));
-      setCell('AJ', r, _xlsxDesc('cs', s.cs));
+      // Priority — IF formulas in AQ,AS,AU score them
+      sc('AP', r, _xlsxDesc('importance', s.importance));
+      sc('AR', r, _xlsxDesc('urgency',    s.urgency));
+      sc('AT', r, _xlsxDesc('growth',     s.growth));
 
-      // Priority analysis — text descriptors into even columns
-      // Template IF formulas in odd cols (AQ,AS,AU) compute sub-scores
-      setCell('AP', r, _xlsxDesc('importance', s.importance));
-      setCell('AR', r, _xlsxDesc('urgency',    s.urgency));
-      setCell('AT', r, _xlsxDesc('growth',     s.growth));
-
-      // Additional info column (AX) — wards + notes
+      // Additional info (AX) — wards and notes
       const wardsText = Array.isArray(s.affected_wards) && s.affected_wards.length
-        ? 'Wards: ' + s.affected_wards.join(', ')
-        : '';
-      const notesText = s.notes ? (wardsText ? '\n' + s.notes : s.notes) : '';
-      setCell('AX', r, wardsText + notesText);
+        ? 'Wards: ' + s.affected_wards.join(', ') : '';
+      const combined  = [wardsText, s.notes].filter(Boolean).join(' | ');
+      if (combined) sc('AX', r, combined);
     });
 
-    // Extend the sheet range to cover all data rows written
+    // Ensure the sheet range covers all written rows
     if (scores.length) {
-      const lastRow = 10 + scores.length;
-      const range = window.XLSX.utils.decode_range(wsTool['!ref'] || 'A1:AX11');
-      range.e.r = Math.max(range.e.r, lastRow);
-      wsTool['!ref'] = window.XLSX.utils.encode_range(range);
+      const lastRow = 11 + scores.length; // 12 + (n-1) = 11 + n
+      const tr = window.XLSX.utils.decode_range(wsTool['!ref'] || 'A1:AX97');
+      tr.e.r = Math.max(tr.e.r, lastRow);
+      wsTool['!ref'] = window.XLSX.utils.encode_range(tr);
     }
   }
 
-  // Write to blob and return
-  const out  = window.XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+  // bookSST:false keeps the shared-string table from being rebuilt in a way that drops sheets
+  const out = window.XLSX.write(wb, { bookType: 'xlsx', type: 'array', bookSST: false });
   return new Blob([out], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
 }
 
