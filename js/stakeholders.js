@@ -724,91 +724,90 @@ async function exportPDF() {
 function getStakeholderCSVRows() {
   const rows = [];
 
+  // Headers — org-level fields first, then contact-level fields
   rows.push([
     "Category",
     "Hazard Type",
     "Assigned Via",
     "Organisation",
     "Sector",
+    "Org General Tel",
+    "Org General Email",
+    "Org Address",
+    "Org Notes",
+    "Active",
     "Contact Name",
     "Position",
     "Cell",
     "Direct Tel",
     "Email",
     "After Hours",
-    "Primary"
+    "Primary Contact"
   ]);
 
   _orgs.forEach(org => {
     const orgHazards = Array.isArray(org.hazard_types) ? org.hazard_types : [];
-    const contacts = org.stakeholder_contacts || [];
+    const contacts   = org.stakeholder_contacts || [];
 
-    // If organisation has hazards but no contacts
-    if (orgHazards.length > 0 && contacts.length === 0) {
-      orgHazards.forEach(hazard => {
-        const category = getHazardCategory(hazard) || "Other";
-        rows.push([
-          category,
-          hazard,
-          "ORG",
-          org.name || "",
-          org.sector || "",
-          "", "", "", "", "", "", ""
-        ]);
-      });
+    // Org-level columns — same on every row for this org
+    const orgCols = [
+      org.name          || "",
+      org.sector        || "",
+      org.general_tel   || "",
+      org.general_email || "",
+      org.address       || "",
+      org.notes         || "",
+      org.is_active === false ? "No" : "Yes"
+    ];
+
+    // Helper: build a contact-columns array
+    const ctCols = (c) => [
+      c.full_name    || "",
+      c.position     || "",
+      c.cell         || "",
+      c.direct_tel   || "",
+      c.email        || "",
+      c.after_hours  || "",
+      c.is_primary   ? "Yes" : "No"
+    ];
+
+    // Empty contact columns (used for org-only rows)
+    const noCtCols = ["", "", "", "", "", "", ""];
+
+    if (contacts.length === 0) {
+      // No contacts — one row per org hazard, or one row for the org itself
+      if (orgHazards.length > 0) {
+        orgHazards.forEach(hazard => {
+          const category = getHazardCategory(hazard) || "Other";
+          rows.push([category, hazard, "ORG", ...orgCols, ...noCtCols]);
+        });
+      } else {
+        rows.push(["", "", "ORG", ...orgCols, ...noCtCols]);
+      }
+      return;
     }
 
-    // Process contacts
+    // Has contacts — emit one row per contact×hazard combination
     contacts.forEach(contact => {
       const contactHazards = Array.isArray(contact.hazard_types) ? contact.hazard_types : [];
 
       if (contactHazards.length > 0) {
-        // Contact has specific hazards → one row per hazard
+        // Contact mapped to specific hazards → one row per hazard
         contactHazards.forEach(hazard => {
           const category = getHazardCategory(hazard) || "Other";
-          rows.push([
-            category,
-            hazard,
-            "CONTACT",
-            org.name || "",
-            org.sector || "",
-            contact.full_name || "",
-            contact.position || "",
-            contact.cell || "",
-            contact.direct_tel || "",
-            contact.email || "",
-            contact.after_hours || "",
-            contact.is_primary ? "Yes" : "No"
-          ]);
+          rows.push([category, hazard, "CONTACT", ...orgCols, ...ctCols(contact)]);
+        });
+      } else if (orgHazards.length > 0) {
+        // Contact has no specific hazards but org does → one row per org hazard
+        orgHazards.forEach(hazard => {
+          const category = getHazardCategory(hazard) || "Other";
+          rows.push([category, hazard, "CONTACT", ...orgCols, ...ctCols(contact)]);
         });
       } else {
-        // Contact has no specific hazard → still show the contact (with empty hazard fields)
-        rows.push([
-          "", 
-          "", 
-          "CONTACT",
-          org.name || "",
-          org.sector || "",
-          contact.full_name || "",
-          contact.position || "",
-          contact.cell || "",
-          contact.direct_tel || "",
-          contact.email || "",
-          contact.after_hours || "",
-          contact.is_primary ? "Yes" : "No"
-        ]);
+        // Neither contact nor org has hazards → one row with blank hazard fields
+        rows.push(["", "", "CONTACT", ...orgCols, ...ctCols(contact)]);
       }
     });
-
-    // If organisation has no hazards and no contacts, still show the org
-    if (orgHazards.length === 0 && contacts.length === 0) {
-      rows.push([
-        "", "", "ORG",
-        org.name || "",
-        org.sector || "",
-        "", "", "", "", "", "", ""
-      ]);
-    }
   });
 
   return rows;
