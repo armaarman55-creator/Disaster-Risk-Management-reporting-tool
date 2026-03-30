@@ -1228,7 +1228,11 @@ function buildRow(id, hazard, cat, s) {
     pi_val: s.pi, pu_val: s.pu, pg_val: s.pg,
     priority_index:      s.pIdx,
     priority_level:      s.pIdx!==null ? PRIO_LEVEL(s.pIdx) : null,
-    affected_wards:      s.wards || []
+    affected_wards:      s.wards || [],
+    primary_owner:       document.getElementById(`${id}_r1`)?.value   || null,
+    secondary_owner:     document.getElementById(`${id}_r2`)?.value   || null,
+    tertiary_owner:      document.getElementById(`${id}_r3`)?.value   || null,
+    notes:               document.getElementById(`${id}_notes`)?.value || null
   };
 }
 
@@ -1709,9 +1713,9 @@ async function getHVCXLSXBlob(scores, assessment, muniName) {
       setCell('B', r, s.hazard_name || '');
 
       // Role players (primary / secondary / tertiary)
-      setCell('C', r, s.primary_owner_name   || '');
-      setCell('D', r, s.secondary_owner_name || '');
-      setCell('E', r, s.tertiary_owner_name  || '');
+      setCell('C', r, s.primary_owner   || '');
+      setCell('D', r, s.secondary_owner || '');
+      setCell('E', r, s.tertiary_owner  || '');
 
       // Hazard analysis — text descriptors into even columns
       // Template IF formulas in odd cols (G,I,K,M) read these and compute score
@@ -1836,7 +1840,7 @@ async function exportAssessmentPDF(id, label) {
   const wardsText = Array.isArray(s.affected_wards) && s.affected_wards.length
     ? s.affected_wards.map(w => 'W'+w).join(', ')
     : '—';
-  const owners = [s.primary_owner_name, s.secondary_owner_name, s.tertiary_owner_name].filter(Boolean).join(', ') || '—';
+  const owners = [s.primary_owner, s.secondary_owner, s.tertiary_owner].filter(Boolean).join(', ') || '—';
   return `
   <tr style="border-bottom:1px solid #eee;${i%2===0?'background:#f9f9f9':''}">
     <td style="padding:5px 6px;font-weight:700;color:#1a3a6b">${i+1}</td>
@@ -1879,7 +1883,7 @@ async function exportAssessmentPDF(id, label) {
         </span>
       </td>
       <td style="padding:6px 8px;color:#666;font-size:11px">${Array.isArray(s.affected_wards)&&s.affected_wards.length?'Wards '+s.affected_wards.join(', '):'—'}</td>
-      <td style="padding:6px 8px;color:#666;font-size:11px">${[s.primary_owner_name, s.secondary_owner_name, s.tertiary_owner_name].filter(Boolean).join(', ')||'—'}</td>
+      <td style="padding:6px 8px;color:#666;font-size:11px">${[s.primary_owner, s.secondary_owner, s.tertiary_owner].filter(Boolean).join(', ')||'—'}</td>
     </tr>`).join('');
 
   const html = `
