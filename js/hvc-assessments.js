@@ -555,72 +555,288 @@ export function getHVCDocHTML(scores, assessment, muniName) {
 
 // ── PDF EXPORT ────────────────────────────────────────────
 export async function exportAssessmentPDF(id, label) {
-  const [scoresRes, assessRes] = await Promise.all([
+  const [scoresRes, assessRes, muniRes] = await Promise.all([
     supabase.from('hvc_hazard_scores').select('*').eq('assessment_id', id).order('risk_rating', { ascending: false }),
-    supabase.from('hvc_assessments').select('*').eq('id', id).single()
+    supabase.from('hvc_assessments').select('*').eq('id', id).single(),
+    supabase.from('municipalities').select('logo_main_url,logo_dm_url,logo_display_mode').eq('id', _muniId).single()
   ]);
 
   const scores     = scoresRes.data || [];
   const assessment = assessRes.data || {};
   const muniName   = _user?.municipalities?.name || 'Municipality';
+  const muni       = muniRes.data || {};
+  const date       = new Date().toLocaleString('en-ZA', { day:'numeric', month:'long', year:'numeric', hour:'2-digit', minute:'2-digit' });
 
-  const BAND_COL_HEX = {
-    'Extremely High': '#f85149', 'High': '#d29922',
-    'Tolerable': '#3fb950', 'Low': '#58a6ff', 'Negligible': '#6e7681'
+  const BAND_HEX = {
+    'Extremely High':'#c0392b', 'High':'#d35400',
+    'Tolerable':'#27ae60', 'Low':'#2980b9', 'Negligible':'#7f8c8d'
   };
+  const PRIO_HEX = { HIGH:'#c0392b', MEDIUM:'#d35400', LOW:'#27ae60' };
 
-  const rows = scores.map((s, i) => `
-    <tr style="border-bottom:1px solid #eee;${i % 2 === 0 ? 'background:#f9f9f9' : ''}">
-      <td style="padding:6px 8px">${i + 1}</td>
-      <td style="padding:6px 8px;font-weight:600">${s.hazard_name || '—'}</td>
-      <td style="padding:6px 8px;color:#666">${s.hazard_category || '—'}</td>
-      <td style="padding:6px 8px;text-align:center">${s.hazard_score?.toFixed(2) || '—'}</td>
-      <td style="padding:6px 8px;text-align:center">${s.vulnerability_score?.toFixed(2) || '—'}</td>
-      <td style="padding:6px 8px;text-align:center">${s.capacity_score?.toFixed(2) || '—'}</td>
-      <td style="padding:6px 8px;text-align:center">${s.resilience_index?.toFixed(3) || '—'}</td>
-      <td style="padding:6px 8px;text-align:center;font-weight:700">${s.risk_rating?.toFixed(2) || '—'}</td>
-      <td style="padding:6px 8px;text-align:center">
-        <span style="background:${BAND_COL_HEX[s.risk_band] || '#6e7681'}22;border:1px solid ${BAND_COL_HEX[s.risk_band] || '#6e7681'}55;color:${BAND_COL_HEX[s.risk_band] || '#6e7681'};padding:2px 6px;border-radius:3px;font-size:10px;font-weight:700">
-          ${(s.risk_band || '—').toUpperCase()}
-        </span>
-      </td>
-      <td style="padding:6px 8px;text-align:center">${s.priority_index?.toFixed(2) || '—'}</td>
-      <td style="padding:6px 8px;text-align:center">
-        <span style="font-weight:700;color:${s.priority_level === 'HIGH' ? '#f85149' : s.priority_level === 'MEDIUM' ? '#d29922' : '#6e7681'}">
-          ${s.priority_level || '—'}
-        </span>
-      </td>
-      <td style="padding:6px 8px;color:#666;font-size:11px">${Array.isArray(s.affected_wards) && s.affected_wards.length ? 'Wards ' + s.affected_wards.join(', ') : '—'}</td>
-      <td style="padding:6px 8px;color:#666;font-size:11px">${[s.primary_owner, s.secondary_owner, s.tertiary_owner].filter(Boolean).join(', ') || '—'}</td>
+  // ── Logo HTML ──────────────────────────────────────────
+  let logoHTML = '';
+  const { logo_main_url: logoMain, logo_dm_url: logoDM, logo_display_mode: logoMode } = muni;
+  if (logoMode === 'both' && logoMain && logoDM) {
+    logoHTML = `<img src="${logoMain}" style="max-height:52px;max-width:180px;object-fit:contain;margin-right:12px"/>
+                <img src="${logoDM}"   style="max-height:52px;max-width:160px;object-fit:contain"/>`;
+  } else if (logoMode === 'dm' && logoDM) {
+    logoHTML = `<img src="${logoDM}"   style="max-height:52px;max-width:180px;object-fit:contain"/>`;
+  } else if (logoMain) {
+    logoHTML = `<img src="${logoMain}" style="max-height:52px;max-width:180px;object-fit:contain"/>`;
+  }
+
+  // ── Helper: risk band badge ────────────────────────────
+  const bandBadge = (band) => {
+    const c = BAND_HEX[band] || '#7f8c8d';
+    return `<span style="background:${c};color:#fff;padding:2px 7px;border-radius:3px;font-size:9px;font-weight:700;white-space:nowrap">${(band||'—').toUpperCase()}</span>`;
+  };
+  const prioBadge = (lvl) => {
+    const c = PRIO_HEX[lvl] || '#7f8c8d';
+    return `<span style="background:${c};color:#fff;padding:2px 7px;border-radius:3px;font-size:9px;font-weight:700">${lvl||'—'}</span>`;
+  };
+  const n = (v, dp=2) => v != null ? Number(v).toFixed(dp) : '—';
+
+  // ── Table 1: Risk Ranking Summary ─────────────────────
+  const summaryRows = scores.map((s, i) => `
+    <tr>
+      <td>${i + 1}</td>
+      <td><strong>${s.hazard_name || '—'}</strong></td>
+      <td class="dim">${s.hazard_category || '—'}</td>
+      <td class="num">${n(s.hazard_score)}</td>
+      <td class="num">${n(s.vulnerability_score)}</td>
+      <td class="num">${n(s.capacity_score)}</td>
+      <td class="num">${n(s.resilience_index, 3)}</td>
+      <td class="num bold">${n(s.risk_rating)}</td>
+      <td>${bandBadge(s.risk_band)}</td>
+      <td class="num">${n(s.priority_index)}</td>
+      <td>${prioBadge(s.priority_level)}</td>
+    </tr>`).join('');
+
+  // ── Table 2: Hazard Analysis Sub-scores ───────────────
+  const hazardRows = scores.map((s, i) => `
+    <tr>
+      <td>${i + 1}</td>
+      <td><strong>${s.hazard_name || '—'}</strong></td>
+      <td class="num">${s.affected_area  ?? '—'}</td>
+      <td class="num">${s.probability    ?? '—'}</td>
+      <td class="num">${s.frequency      ?? '—'}</td>
+      <td class="num">${s.predictability ?? '—'}</td>
+      <td class="num bold">${n(s.hazard_score)}</td>
+    </tr>`).join('');
+
+  // ── Table 3: Vulnerability Sub-scores (PESTE) ─────────
+  const vulnRows = scores.map((s, i) => `
+    <tr>
+      <td>${i + 1}</td>
+      <td><strong>${s.hazard_name || '—'}</strong></td>
+      <td class="num">${s.vp ?? '—'}</td>
+      <td class="num">${s.ve ?? '—'}</td>
+      <td class="num">${s.vs ?? '—'}</td>
+      <td class="num">${s.vt ?? '—'}</td>
+      <td class="num">${s.vn ?? '—'}</td>
+      <td class="num bold">${n(s.vulnerability_score)}</td>
+    </tr>`).join('');
+
+  // ── Table 4: Capacity Sub-scores ──────────────────────
+  const capRows = scores.map((s, i) => `
+    <tr>
+      <td>${i + 1}</td>
+      <td><strong>${s.hazard_name || '—'}</strong></td>
+      <td class="num">${s.ci ?? '—'}</td>
+      <td class="num">${s.cp ?? '—'}</td>
+      <td class="num">${s.cq ?? '—'}</td>
+      <td class="num">${s.cf ?? '—'}</td>
+      <td class="num">${s.ch ?? '—'}</td>
+      <td class="num">${s.cs ?? '—'}</td>
+      <td class="num bold">${n(s.capacity_score)}</td>
+      <td class="num">${n(s.resilience_index, 3)}</td>
+    </tr>`).join('');
+
+  // ── Table 5: Priority Analysis ─────────────────────────
+  const prioRows = scores.map((s, i) => `
+    <tr>
+      <td>${i + 1}</td>
+      <td><strong>${s.hazard_name || '—'}</strong></td>
+      <td>${bandBadge(s.risk_band)}</td>
+      <td class="num bold">${n(s.risk_rating)}</td>
+      <td class="num">${s.importance ?? '—'}</td>
+      <td class="num">${s.urgency    ?? '—'}</td>
+      <td class="num">${s.growth     ?? '—'}</td>
+      <td class="num bold">${n(s.priority_index)}</td>
+      <td>${prioBadge(s.priority_level)}</td>
+      <td class="dim">${Array.isArray(s.affected_wards) && s.affected_wards.length ? s.affected_wards.map(w=>'W'+w).join(', ') : '—'}</td>
+      <td class="dim">${[s.primary_owner, s.secondary_owner, s.tertiary_owner].filter(Boolean).join(', ') || '—'}</td>
+      <td class="dim">${s.notes || '—'}</td>
     </tr>`).join('');
 
   const html = `<!DOCTYPE html>
-<html><head><title>HVC Assessment — ${label}</title>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>HVC Assessment Report — ${label}</title>
 <style>
-  body{font-family:Arial,sans-serif;font-size:12px;color:#0d1117;padding:30px;margin:0}
-  h1{font-size:22px;color:#1a3a6b;margin:0 0 8px}
-  .meta{font-size:11px;color:#666;margin-bottom:20px}
-  table{width:100%;border-collapse:collapse;font-size:11px;margin:20px 0}
-  th{background:#1a3a6b;color:#fff;padding:8px;text-align:left}
-  td{padding:6px 8px;border-bottom:1px solid #eee;vertical-align:middle}
-  tr:nth-child(even) td{background:#f9f9f9}
-</style></head><body>
-  <h1>HVC Assessment Report</h1>
-  <div class="meta">${muniName} — ${label} — Generated ${new Date().toLocaleString('en-ZA')}</div>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:Arial,Helvetica,sans-serif;font-size:9.5px;color:#1a1a2e;background:#fff;padding:14mm 12mm 18mm;line-height:1.4}
+  @page{size:A4 landscape;margin:8mm}
+
+  /* ── Header ── */
+  .report-header{display:flex;justify-content:space-between;align-items:flex-start;padding-bottom:12px;border-bottom:3px solid #1a3a6b;margin-bottom:16px}
+  .logos{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+  .report-title{font-size:20px;font-weight:800;color:#1a3a6b;letter-spacing:-.3px}
+  .report-sub{font-size:10px;color:#555;margin-top:3px}
+  .report-meta{font-size:8.5px;color:#666;text-align:right;line-height:1.8}
+
+  /* ── Section headings ── */
+  .section{margin:22px 0 10px;page-break-inside:avoid}
+  .section-title{font-size:12px;font-weight:800;color:#1a3a6b;text-transform:uppercase;letter-spacing:.5px;padding:7px 12px;background:#eef2f7;border-left:5px solid #1a3a6b;margin-bottom:8px}
+  .section-sub{font-size:8.5px;color:#666;margin-bottom:8px;padding-left:2px}
+
+  /* ── Tables ── */
+  table{width:100%;border-collapse:collapse;font-size:8.2px;margin-bottom:6px}
+  thead tr{background:#1a3a6b}
+  th{color:#fff;padding:5px 7px;font-size:7.5px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;text-align:left;white-space:nowrap}
+  td{padding:4px 7px;border-bottom:1px solid #e8ecf0;vertical-align:middle}
+  tr:nth-child(even) td{background:#f8fafc}
+  .num{text-align:center;font-family:monospace}
+  .bold{font-weight:700}
+  .dim{color:#555;font-size:7.8px}
+
+  /* ── Formula box ── */
+  .formula-box{background:#f0f4ff;border-left:4px solid #1a3a6b;padding:10px 14px;border-radius:0 4px 4px 0;font-size:8.5px;color:#333;margin:10px 0;line-height:2}
+
+  /* ── Risk band legend ── */
+  .legend{display:flex;gap:16px;flex-wrap:wrap;margin:10px 0 16px;font-size:8px}
+  .legend-item{display:flex;align-items:center;gap:5px}
+  .legend-swatch{width:28px;height:12px;border-radius:2px}
+
+  /* ── Footer ── */
+  .footer{margin-top:24px;padding-top:10px;border-top:1px solid #ddd;font-size:7.8px;color:#888;text-align:center}
+
+  /* ── Print button ── */
+  .print-btn{position:fixed;bottom:24px;right:28px;padding:10px 22px;background:#1a3a6b;color:#fff;border:none;border-radius:6px;font-weight:700;cursor:pointer;font-size:12px;box-shadow:0 4px 14px rgba(0,0,0,.2)}
+  @media print{.print-btn{display:none!important}}
+</style>
+</head>
+<body>
+
+<!-- ── HEADER ─────────────────────────────────────── -->
+<div class="report-header">
+  <div>
+    <div class="logos">${logoHTML}</div>
+    <div class="report-title">HVC ASSESSMENT REPORT</div>
+    <div class="report-sub">Hazard · Vulnerability · Capacity — DMA Act 57 of 2002 · Annexure 3</div>
+  </div>
+  <div class="report-meta">
+    <strong>${muniName}</strong><br>
+    Assessment: ${label}<br>
+    Season: ${assessment.season || '—'} ${assessment.year || ''}<br>
+    Lead assessor: ${assessment.lead_assessor || '—'}<br>
+    Generated: ${date}<br>
+    <strong>CONFIDENTIAL</strong>
+  </div>
+</div>
+
+<!-- ── FORMULA + LEGEND ───────────────────────────── -->
+<div class="formula-box">
+  <strong>Risk formula:</strong>
+  &nbsp; Hazard Score = avg(Affected Area, Probability, Frequency, Predictability)
+  &nbsp;·&nbsp; Vulnerability Score = avg(Political, Economic, Social, Technological, Environmental)
+  &nbsp;·&nbsp; Capacity Score = avg(Institutional, Programme, Public Participation, Financial, People, Support Networks)
+  &nbsp;·&nbsp; Resilience Index = Vulnerability ÷ Capacity
+  &nbsp;·&nbsp; <strong>Risk Rating = Hazard Score × Resilience Index</strong>
+</div>
+
+<div class="legend">
+  ${Object.entries(BAND_HEX).map(([band, col]) =>
+    `<div class="legend-item"><div class="legend-swatch" style="background:${col}"></div><span>${band}</span></div>`
+  ).join('')}
+</div>
+
+<!-- ── SECTION 1: RISK RANKING SUMMARY ───────────── -->
+<div class="section">
+  <div class="section-title">1 · Risk Ranking Summary</div>
+  <div class="section-sub">${scores.length} hazards scored · sorted by risk rating (highest first)</div>
   <table>
     <thead><tr>
-      <th>#</th><th>Hazard</th><th>Category</th><th>H.Score</th><th>V.Score</th><th>C.Score</th>
-      <th>Resilience</th><th>Risk Rating</th><th>Band</th><th>Priority Idx</th><th>Priority</th>
-      <th>Wards</th><th>Role Players</th>
+      <th>#</th><th>Hazard</th><th>Category</th>
+      <th>H.Score</th><th>V.Score</th><th>C.Score</th><th>Resilience</th>
+      <th>Risk Rating</th><th>Risk Band</th>
+      <th>Priority Idx</th><th>Priority</th>
     </tr></thead>
-    <tbody>${rows}</tbody>
+    <tbody>${summaryRows}</tbody>
   </table>
-</body></html>`;
+</div>
+
+<!-- ── SECTION 2: HAZARD ANALYSIS ────────────────── -->
+<div class="section">
+  <div class="section-title">2 · Hazard Analysis — Individual Scores</div>
+  <div class="section-sub">Scores 1 (lowest) – 5 (highest)</div>
+  <table>
+    <thead><tr>
+      <th>#</th><th>Hazard</th>
+      <th>Affected Area</th><th>Probability</th><th>Frequency</th><th>Predictability</th>
+      <th>Hazard Score</th>
+    </tr></thead>
+    <tbody>${hazardRows}</tbody>
+  </table>
+</div>
+
+<!-- ── SECTION 3: VULNERABILITY (PESTE) ──────────── -->
+<div class="section">
+  <div class="section-title">3 · Vulnerability Assessment (PESTE)</div>
+  <div class="section-sub">Scores 1 (Very Low) – 5 (Very High)</div>
+  <table>
+    <thead><tr>
+      <th>#</th><th>Hazard</th>
+      <th>Political</th><th>Economic</th><th>Social</th><th>Technological</th><th>Environmental</th>
+      <th>Vuln. Score</th>
+    </tr></thead>
+    <tbody>${vulnRows}</tbody>
+  </table>
+</div>
+
+<!-- ── SECTION 4: CAPACITY ASSESSMENT ────────────── -->
+<div class="section">
+  <div class="section-title">4 · Capacity Assessment</div>
+  <div class="section-sub">Scores 1 (Very Low) – 5 (Very High)</div>
+  <table>
+    <thead><tr>
+      <th>#</th><th>Hazard</th>
+      <th>Institutional</th><th>Programme</th><th>Public Participation</th>
+      <th>Financial</th><th>People</th><th>Support Networks</th>
+      <th>Cap. Score</th><th>Resilience</th>
+    </tr></thead>
+    <tbody>${capRows}</tbody>
+  </table>
+</div>
+
+<!-- ── SECTION 5: PRIORITY ANALYSIS ──────────────── -->
+<div class="section">
+  <div class="section-title">5 · Priority Analysis, Wards & Role Players</div>
+  <div class="section-sub">Priority scores 1 (lowest) – 5 (highest) · Priority Index = avg(Importance, Urgency, Growth)</div>
+  <table>
+    <thead><tr>
+      <th>#</th><th>Hazard</th><th>Risk Band</th><th>Risk Rating</th>
+      <th>Importance</th><th>Urgency</th><th>Growth</th>
+      <th>Priority Idx</th><th>Priority</th>
+      <th>Wards Affected</th><th>Role Players</th><th>Notes</th>
+    </tr></thead>
+    <tbody>${prioRows}</tbody>
+  </table>
+</div>
+
+<div class="footer">
+  ${muniName} · DRMSA HVC Assessment · DMA Act 57 of 2002 · Annexure 3 · ${date}
+</div>
+
+<button class="print-btn" onclick="window.print()">🖨 Print / Save as PDF</button>
+</body>
+</html>`;
 
   const w = window.open('', '_blank');
   if (w) {
     w.document.write(html);
     w.document.close();
-    setTimeout(() => w.print(), 600);
+    w.onload = () => setTimeout(() => w.focus(), 400);
   }
 }
