@@ -279,7 +279,7 @@ function showContactForm(orgId, existing) {
   const nameParts = (ct.full_name || '').split(' ');
   const ctFirst = nameParts[0] || '';
   const ctLast = nameParts.slice(1).join(' ') || '';
-  const ctHazards = Array.isArray(ct.hazard_types) ? ct.hazard_types : [];
+  const ctHazards = Array.isArray(ct.hazard_types) ? ctHazards : [];
 
   area.innerHTML = `
     <div style="background:var(--bg3);border:1px solid var(--border2);border-radius:8px;padding:14px;margin-top:10px">
@@ -723,6 +723,113 @@ async function exportPDF() {
   }
 }
 
+// ── CSV EXPORT - FIXED (Only this part was changed) ─────────────────────────────
+function getStakeholderCSVRows() {
+  const rows = [];
+
+  // Header
+  rows.push([
+    "Organisation",
+    "Sector",
+    "Organisation Notes",
+    "General Telephone",
+    "General Email",
+    "Organisation Hazards",
+    "Contact Name",
+    "Position",
+    "Cell",
+    "Direct Tel",
+    "Email",
+    "After Hours",
+    "Contact Hazards",
+    "Is Primary Contact"
+  ]);
+
+  _orgs.forEach(org => {
+    const orgHazards = Array.isArray(org.hazard_types) 
+      ? org.hazard_types.join("; ") 
+      : "";
+
+    const contacts = org.stakeholder_contacts || [];
+
+    if (contacts.length === 0) {
+      // Org with no contacts
+      rows.push([
+        org.name || "",
+        org.sector || "",
+        org.notes || "",
+        org.general_tel || "",
+        org.general_email || "",
+        orgHazards,
+        "", "", "", "", "", "", "", ""
+      ]);
+    } else {
+      contacts.forEach(contact => {
+        const ctHazards = Array.isArray(contact.hazard_types) 
+          ? contact.hazard_types.join("; ") 
+          : "";
+
+        rows.push([
+          org.name || "",
+          org.sector || "",
+          org.notes || "",
+          org.general_tel || "",
+          org.general_email || "",
+          orgHazards,
+          contact.full_name || "",
+          contact.position || "",
+          contact.cell || "",
+          contact.direct_tel || "",
+          contact.email || "",
+          contact.after_hours || "",
+          ctHazards,
+          contact.is_primary ? "Yes" : "No"
+        ]);
+      });
+    }
+  });
+
+  return rows;
+}
+
+// ── DOC/HTML EXPORT (simple fallback) ─────────────────────
+function getStakeholderDocHTML(muniName) {
+  let html = `<h1>Stakeholder Directory — ${muniName}</h1>`;
+  html += `<p>Generated: ${new Date().toLocaleString('en-ZA')}</p><hr>`;
+
+  _orgs.forEach(org => {
+    html += `<h2>${org.name} — ${org.sector || '—'}</h2>`;
+    if (org.notes) html += `<p><strong>Notes:</strong> ${org.notes}</p>`;
+    if (org.general_tel || org.general_email) {
+      html += `<p>Tel: ${org.general_tel || '—'} | Email: ${org.general_email || '—'}</p>`;
+    }
+
+    const contacts = org.stakeholder_contacts || [];
+    if (contacts.length > 0) {
+      html += `<table border="1" cellpadding="6" cellspacing="0" style="border-collapse:collapse">`;
+      html += `<tr><th>Contact Name</th><th>Position</th><th>Cell</th><th>Tel</th><th>Email</th><th>After Hours</th><th>Hazards</th></tr>`;
+      
+      contacts.forEach(c => {
+        const hazards = Array.isArray(c.hazard_types) ? c.hazard_types.join(", ") : "";
+        html += `<tr>
+          <td>${c.full_name || '—'}</td>
+          <td>${c.position || '—'}</td>
+          <td>${c.cell || '—'}</td>
+          <td>${c.direct_tel || '—'}</td>
+          <td>${c.email || '—'}</td>
+          <td>${c.after_hours || '—'}</td>
+          <td>${hazards}</td>
+        </tr>`;
+      });
+      html += `</table><br>`;
+    } else {
+      html += `<p><em>No contacts listed.</em></p>`;
+    }
+  });
+
+  return html;
+}
+
 function emptyState(msg) {
   return `<div style="text-align:center;padding:48px 20px;color:var(--text3);font-size:12px">${msg}</div>`;
 }
@@ -734,13 +841,4 @@ function showToast(msg, isError = false) {
   t.textContent = msg;
   document.body.appendChild(t);
   setTimeout(() => { t.style.opacity = '0'; setTimeout(() => t.remove(), 300); }, 3000);
-}
-
-// Placeholder functions (add your actual implementation if needed)
-function getStakeholderCSVRows() {
-  return []; // TODO: Implement CSV export
-}
-
-function getStakeholderDocHTML(muniName) {
-  return `<h1>Stakeholder Directory - ${muniName}</h1>`; // TODO: Implement Word export
 }
