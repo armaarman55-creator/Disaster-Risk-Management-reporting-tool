@@ -433,7 +433,7 @@ function buildCategoryGroups() {
   return { catGroups: ordered, unassigned };
 }
 
-// ── PDF EXPORT - RESPONSIVE COLUMNS (Better balance) ─────────────────────────────────
+// ── PDF EXPORT - OPTION 2: Two Columns with Manual Balancing ───────────────────────
 async function exportPDF() {
   const { catGroups } = buildCategoryGroups();
   const muniName = window._drmsaUser?.municipalities?.name || 'Municipality';
@@ -451,102 +451,63 @@ async function exportPDF() {
 
   let logoHTML = '';
   if (mode === 'both' && logoMain && logoDM) {
-    logoHTML = `<div style="display:flex;gap:15px;justify-content:center;margin:8px 0 12px 0;">
+    logoHTML = `<div style="display:flex;gap:15px;justify-content:center;margin:10px 0 15px 0;">
       <img src="${logoMain}" style="max-height:48px;max-width:160px;object-fit:contain"/>
       <img src="${logoDM}" style="max-height:48px;max-width:160px;object-fit:contain"/>
     </div>`;
   } else if (mode === 'dm' && logoDM) {
-    logoHTML = `<div style="text-align:center;margin:8px 0 12px 0;"><img src="${logoDM}" style="max-height:55px;object-fit:contain"/></div>`;
+    logoHTML = `<div style="text-align:center;margin:10px 0 15px 0;"><img src="${logoDM}" style="max-height:55px;object-fit:contain"/></div>`;
   } else if (logoMain) {
-    logoHTML = `<div style="text-align:center;margin:8px 0 12px 0;"><img src="${logoMain}" style="max-height:55px;object-fit:contain"/></div>`;
+    logoHTML = `<div style="text-align:center;margin:10px 0 15px 0;"><img src="${logoMain}" style="max-height:55px;object-fit:contain"/></div>`;
   }
 
-  let sectionsHTML = '';
+  let leftHTML = '';
+  let rightHTML = '';
   const categories = Object.entries(catGroups || {});
 
-  for (let i = 0; i < categories.length; i += 2) {
-    const left = categories[i];
-    const right = categories[i + 1];
+  // Simple manual balancing: alternate categories between left and right
+  categories.forEach(([catName, hazards], index) => {
+    const col = CAT_COLOURS[catName] || '#1a3a6b';
+    let catHTML = `<div class="hazard-column"><div class="cat-header" style="color:${col};border-left:5px solid ${col}">${catName}</div>`;
 
-    sectionsHTML += `<div class="hazard-grid">`;
-
-    if (left) {
-      const [catName, hazards] = left;
-      const col = CAT_COLOURS[catName] || '#1a3a6b';
-      sectionsHTML += `<div class="hazard-column"><div class="cat-header" style="color:${col};border-left:5px solid ${col}">${catName}</div>`;
-
-      Object.entries(hazards || {}).forEach(([hazard, entries]) => {
-        const total = (entries || []).reduce((sum, e) => sum + (e.contacts ? e.contacts.length : 0), 0);
-        let rows = '';
-        (entries || []).forEach(({ org, contacts }) => {
-          if (!contacts || contacts.length === 0) {
-            rows += `<tr><td><strong>${org.name}</strong><br><span class="pdf-sector">${org.sector||''}</span></td><td colspan="6" style="color:#888">No contacts</td></tr>`;
-          } else {
-            contacts.forEach(c => {
-              rows += `<tr>
-                <td><strong>${org.name}</strong><br><span class="pdf-sector">${org.sector||''}</span></td>
-                <td>${c.full_name||'—'}</td>
-                <td>${c.position||'—'}</td>
-                <td>${c.cell||'—'}</td>
-                <td>${c.direct_tel||'—'}</td>
-                <td>${c.email||'—'}</td>
-                <td>${c.after_hours||'—'}</td>
-              </tr>`;
-            });
-          }
-        });
-
-        sectionsHTML += `
-          <div class="hazard-item">
-            <div class="hazard-header" style="border-left:3px solid ${col}">${hazard} <span class="hazard-meta">(${ (entries||[]).length } orgs · ${total} contacts)</span></div>
-            <table class="pdf-table">
-              <thead><tr><th>Organisation</th><th>Contact</th><th>Position</th><th>Cell</th><th>Tel</th><th>Email</th><th>After hrs</th></tr></thead>
-              <tbody>${rows}</tbody>
-            </table>
-          </div>`;
+    Object.entries(hazards || {}).forEach(([hazard, entries]) => {
+      const total = (entries || []).reduce((sum, e) => sum + (e.contacts ? e.contacts.length : 0), 0);
+      let rows = '';
+      (entries || []).forEach(({ org, contacts }) => {
+        if (!contacts || contacts.length === 0) {
+          rows += `<tr><td><strong>${org.name}</strong><br><span class="pdf-sector">${org.sector||''}</span></td><td colspan="6" style="color:#888">No contacts</td></tr>`;
+        } else {
+          contacts.forEach(c => {
+            rows += `<tr>
+              <td><strong>${org.name}</strong><br><span class="pdf-sector">${org.sector||''}</span></td>
+              <td>${c.full_name||'—'}</td>
+              <td>${c.position||'—'}</td>
+              <td>${c.cell||'—'}</td>
+              <td>${c.direct_tel||'—'}</td>
+              <td>${c.email||'—'}</td>
+              <td>${c.after_hours||'—'}</td>
+            </tr>`;
+          });
+        }
       });
-      sectionsHTML += `</div>`;
+
+      catHTML += `
+        <div class="hazard-item">
+          <div class="hazard-header" style="border-left:3px solid ${col}">${hazard} <span class="hazard-meta">(${ (entries||[]).length } orgs · ${total} contacts)</span></div>
+          <table class="pdf-table">
+            <thead><tr><th>Organisation</th><th>Contact</th><th>Position</th><th>Cell</th><th>Tel</th><th>Email</th><th>After hrs</th></tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>`;
+    });
+    catHTML += `</div>`;
+
+    if (index % 2 === 0) {
+      leftHTML += catHTML;
+    } else {
+      rightHTML += catHTML;
     }
-
-    if (right) {
-      const [catName, hazards] = right;
-      const col = CAT_COLOURS[catName] || '#1a3a6b';
-      sectionsHTML += `<div class="hazard-column"><div class="cat-header" style="color:${col};border-left:5px solid ${col}">${catName}</div>`;
-
-      Object.entries(hazards || {}).forEach(([hazard, entries]) => {
-        const total = (entries || []).reduce((sum, e) => sum + (e.contacts ? e.contacts.length : 0), 0);
-        let rows = '';
-        (entries || []).forEach(({ org, contacts }) => {
-          if (!contacts || contacts.length === 0) {
-            rows += `<tr><td><strong>${org.name}</strong><br><span class="pdf-sector">${org.sector||''}</span></td><td colspan="6" style="color:#888">No contacts</td></tr>`;
-          } else {
-            contacts.forEach(c => {
-              rows += `<tr>
-                <td><strong>${org.name}</strong><br><span class="pdf-sector">${org.sector||''}</span></td>
-                <td>${c.full_name||'—'}</td>
-                <td>${c.position||'—'}</td>
-                <td>${c.cell||'—'}</td>
-                <td>${c.direct_tel||'—'}</td>
-                <td>${c.email||'—'}</td>
-                <td>${c.after_hours||'—'}</td>
-              </tr>`;
-            });
-          }
-        });
-
-        sectionsHTML += `
-          <div class="hazard-item">
-            <div class="hazard-header" style="border-left:3px solid ${col}">${hazard} <span class="hazard-meta">(${ (entries||[]).length } orgs · ${total} contacts)</span></div>
-            <table class="pdf-table">
-              <thead><tr><th>Organisation</th><th>Contact</th><th>Position</th><th>Cell</th><th>Tel</th><th>Email</th><th>After hrs</th></tr></thead>
-              <tbody>${rows}</tbody>
-            </table>
-          </div>`;
-      });
-      sectionsHTML += `</div>`;
-    }
-    sectionsHTML += `</div>`;
-  }
+  });
 
   const html = `<!DOCTYPE html>
 <html lang="en">
@@ -555,13 +516,13 @@ async function exportPDF() {
 <title>Stakeholder Directory — ${muniName}</title>
 <style>
   *{box-sizing:border-box;margin:0;padding:0}
-  body{font-family:Arial,Helvetica,sans-serif;font-size:9px;color:#1a1a2e;background:#fff;line-height:1.3}
+  body{font-family:Arial,Helvetica,sans-serif;font-size:9px;color:#1a1a2e;background:#fff;line-height:1.35}
   @page{size:A4 landscape;margin:10mm}
   .hazard-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+    grid-template-columns: 1fr 1fr;
     gap: 1.0cm;
-    margin: 10px 0 16px 0;
+    margin: 12px 0 18px 0;
   }
   .hazard-column { break-inside: avoid; page-break-inside: avoid; }
   .cat-header {
@@ -569,7 +530,7 @@ async function exportPDF() {
     font-weight: 800;
     text-transform: uppercase;
     padding: 6px 11px;
-    margin-bottom: 7px;
+    margin-bottom: 8px;
     background: #f8f9fa;
     border-left: 5px solid #1a3a6b;
   }
@@ -581,12 +542,12 @@ async function exportPDF() {
     background: #f0f4f8;
     border-left: 3px solid #1a3a6b;
   }
-  .hazard-meta { font-size: 8px; color: #666; margin-left: 6px; }
+  .hazard-meta { font-size: 8px; color: #666; margin-left: 8px; }
   .pdf-table {
     width: 100%;
     border-collapse: collapse;
-    margin-bottom: 8px;
-    font-size: 8.4px;
+    margin-bottom: 9px;
+    font-size: 8.5px;
   }
   .pdf-table th {
     background: #1a3a6b;
@@ -612,6 +573,9 @@ async function exportPDF() {
     cursor: pointer;
     font-size: 13px;
   }
+  @media print {
+    .save-btn { display: none !important; }
+  }
 </style>
 </head>
 <body>
@@ -622,11 +586,14 @@ async function exportPDF() {
   
   ${logoHTML}
   
-  <div style="font-size:8.5px;color:#777;text-align:center;margin-bottom:12px">
+  <div style="font-size:8.5px;color:#777;text-align:center;margin-bottom:15px">
     Generated: ${date} • CONFIDENTIAL
   </div>
 
-  ${sectionsHTML}
+  <div class="hazard-grid">
+    <div>${leftHTML}</div>
+    <div>${rightHTML}</div>
+  </div>
 
   <button class="save-btn" onclick="window.print()">💾 Save as PDF (A4 Landscape)</button>
 
