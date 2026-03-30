@@ -203,7 +203,7 @@ function renderOrgCard(org) {
     </div>`;
 }
 
-// ── ORG FORM (kept minimal but functional) ──────────────────────────────────────────────
+// ── ORG FORM ──────────────────────────────────────────────
 function showOrgForm(existing) {
   const area = document.getElementById('org-form-area');
   if (!area) return;
@@ -217,7 +217,7 @@ function showOrgForm(existing) {
       <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:12px">${existing?'Edit organisation':'Add organisation'}</div>
       <div class="frow">
         <div class="fl"><span class="fl-label">Organisation name</span><input class="fl-input" id="org-name" value="${org.name||''}"/></div>
-        <div class="fl"><span class="fl-label">Sector</span><input class="fl-input" id="org-sector" list="sector-opts" value="${org.sector||''}"/></div>
+        <div class="fl"><span class="fl-label">Sector</span><input class="fl-input" id="org-sector" list="sector-opts" value="${org.sector||''}" placeholder="Select or type sector"/></div>
       </div>
       <datalist id="sector-opts">${SECTORS.map(s=>`<option value="${s}"/>`).join('')}</datalist>
       <div class="fl"><span class="fl-label">Notes</span><textarea class="fl-textarea" id="org-desc" rows="2">${org.notes||''}</textarea></div>
@@ -227,7 +227,7 @@ function showOrgForm(existing) {
       </div>
       <div class="fl"><span class="fl-label">Physical address</span><input class="fl-input" id="org-address" value="${org.address||''}"/></div>
       <div class="fl" style="margin-top:8px">
-        <span class="fl-label">Hazard types</span>
+        <span class="fl-label">Hazard types this organisation responds to</span>
         <div style="background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:12px;margin-top:4px">
           ${renderHazardCheckboxes('org', orgHazards)}
         </div>
@@ -269,7 +269,7 @@ function showOrgForm(existing) {
   });
 }
 
-// ── CONTACT FORM (minimal version) ──────────────────────────────────────────
+// ── CONTACT FORM ──────────────────────────────────────────
 function showContactForm(orgId, existing) {
   const area = document.getElementById(`contact-form-${orgId}`);
   if (!area) return;
@@ -384,7 +384,7 @@ function bindOrgEvents() {
   });
 }
 
-// ── GROUPING LOGIC ─────────────────────────────────
+// ── HAZARD GROUPING ─────────────────────────────────
 function buildHazardGroups() {
   const groups = {};
   const unassigned = [];
@@ -433,7 +433,7 @@ function buildCategoryGroups() {
   return { catGroups: ordered, unassigned };
 }
 
-// ── PDF EXPORT - TIGHT COMPACT VERSION ─────────────────────────────────
+// ── PDF EXPORT - RESPONSIVE COLUMNS (Better balance) ─────────────────────────────────
 async function exportPDF() {
   const { catGroups } = buildCategoryGroups();
   const muniName = window._drmsaUser?.municipalities?.name || 'Municipality';
@@ -557,27 +557,72 @@ async function exportPDF() {
   *{box-sizing:border-box;margin:0;padding:0}
   body{font-family:Arial,Helvetica,sans-serif;font-size:9px;color:#1a1a2e;background:#fff;line-height:1.3}
   @page{size:A4 landscape;margin:10mm}
-  .hazard-grid{display:grid;grid-template-columns:1fr 1fr;gap:0.7cm;margin:8px 0 14px 0;}
-  .hazard-column{break-inside:avoid;page-break-inside:avoid;}
-  .cat-header{font-size:12px;font-weight:800;text-transform:uppercase;padding:5px 10px;margin-bottom:6px;background:#f8f9fa;border-left:5px solid #1a3a6b;}
-  .hazard-header{font-size:10px;font-weight:700;padding:4px 9px;margin:6px 0 4px 0;background:#f0f4f8;border-left:3px solid #1a3a6b;}
-  .hazard-meta{font-size:8px;color:#666;margin-left:6px;}
-  .pdf-table{width:100%;border-collapse:collapse;margin-bottom:7px;font-size:8.4px;}
-  .pdf-table th{background:#1a3a6b;color:white;padding:4px 7px;font-size:7.4px;}
-  .pdf-table td{padding:3.5px 7px;border-bottom:1px solid #ddd;}
-  .pdf-table tr:nth-child(even) td{background:#f9fafb;}
-  .save-btn{display:block;margin:12px auto;padding:9px 26px;background:#1a3a6b;color:white;border:none;border-radius:6px;font-weight:700;cursor:pointer;font-size:13px;}
+  .hazard-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+    gap: 1.0cm;
+    margin: 10px 0 16px 0;
+  }
+  .hazard-column { break-inside: avoid; page-break-inside: avoid; }
+  .cat-header {
+    font-size: 12px;
+    font-weight: 800;
+    text-transform: uppercase;
+    padding: 6px 11px;
+    margin-bottom: 7px;
+    background: #f8f9fa;
+    border-left: 5px solid #1a3a6b;
+  }
+  .hazard-header {
+    font-size: 10px;
+    font-weight: 700;
+    padding: 5px 10px;
+    margin: 8px 0 5px 0;
+    background: #f0f4f8;
+    border-left: 3px solid #1a3a6b;
+  }
+  .hazard-meta { font-size: 8px; color: #666; margin-left: 6px; }
+  .pdf-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 8px;
+    font-size: 8.4px;
+  }
+  .pdf-table th {
+    background: #1a3a6b;
+    color: white;
+    padding: 5px 8px;
+    font-size: 7.5px;
+    text-transform: uppercase;
+  }
+  .pdf-table td {
+    padding: 4px 8px;
+    border-bottom: 1px solid #ddd;
+  }
+  .pdf-table tr:nth-child(even) td { background: #f9fafb; }
+  .save-btn {
+    display: block;
+    margin: 15px auto;
+    padding: 10px 28px;
+    background: #1a3a6b;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    font-weight: 700;
+    cursor: pointer;
+    font-size: 13px;
+  }
 </style>
 </head>
 <body>
-  <div style="text-align:center;margin-bottom:6px">
+  <div style="text-align:center;margin-bottom:8px">
     <div style="font-size:17px;font-weight:800;color:#1a3a6b">STAKEHOLDER DIRECTORY</div>
     <div style="font-size:10px;color:#555">Hazard Response Reference • ${muniName}</div>
   </div>
   
   ${logoHTML}
   
-  <div style="font-size:8.5px;color:#777;text-align:center;margin-bottom:10px">
+  <div style="font-size:8.5px;color:#777;text-align:center;margin-bottom:12px">
     Generated: ${date} • CONFIDENTIAL
   </div>
 
@@ -585,7 +630,7 @@ async function exportPDF() {
 
   <button class="save-btn" onclick="window.print()">💾 Save as PDF (A4 Landscape)</button>
 
-  <div style="margin-top:20px;padding-top:8px;border-top:1px solid #ddd;font-size:8px;color:#888;text-align:center">
+  <div style="margin-top:25px;padding-top:10px;border-top:1px solid #ddd;font-size:8px;color:#888;text-align:center">
     ${muniName} Disaster Management Centre
   </div>
 </body>
