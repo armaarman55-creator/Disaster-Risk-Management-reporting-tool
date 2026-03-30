@@ -720,11 +720,10 @@ async function exportPDF() {
   }
 }
 
-// ── FIXED CSV EXPORT - Matches your example + full contact info ─────────────────
+// ── FIXED CSV EXPORT - Now properly includes all contact information ─────────────
 function getStakeholderCSVRows() {
   const rows = [];
 
-  // Header - matches the structure you showed
   rows.push([
     "Category",
     "Hazard Type",
@@ -740,51 +739,76 @@ function getStakeholderCSVRows() {
     "Primary"
   ]);
 
-  const { catGroups } = buildCategoryGroups();
+  _orgs.forEach(org => {
+    const orgHazards = Array.isArray(org.hazard_types) ? org.hazard_types : [];
+    const contacts = org.stakeholder_contacts || [];
 
-  Object.entries(catGroups).forEach(([category, hazards]) => {
-    Object.entries(hazards).forEach(([hazard, entries]) => {
-      entries.forEach(entry => {
-        const org = entry.org;
-        const via = entry.via;
+    // If organisation has hazards but no contacts
+    if (orgHazards.length > 0 && contacts.length === 0) {
+      orgHazards.forEach(hazard => {
+        const category = getHazardCategory(hazard) || "Other";
+        rows.push([
+          category,
+          hazard,
+          "ORG",
+          org.name || "",
+          org.sector || "",
+          "", "", "", "", "", "", ""
+        ]);
+      });
+    }
 
-        if (via === "ORG") {
-          // Organisation-level hazard assignment
+    // Process contacts
+    contacts.forEach(contact => {
+      const contactHazards = Array.isArray(contact.hazard_types) ? contact.hazard_types : [];
+
+      if (contactHazards.length > 0) {
+        // Contact has specific hazards → one row per hazard
+        contactHazards.forEach(hazard => {
+          const category = getHazardCategory(hazard) || "Other";
           rows.push([
             category,
             hazard,
-            "ORG",
+            "CONTACT",
             org.name || "",
             org.sector || "",
-            "",                    // Contact Name
-            "",                    // Position
-            "",                    // Cell
-            "",                    // Direct Tel
-            "",                    // Email
-            "",                    // After Hours
-            ""                     // Primary
+            contact.full_name || "",
+            contact.position || "",
+            contact.cell || "",
+            contact.direct_tel || "",
+            contact.email || "",
+            contact.after_hours || "",
+            contact.is_primary ? "Yes" : "No"
           ]);
-        } else {
-          // Contact-level hazard assignment
-          entry.contacts.forEach(contact => {
-            rows.push([
-              category,
-              hazard,
-              "CONTACT",
-              org.name || "",
-              org.sector || "",
-              contact.full_name || "",
-              contact.position || "",
-              contact.cell || "",
-              contact.direct_tel || "",
-              contact.email || "",
-              contact.after_hours || "",
-              contact.is_primary ? "Yes" : "No"
-            ]);
-          });
-        }
-      });
+        });
+      } else {
+        // Contact has no specific hazard → still show the contact (with empty hazard fields)
+        rows.push([
+          "", 
+          "", 
+          "CONTACT",
+          org.name || "",
+          org.sector || "",
+          contact.full_name || "",
+          contact.position || "",
+          contact.cell || "",
+          contact.direct_tel || "",
+          contact.email || "",
+          contact.after_hours || "",
+          contact.is_primary ? "Yes" : "No"
+        ]);
+      }
     });
+
+    // If organisation has no hazards and no contacts, still show the org
+    if (orgHazards.length === 0 && contacts.length === 0) {
+      rows.push([
+        "", "", "ORG",
+        org.name || "",
+        org.sector || "",
+        "", "", "", "", "", "", ""
+      ]);
+    }
   });
 
   return rows;
