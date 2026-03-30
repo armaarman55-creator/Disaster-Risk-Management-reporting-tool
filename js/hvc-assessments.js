@@ -511,8 +511,11 @@ export async function getHVCXLSXBlob(scores, assessment, muniName) {
 
   // Fetch the template from public/templates/
   const resp = await fetch('/templates/hvc-tool.xlsx');
-  if (!resp.ok) throw new Error(`HVC template fetch failed: ${resp.status} ${resp.statusText}`);
+  if (!resp.ok) throw new Error(`HVC template fetch failed: ${resp.status} ${resp.statusText} — check that public/templates/hvc-tool.xlsx exists and is committed to the repo`);
+  const contentType = resp.headers.get('content-type') || '';
+  if (contentType.includes('text/html')) throw new Error(`HVC template returned HTML instead of a file — the path /templates/hvc-tool.xlsx is not resolving correctly (got: ${contentType})`);
   const buffer = await resp.arrayBuffer();
+  if (buffer.byteLength < 100) throw new Error(`HVC template file appears empty or too small (${buffer.byteLength} bytes) — check the file in public/templates/`);
 
   const wb = new window.ExcelJS.Workbook();
   await wb.xlsx.load(buffer);
