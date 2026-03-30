@@ -720,72 +720,72 @@ async function exportPDF() {
   }
 }
 
-// ── DYNAMIC CSV EXPORT (restored & improved for Google Sheets) ─────────────────
+// ── RESTORED DYNAMIC CSV EXPORT (matches your example) ─────────────────────
 function getStakeholderCSVRows() {
   const rows = [];
 
-  // Header row - good for Google Sheets customization
+  // Header - matches the structure you showed
   rows.push([
+    "Category",
+    "Hazard Type",
+    "Assigned Via",
     "Organisation",
     "Sector",
-    "Organisation Notes",
-    "General Telephone",
-    "General Email",
-    "Organisation Hazards",
     "Contact Name",
     "Position",
-    "Cell Phone",
-    "Direct Telephone",
+    "Cell",
+    "Direct Tel",
     "Email",
     "After Hours",
-    "Contact Hazards",
-    "Is Primary Contact"
+    "Primary"
   ]);
 
-  _orgs.forEach(org => {
-    const orgHazardsStr = Array.isArray(org.hazard_types) ? org.hazard_types.join("; ") : "";
+  // Build rows per hazard (as in your example)
+  const { catGroups } = buildCategoryGroups();
 
-    const contacts = org.stakeholder_contacts || [];
+  Object.entries(catGroups).forEach(([category, hazards]) => {
+    Object.entries(hazards).forEach(([hazard, entries]) => {
+      entries.forEach(entry => {
+        const org = entry.org;
+        const via = entry.via;   // "ORG" or "CONTACT"
 
-    if (contacts.length === 0) {
-      // Row for organisation without contacts
-      rows.push([
-        org.name || "",
-        org.sector || "",
-        org.notes || "",
-        org.general_tel || "",
-        org.general_email || "",
-        orgHazardsStr,
-        "", "", "", "", "", "", "", ""
-      ]);
-    } else {
-      contacts.forEach(contact => {
-        const contactHazardsStr = Array.isArray(contact.hazard_types) ? contact.hazard_types.join("; ") : "";
-
-        rows.push([
-          org.name || "",
-          org.sector || "",
-          org.notes || "",
-          org.general_tel || "",
-          org.general_email || "",
-          orgHazardsStr,
-          contact.full_name || "",
-          contact.position || "",
-          contact.cell || "",
-          contact.direct_tel || "",
-          contact.email || "",
-          contact.after_hours || "",
-          contactHazardsStr,
-          contact.is_primary ? "Yes" : "No"
-        ]);
+        if (via === "ORG") {
+          // Organisation-level assignment
+          rows.push([
+            category,
+            hazard,
+            "ORG",
+            org.name || "",
+            org.sector || "",
+            "", "", "", "", "", "", ""
+          ]);
+        } else {
+          // Contact-level assignment
+          entry.contacts.forEach(contact => {
+            rows.push([
+              category,
+              hazard,
+              "CONTACT",
+              org.name || "",
+              org.sector || "",
+              contact.full_name || "",
+              contact.position || "",
+              contact.cell || "",
+              contact.direct_tel || "",
+              contact.email || "",
+              contact.after_hours || "",
+              contact.is_primary ? "Yes" : "No"
+            ]);
+          });
+        }
       });
-    }
+    });
   });
 
   return rows;
 }
 
-// ── DOC/HTML EXPORT (simple fallback for Word) ─────────────────
+// ── DOC/HTML EXPORT (simple fallback) ─────────────────────
 function getStakeholderDocHTML(muniName) {
   let html = `<h1>Stakeholder Directory — ${muniName}</h1>`;
   html += `<p>Generated: ${new Date().toLocaleString('en-ZA')}</p><hr>`;
@@ -794,13 +794,13 @@ function getStakeholderDocHTML(muniName) {
     html += `<h2>${org.name} — ${org.sector || '—'}</h2>`;
     if (org.notes) html += `<p><strong>Notes:</strong> ${org.notes}</p>`;
     if (org.general_tel || org.general_email) {
-      html += `<p>General Tel: ${org.general_tel || '—'} | Email: ${org.general_email || '—'}</p>`;
+      html += `<p>Tel: ${org.general_tel || '—'} | Email: ${org.general_email || '—'}</p>`;
     }
 
     const contacts = org.stakeholder_contacts || [];
     if (contacts.length > 0) {
-      html += `<table border="1" cellpadding="6" cellspacing="0" style="border-collapse:collapse;width:100%">`;
-      html += `<tr><th>Contact Name</th><th>Position</th><th>Cell</th><th>Direct Tel</th><th>Email</th><th>After Hours</th><th>Hazards</th><th>Primary</th></tr>`;
+      html += `<table border="1" cellpadding="6" cellspacing="0" style="border-collapse:collapse">`;
+      html += `<tr><th>Contact Name</th><th>Position</th><th>Cell</th><th>Tel</th><th>Email</th><th>After Hours</th><th>Hazards</th></tr>`;
       
       contacts.forEach(c => {
         const hazards = Array.isArray(c.hazard_types) ? c.hazard_types.join(", ") : "";
@@ -812,12 +812,11 @@ function getStakeholderDocHTML(muniName) {
           <td>${c.email || '—'}</td>
           <td>${c.after_hours || '—'}</td>
           <td>${hazards}</td>
-          <td>${c.is_primary ? 'Yes' : 'No'}</td>
         </tr>`;
       });
-      html += `</table><br><br>`;
+      html += `</table><br>`;
     } else {
-      html += `<p><em>No contacts listed for this organisation.</em></p><br>`;
+      html += `<p><em>No contacts listed.</em></p>`;
     }
   });
 
