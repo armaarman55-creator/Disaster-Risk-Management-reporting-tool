@@ -433,11 +433,14 @@ function buildCategoryGroups() {
   return { catGroups: ordered, unassigned };
 }
 
-// ── PDF EXPORT - OPTION 2: Two Columns with Manual Balancing ───────────────────────
+// ── FIXED PDF EXPORT - Compact Header + Better Balancing (No Large Empty Spaces) ─────
 async function exportPDF() {
   const { catGroups } = buildCategoryGroups();
   const muniName = window._drmsaUser?.municipalities?.name || 'Municipality';
-  const date = new Date().toLocaleString('en-ZA');
+  const date = new Date().toLocaleString('en-ZA', { 
+    year: 'numeric', month: 'short', day: 'numeric', 
+    hour: '2-digit', minute: '2-digit' 
+  });
 
   const { data: muni } = await supabase
     .from('municipalities')
@@ -449,43 +452,56 @@ async function exportPDF() {
   const logoDM = muni?.logo_dm_url || null;
   const mode = muni?.logo_display_mode || 'main';
 
+  // Compact top-left logo + title
   let logoHTML = '';
   if (mode === 'both' && logoMain && logoDM) {
-    logoHTML = `<div style="display:flex;gap:15px;justify-content:center;margin:10px 0 15px 0;">
-      <img src="${logoMain}" style="max-height:48px;max-width:160px;object-fit:contain"/>
-      <img src="${logoDM}" style="max-height:48px;max-width:160px;object-fit:contain"/>
-    </div>`;
+    logoHTML = `
+      <div style="display:flex;gap:15px;align-items:center;margin-bottom:10px">
+        <img src="${logoMain}" style="max-height:45px;max-width:190px;object-fit:contain"/>
+        <img src="${logoDM}" style="max-height:45px;max-width:170px;object-fit:contain"/>
+      </div>`;
   } else if (mode === 'dm' && logoDM) {
-    logoHTML = `<div style="text-align:center;margin:10px 0 15px 0;"><img src="${logoDM}" style="max-height:55px;object-fit:contain"/></div>`;
+    logoHTML = `<img src="${logoDM}" style="max-height:48px;object-fit:contain;margin-bottom:10px"/>`;
   } else if (logoMain) {
-    logoHTML = `<div style="text-align:center;margin:10px 0 15px 0;"><img src="${logoMain}" style="max-height:55px;object-fit:contain"/></div>`;
+    logoHTML = `<img src="${logoMain}" style="max-height:48px;object-fit:contain;margin-bottom:10px"/>`;
   }
 
+  // Build columns with improved balancing to minimize empty space
   let leftHTML = '';
   let rightHTML = '';
   const categories = Object.entries(catGroups || {});
 
-  // Simple manual balancing: alternate categories between left and right
-  categories.forEach(([catName, hazards], index) => {
+  let leftHeight = 0;
+  let rightHeight = 0;
+
+  categories.forEach(([catName, hazards]) => {
     const col = CAT_COLOURS[catName] || '#1a3a6b';
-    let catHTML = `<div class="hazard-column"><div class="cat-header" style="color:${col};border-left:5px solid ${col}">${catName}</div>`;
+    
+    let catHTML = `
+      <div class="hazard-column">
+        <div class="cat-header" style="color:${col};border-left:5px solid ${col}">${catName}</div>`;
 
     Object.entries(hazards || {}).forEach(([hazard, entries]) => {
-      const total = (entries || []).reduce((sum, e) => sum + (e.contacts ? e.contacts.length : 0), 0);
+      const totalOrgs = (entries || []).length;
+      const totalContacts = (entries || []).reduce((sum, e) => sum + (e.contacts?.length || 0), 0);
+
       let rows = '';
       (entries || []).forEach(({ org, contacts }) => {
         if (!contacts || contacts.length === 0) {
-          rows += `<tr><td><strong>${org.name}</strong><br><span class="pdf-sector">${org.sector||''}</span></td><td colspan="6" style="color:#888">No contacts</td></tr>`;
+          rows += `<tr>
+            <td><strong>${org.name}</strong><br><span class="pdf-sector">${org.sector || ''}</span></td>
+            <td colspan="6" style="color:#777;font-style:italic">No contacts assigned to this hazard</td>
+          </tr>`;
         } else {
           contacts.forEach(c => {
             rows += `<tr>
-              <td><strong>${org.name}</strong><br><span class="pdf-sector">${org.sector||''}</span></td>
-              <td>${c.full_name||'—'}</td>
-              <td>${c.position||'—'}</td>
-              <td>${c.cell||'—'}</td>
-              <td>${c.direct_tel||'—'}</td>
-              <td>${c.email||'—'}</td>
-              <td>${c.after_hours||'—'}</td>
+              <td><strong>${org.name}</strong><br><span class="pdf-sector">${org.sector || ''}</span></td>
+              <td>${c.full_name || '—'}</td>
+              <td>${c.position || '—'}</td>
+              <td>${c.cell || '—'}</td>
+              <td>${c.direct_tel || '—'}</td>
+              <td>${c.email || '—'}</td>
+              <td>${c.after_hours || '—'}</td>
             </tr>`;
           });
         }
@@ -493,19 +509,38 @@ async function exportPDF() {
 
       catHTML += `
         <div class="hazard-item">
-          <div class="hazard-header" style="border-left:3px solid ${col}">${hazard} <span class="hazard-meta">(${ (entries||[]).length } orgs · ${total} contacts)</span></div>
+          <div class="hazard-header" style="border-left:3px solid ${col}">
+            ${hazard} 
+            <span class="hazard-meta">(${totalOrgs} org${totalOrgs !== 1 ? 's' : ''} · ${totalContacts} contact${totalContacts !== 1 ? 's' : ''})</span>
+          </div>
           <table class="pdf-table">
-            <thead><tr><th>Organisation</th><th>Contact</th><th>Position</th><th>Cell</th><th>Tel</th><th>Email</th><th>After hrs</th></tr></thead>
+            <thead>
+              <tr>
+                <th>Organisation</th>
+                <th>Contact</th>
+                <th>Position</th>
+                <th>Cell</th>
+                <th>Tel</th>
+                <th>Email</th>
+                <th>After hrs</th>
+              </tr>
+            </thead>
             <tbody>${rows}</tbody>
           </table>
         </div>`;
     });
+
     catHTML += `</div>`;
 
-    if (index % 2 === 0) {
+    // Better height estimation for balanced columns
+    const estimatedHeight = Object.keys(hazards || {}).length * 95 + 70;
+
+    if (leftHeight <= rightHeight) {
       leftHTML += catHTML;
+      leftHeight += estimatedHeight;
     } else {
       rightHTML += catHTML;
+      rightHeight += estimatedHeight;
     }
   });
 
@@ -516,55 +551,125 @@ async function exportPDF() {
 <title>Stakeholder Directory — ${muniName}</title>
 <style>
   *{box-sizing:border-box;margin:0;padding:0}
-  body{font-family:Arial,Helvetica,sans-serif;font-size:9px;color:#1a1a2e;background:#fff;line-height:1.35}
-  @page{size:A4 landscape;margin:10mm}
+  body{
+    font-family:Arial,Helvetica,sans-serif;
+    font-size:9px;
+    color:#1a1a2e;
+    background:#fff;
+    line-height:1.4;
+    padding:12mm 10mm 15mm 10mm;
+  }
+  @page{size:A4 landscape;margin:8mm}
+
+  .header {
+    display:flex;
+    justify-content:space-between;
+    align-items:flex-start;
+    margin-bottom:12px;
+    padding-bottom:10px;
+    border-bottom:2px solid #1a3a6b;
+  }
+
+  .title-block {
+    flex:1;
+  }
+
+  .main-title {
+    font-size:19px;
+    font-weight:800;
+    color:#1a3a6b;
+    margin-bottom:3px;
+  }
+
+  .subtitle {
+    font-size:10.5px;
+    color:#444;
+  }
+
   .hazard-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 1.0cm;
-    margin: 12px 0 18px 0;
+    gap: 11mm;
+    margin-top: 8px;
   }
-  .hazard-column { break-inside: avoid; page-break-inside: avoid; }
+
+  .hazard-column { 
+    break-inside: avoid; 
+    page-break-inside: avoid; 
+  }
+
   .cat-header {
-    font-size: 12px;
+    font-size: 11.5px;
     font-weight: 800;
     text-transform: uppercase;
-    padding: 6px 11px;
-    margin-bottom: 8px;
+    padding: 8px 12px;
+    margin: 14px 0 9px 0;
     background: #f8f9fa;
     border-left: 5px solid #1a3a6b;
+    letter-spacing: 0.6px;
   }
+
   .hazard-header {
-    font-size: 10px;
+    font-size: 9.8px;
     font-weight: 700;
-    padding: 5px 10px;
-    margin: 8px 0 5px 0;
+    padding: 6px 11px;
+    margin: 9px 0 6px 0;
     background: #f0f4f8;
     border-left: 3px solid #1a3a6b;
   }
-  .hazard-meta { font-size: 8px; color: #666; margin-left: 8px; }
+
+  .hazard-meta { 
+    font-size: 8.2px; 
+    color: #666; 
+    font-weight: normal;
+  }
+
   .pdf-table {
     width: 100%;
     border-collapse: collapse;
-    margin-bottom: 9px;
-    font-size: 8.5px;
+    margin-bottom: 11px;
+    font-size: 8.3px;
   }
+
   .pdf-table th {
     background: #1a3a6b;
     color: white;
     padding: 5px 8px;
-    font-size: 7.5px;
+    font-size: 7.4px;
     text-transform: uppercase;
+    font-weight: 600;
   }
+
   .pdf-table td {
-    padding: 4px 8px;
-    border-bottom: 1px solid #ddd;
+    padding: 4.5px 7px;
+    border-bottom: 1px solid #e2e8f0;
+    vertical-align: top;
   }
-  .pdf-table tr:nth-child(even) td { background: #f9fafb; }
+
+  .pdf-table tr:nth-child(even) td { 
+    background: #f9fafb; 
+  }
+
+  .pdf-sector {
+    font-size: 7.6px;
+    color: #666;
+    line-height: 1.2;
+  }
+
+  .footer {
+    margin-top: 25px;
+    padding-top: 12px;
+    border-top: 1px solid #ddd;
+    font-size: 8.2px;
+    color: #777;
+    text-align: center;
+  }
+
   .save-btn {
-    display: block;
-    margin: 15px auto;
-    padding: 10px 28px;
+    position: fixed;
+    bottom: 25px;
+    right: 35px;
+    padding: 11px 26px;
     background: #1a3a6b;
     color: white;
     border: none;
@@ -572,22 +677,29 @@ async function exportPDF() {
     font-weight: 700;
     cursor: pointer;
     font-size: 13px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
   }
+
   @media print {
     .save-btn { display: none !important; }
+    body { padding: 8mm; }
   }
 </style>
 </head>
 <body>
-  <div style="text-align:center;margin-bottom:8px">
-    <div style="font-size:17px;font-weight:800;color:#1a3a6b">STAKEHOLDER DIRECTORY</div>
-    <div style="font-size:10px;color:#555">Hazard Response Reference • ${muniName}</div>
-  </div>
-  
-  ${logoHTML}
-  
-  <div style="font-size:8.5px;color:#777;text-align:center;margin-bottom:15px">
-    Generated: ${date} • CONFIDENTIAL
+  <div class="header">
+    <div style="display:flex;align-items:center;gap:18px;flex:1">
+      ${logoHTML}
+      <div class="title-block">
+        <div class="main-title">STAKEHOLDER DIRECTORY</div>
+        <div class="subtitle">Hazard Response Reference • ${muniName}</div>
+      </div>
+    </div>
+    
+    <div style="text-align:right;font-size:8.8px;color:#555;min-width:140px">
+      Generated: ${date}<br>
+      <strong>CONFIDENTIAL</strong>
+    </div>
   </div>
 
   <div class="hazard-grid">
@@ -595,11 +707,11 @@ async function exportPDF() {
     <div>${rightHTML}</div>
   </div>
 
-  <button class="save-btn" onclick="window.print()">💾 Save as PDF (A4 Landscape)</button>
-
-  <div style="margin-top:25px;padding-top:10px;border-top:1px solid #ddd;font-size:8px;color:#888;text-align:center">
+  <div class="footer">
     ${muniName} Disaster Management Centre
   </div>
+
+  <button class="save-btn" onclick="window.print()">💾 Save as PDF (A4 Landscape)</button>
 </body>
 </html>`;
 
@@ -607,6 +719,7 @@ async function exportPDF() {
   if (w) {
     w.document.write(html);
     w.document.close();
+    w.onload = () => setTimeout(() => w.focus(), 400);
   }
 }
 
@@ -621,4 +734,13 @@ function showToast(msg, isError = false) {
   t.textContent = msg;
   document.body.appendChild(t);
   setTimeout(() => { t.style.opacity = '0'; setTimeout(() => t.remove(), 300); }, 3000);
+}
+
+// Placeholder functions (add your actual implementation if needed)
+function getStakeholderCSVRows() {
+  return []; // TODO: Implement CSV export
+}
+
+function getStakeholderDocHTML(muniName) {
+  return `<h1>Stakeholder Directory - ${muniName}</h1>`; // TODO: Implement Word export
 }
