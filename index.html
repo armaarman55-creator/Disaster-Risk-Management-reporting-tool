@@ -160,8 +160,22 @@ select { font-family: inherit; }
 .sb-toggle svg { transition: transform .22s; }
 .sidebar.collapsed .sb-toggle svg { transform: scaleX(-1); }
 
-.sb-nav { flex: 1; overflow-y: auto; overflow-x: visible; padding: 8px 7px 14px; }
-.sb-nav::-webkit-scrollbar { width: 0; }
+.sb-nav {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: visible;
+  padding: 8px 7px 14px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--blue) transparent;
+}
+/* Blue scrollbar — Webkit */
+.sb-nav::-webkit-scrollbar { width: 3px; }
+.sb-nav::-webkit-scrollbar-track { background: transparent; }
+.sb-nav::-webkit-scrollbar-thumb {
+  background: var(--blue);
+  border-radius: 3px;
+  opacity: .6;
+}
 
 /* Section labels */
 .sb-label {
@@ -179,13 +193,12 @@ select { font-family: inherit; }
 .sni {
   position: relative;
   display: flex; align-items: center; gap: 9px;
-  padding: 5px 6px;
+  padding: 4px 6px;
   border-radius: var(--r-md);
   cursor: pointer; color: var(--text3);
   white-space: nowrap;
   margin-bottom: 1px;
   transition: background var(--transition), color var(--transition);
-  overflow: visible; /* allow tooltip to escape */
 }
 .sni:hover { background: var(--bg3); color: var(--text2); }
 .sni.on    { background: var(--blue-dim); color: var(--blue); }
@@ -200,46 +213,35 @@ select { font-family: inherit; }
 .sni.on .sni-icon { background: var(--blue); }
 .sni.on .sni-icon svg { stroke: #fff !important; }
 
-/* Label — hidden when collapsed */
+/* Label */
 .sni-label {
   font-size: 12.5px; font-weight: 500; line-height: 1;
   transition: opacity .18s, max-width .22s;
   max-width: 160px; overflow: hidden;
 }
 
-/* ── Collapsed state ── */
-.sidebar.collapsed .sb-nav { overflow-x: visible; padding: 8px 5px 14px; }
-
-.sidebar.collapsed .sni {
-  justify-content: center;
-  padding: 5px;
-}
-
-.sidebar.collapsed .sni-label {
-  opacity: 0; max-width: 0; pointer-events: none;
-}
-
-/* ── Hover tooltip when collapsed ── */
+/* ── Tooltip — always rendered, invisible by default ── */
 .sni-tooltip {
-  display: none; /* shown only when collapsed via JS class */
   position: absolute;
-  left: calc(100% + 10px);
+  left: calc(100% + 12px);
   top: 50%;
   transform: translateY(-50%);
-  background: var(--bg4);
+  background: var(--bg2);
   color: var(--text);
   border: 1px solid var(--border2);
   border-radius: var(--r-md);
-  padding: 5px 10px;
+  padding: 5px 11px;
   font-size: 12px; font-weight: 600;
   white-space: nowrap;
   pointer-events: none;
-  z-index: 200;
+  z-index: 9999;
   box-shadow: var(--shadow-md);
+  /* Hidden by default — shown only in collapsed state on hover */
   opacity: 0;
+  visibility: hidden;
   transition: opacity .12s;
 }
-/* Small left arrow */
+/* Caret arrow */
 .sni-tooltip::before {
   content: '';
   position: absolute;
@@ -247,30 +249,61 @@ select { font-family: inherit; }
   transform: translateY(-50%);
   border: 5px solid transparent;
   border-right-color: var(--border2);
-  margin-right: -1px;
 }
 .sni-tooltip::after {
   content: '';
   position: absolute;
-  right: 100%; top: 50%;
+  right: calc(100% - 1px); top: 50%;
   transform: translateY(-50%);
   border: 4px solid transparent;
-  border-right-color: var(--bg4);
+  border-right-color: var(--bg2);
 }
 
-/* Only activate tooltips when sidebar is actually collapsed */
+/* ── Collapsed state ── */
+.sidebar.collapsed {
+  overflow: visible; /* let tooltips escape the rail */
+}
+.sidebar.collapsed .sb-nav {
+  overflow-y: auto;
+  overflow-x: visible;
+  padding: 8px 0 14px; /* remove horizontal padding so items fill the rail */
+}
+.sidebar.collapsed .sni {
+  /* Fill the full rail width, icon centred */
+  width: 100%;
+  justify-content: center;
+  padding: 7px 0;
+  border-radius: 0; /* flush to rail edges */
+  margin-bottom: 0;
+}
+.sidebar.collapsed .sni:hover,
+.sidebar.collapsed .sni.on {
+  border-radius: var(--r-md); /* re-add radius on hover/active */
+}
+.sidebar.collapsed .sni-label {
+  opacity: 0; max-width: 0; pointer-events: none; overflow: hidden;
+}
+/* Show tooltip on hover in collapsed mode */
 .sidebar.collapsed .sni:hover .sni-tooltip {
-  display: block;
   opacity: 1;
+  visibility: visible;
 }
 
-/* Footer user item — hide text labels when collapsed */
+/* Footer user item — hide text when collapsed */
 .sidebar.collapsed .sb-foot-text {
   opacity: 0; max-width: 0; overflow: hidden; pointer-events: none;
   transition: opacity .18s, max-width .22s;
 }
+.sidebar.collapsed .sb-foot .sni {
+  justify-content: center;
+  padding: 7px 0;
+  border-radius: 0;
+}
+.sidebar.collapsed .sb-foot .sni:hover {
+  border-radius: var(--r-md);
+}
 
-/* ── Expand button in brand area when collapsed ── */
+/* ── Expand button — only visible when collapsed ── */
 .sb-expand-btn {
   display: none;
   width: 100%;
@@ -282,14 +315,9 @@ select { font-family: inherit; }
   transition: color var(--transition), background var(--transition);
 }
 .sb-expand-btn:hover { background: var(--bg3); color: var(--text); }
-.sb-expand-btn svg { flex-shrink: 0; }
 
 .sidebar.collapsed .sb-brand      { display: none; }
 .sidebar.collapsed .sb-expand-btn { display: flex; }
-
-/* Allow tooltips to escape the collapsed rail */
-.sidebar.collapsed { overflow: visible; }
-.sidebar.collapsed .sb-nav { overflow-y: auto; overflow-x: visible; }
 
 .sb-foot { border-top: 1px solid var(--border); padding: 8px 7px; flex-shrink: 0; }
 
