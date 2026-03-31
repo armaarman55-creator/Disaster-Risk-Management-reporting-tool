@@ -31,15 +31,15 @@
 
 :root,
 [data-theme="light"] {
-  --bg:        #f4f6f9;
-  --bg2:       #ffffff;
-  --bg3:       #f0f2f6;
-  --bg4:       #e6e9ef;
-  --bg5:       #d8dce6;
-  --border:    #e8ebf0;
-  --border2:   #d0d5de;
-  --text:      #111827;
-  --text2:     #374151;
+  --bg:        #eceef3;
+  --bg2:       #f4f6f9;
+  --bg3:       #eaecf2;
+  --bg4:       #dde0ea;
+  --bg5:       #cdd2df;
+  --border:    #dfe3ed;
+  --border2:   #c8ceda;
+  --text:      #2c3444;
+  --text2:     #47526a;
   --text3:     #6b7280;
   --text4:     #9ca3af;
 
@@ -170,20 +170,27 @@ select { font-family: inherit; }
   transition: opacity .14s, height .22s, padding .22s;
   height: 28px;
 }
-.sidebar.collapsed .sb-label { opacity: 0; height: 0; padding: 0; }
+.sidebar.collapsed .sb-label { opacity: 0; height: 0; padding: 0; overflow: hidden; }
 
 .sni {
   display: flex; align-items: center; gap: 8px;
-  padding: 7px 7px; border-radius: var(--r-md);
+  padding: 5px 5px; border-radius: var(--r-md);
   cursor: pointer; color: var(--text3);
   white-space: nowrap; overflow: hidden; margin-bottom: 1px;
   transition: background var(--transition), color var(--transition);
+  justify-content: flex-start;
 }
 .sni:hover { background: var(--bg3); color: var(--text2); }
 .sni.on    { background: var(--blue-dim); color: var(--blue); }
 
+/* When sidebar is collapsed, center the icon */
+.sidebar.collapsed .sni {
+  justify-content: center;
+  padding: 5px 0;
+}
+
 .sni-icon {
-  width: 28px; height: 28px; border-radius: var(--r-sm);
+  width: 30px; height: 30px; border-radius: var(--r-sm);
   display: flex; align-items: center; justify-content: center; flex-shrink: 0;
 }
 .sni.on .sni-icon { background: var(--blue); }
@@ -191,6 +198,26 @@ select { font-family: inherit; }
 .sni-label { font-size: 12.5px; font-weight: 500; line-height: 1; }
 
 .sb-foot { border-top: 1px solid var(--border); padding: 8px 7px; flex-shrink: 0; }
+
+/* Expand button — only visible when sidebar is collapsed */
+.sb-expand-btn {
+  display: none;
+  width: 100%;
+  height: var(--topbar-h);
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: none;
+  border-bottom: 1px solid var(--border);
+  color: var(--text3);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: color var(--transition), background var(--transition);
+}
+.sb-expand-btn:hover { background: var(--bg3); color: var(--text); }
+
+.sidebar.collapsed .sb-brand     { display: none; }
+.sidebar.collapsed .sb-expand-btn { display: flex; }
 
 /* ═══ MAIN AREA ═══ */
 .main-area { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
@@ -277,9 +304,10 @@ select { font-family: inherit; }
 .kpi-card {
   border-radius: var(--r-xl);
   padding: 18px 20px;
-  border: none;
+  border: 1px solid var(--border2);
   position: relative;
   overflow: hidden;
+  box-shadow: var(--shadow-sm);
 }
 .kpi-card.red   { background: var(--kpi-red-bg); }
 .kpi-card.amber { background: var(--kpi-amber-bg); }
@@ -321,8 +349,9 @@ select { font-family: inherit; }
 .ds-panel {
   background: var(--bg2);
   border-radius: var(--r-xl);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border2);
   overflow: hidden;
+  box-shadow: var(--shadow-sm);
 }
 .ds-ph {
   padding: 12px 15px;
@@ -375,8 +404,9 @@ select { font-family: inherit; }
 .map-card {
   background: var(--bg2);
   border-radius: var(--r-xl);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border2);
   overflow: hidden;
+  box-shadow: var(--shadow-sm);
 }
 .map-card-head {
   padding: 12px 15px;
@@ -585,6 +615,10 @@ select { font-family: inherit; }
 
   <!-- SIDEBAR -->
   <aside class="sidebar" id="sidebar">
+    <!-- Expand button — only visible when collapsed -->
+    <button class="sb-expand-btn" id="sidebar-expand" title="Expand sidebar">
+      <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" width="13" height="13"><path d="M4 2.5L7.5 6 4 9.5"/></svg>
+    </button>
     <div class="sb-brand">
       <svg class="sb-logo" viewBox="0 0 24 24" fill="none">
         <polygon points="12,21 2,6 22,6" fill="#1a3a6b" stroke="white" stroke-width="1.2" stroke-linejoin="round"/>
@@ -632,14 +666,6 @@ select { font-family: inherit; }
         <div class="sni-icon"><svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" width="15" height="15"><rect x="2" y="2" width="10" height="10" rx="1"/><path d="M4 5h6M4 8h4"/></svg></div>
         <span class="sni-label">HVC Tool</span>
       </div>
-      <div class="sni tni" data-page="history">
-        <div class="sni-icon"><svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" width="15" height="15"><circle cx="7" cy="7" r="5"/><path d="M7 4v3l2 2"/></svg></div>
-        <span class="sni-label">History</span>
-      </div>
-      <div class="sni tni" data-page="mitigations">
-        <div class="sni-icon"><svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" width="15" height="15"><path d="M7 2l1.2 3.5h3.7l-3 2.1 1.2 3.5L7 9.2l-3.1 1.9 1.2-3.5-3-2.1h3.7z"/></svg></div>
-        <span class="sni-label">Mitigations</span>
-      </div>
 
       <div class="sb-label">Planning</div>
       <div class="sni tni" data-page="idp">
@@ -649,10 +675,6 @@ select { font-family: inherit; }
       <div class="sni tni" data-page="stakeholders">
         <div class="sni-icon"><svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" width="15" height="15"><circle cx="5" cy="4" r="2"/><path d="M1 12c0-2.2 1.8-4 4-4s4 1.8 4 4"/><circle cx="11" cy="5" r="1.5"/></svg></div>
         <span class="sni-label">Stakeholders</span>
-      </div>
-      <div class="sni tni" data-page="reports">
-        <div class="sni-icon"><svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" width="15" height="15"><rect x="2" y="1" width="10" height="12" rx="1"/><path d="M4 5h6M4 8h4M4 11h2"/></svg></div>
-        <span class="sni-label">Reports</span>
       </div>
       <div class="sni tni" data-page="admin" id="nav-admin" style="display:none">
         <div class="sni-icon"><svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" width="15" height="15"><circle cx="7" cy="4" r="2.5"/><path d="M1 13c0-3.3 2.7-6 6-6s6 2.7 6 6"/></svg></div>
@@ -880,13 +902,15 @@ select { font-family: inherit; }
   // Sidebar collapse
   var sidebar = document.getElementById('sidebar');
   var btn = document.getElementById('sidebar-toggle');
+  var expandBtn = document.getElementById('sidebar-expand');
   var KEY = 'drmsa-sidebar-collapsed';
   if (localStorage.getItem(KEY) === '1') sidebar && sidebar.classList.add('collapsed');
-  btn && btn.addEventListener('click', function(e){
-    e.stopPropagation();
+  function toggleSidebar() {
     sidebar && sidebar.classList.toggle('collapsed');
     localStorage.setItem(KEY, sidebar && sidebar.classList.contains('collapsed') ? '1' : '0');
-  });
+  }
+  btn && btn.addEventListener('click', function(e){ e.stopPropagation(); toggleSidebar(); });
+  expandBtn && expandBtn.addEventListener('click', function(e){ e.stopPropagation(); toggleSidebar(); });
 
   // Light theme as default
   var theme = localStorage.getItem('drmsa-theme') || 'light';
