@@ -185,9 +185,11 @@ async function loadPageModule(pageId) {
         m.initProfile(_user);
         break;
       }
-      case 'risk-map':
-        renderPlaceholder('risk-map', 'Risk map', 'Complete HVC assessments to generate a full risk map.');
+      case 'risk-map': {
+        const m = await import('./risk-map.js');
+        m.initRiskMap(_user);
         break;
+      }
       case 'history':
         renderPlaceholder('history', 'Assessment history', 'All completed HVC assessments will appear here.');
         break;
