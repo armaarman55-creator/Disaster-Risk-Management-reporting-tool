@@ -32,6 +32,7 @@ let _currentFeatureCollection = null;
 let _navControlsAdded = false;
 let _placesDebounceTimer = null;
 let _placesCacheKey = '';
+let _currentWardSummary = {};
 
 export async function initRiskMap(user) {
   _user = user;
@@ -64,6 +65,7 @@ function renderShell(page) {
         </div>
         <div class="rm-actions">
           <button class="btn btn-sm" id="rm-reset">Reset map</button>
+          <button class="btn btn-sm" id="rm-pdf-report">Download PDF Report</button>
           <button class="btn btn-sm" id="rm-png-current">Download PNG (Current View)</button>
           <button class="btn btn-sm" id="rm-png-full">Download PNG (Full Map)</button>
         </div>
@@ -102,6 +104,7 @@ function bindUi() {
   bindWardSearch();
 
   document.getElementById('rm-reset')?.addEventListener('click', () => resetMapView());
+  document.getElementById('rm-pdf-report')?.addEventListener('click', () => downloadPdfReport());
   document.getElementById('rm-png-current')?.addEventListener('click', () => downloadCurrentViewPng());
   document.getElementById('rm-png-full')?.addEventListener('click', () => downloadFullExtentPng());
 }
@@ -206,6 +209,7 @@ async function renderMapLayers() {
   if (!_map || !_wardFeatures.length) return;
 
   const wardSummary = buildWardSummary();
+  _currentWardSummary = wardSummary;
 
   const featureCollection = {
     type: 'FeatureCollection',
@@ -564,6 +568,136 @@ function destroyMap() {
   _placesCacheKey = '';
   if (_placesDebounceTimer) clearTimeout(_placesDebounceTimer);
   _placesDebounceTimer = null;
+}
+
+
+function downloadPdfReport() {
+  if (!_map) return;
+  const mapImage = _map.getCanvas().toDataURL('image/png');
+  const modeLabel = ANALYSIS_MODES.find(m => m.key === _mode)?.label || _mode;
+  const generatedAt = new Date().toLocaleString();
+  const muniName = _user?.municipalities?.name || 'Municipality';
+
+  const wardRows = Object.entries(_currentWardSummary || {})
+    .map(([ward, s]) => ({ ward: Number(ward), ...s }))
+    .sort((a, b) => a.ward - b.ward);
+
+  const metricLabel = {
+    hazard: 'Hazard score',
+    vulnerability: 'Vulnerability score',
+    capacity: 'Capacity score',
+    priority: 'Priority index'
+  }[_mode] || 'Score';
+
+  const detailRows = wardRows.map(w => {
+    const hazards = (_rows || []).filter(r => Array.isArray(r.affected_wards) && r.affected_wards.map(String).includes(String(w.ward)));
+    const hazardList = hazards.map(h => {
+      const metric = {
+        hazard: h.hazard_score,
+        vulnerability: h.vulnerability_score,
+        capacity: h.capacity_score,
+        priority: h.priority_index
+      }[_mode];
+      return `<tr>
+        <td>${escapeHtml(h.hazard_name || '—')}</td>
+        <td>${escapeHtml(h.hazard_category || '—')}</td>
+        <td>${metric == null ? '—' : Number(metric).toFixed(2)}</td>
+        <td>${h.risk_rating == null ? '—' : Number(h.risk_rating).toFixed(2)}</td>
+        <td>${escapeHtml(h.risk_band || '—')}</td>
+      </tr>`;
+    }).join('');
+
+    return `
+      <h3>Ward ${w.ward} — ${w.band || 'NO DATA'}</h3>
+      <p><strong>Composite:</strong> ${w.composite == null ? '—' : Number(w.composite).toFixed(2)} · <strong>Average:</strong> ${w.avg == null ? '—' : Number(w.avg).toFixed(2)} · <strong>P90:</strong> ${w.p90 == null ? '—' : Number(w.p90).toFixed(2)} · <strong>Records:</strong> ${w.count || 0}</p>
+      <table>
+        <thead><tr><th>Hazard</th><th>Category</th><th>${metricLabel}</th><th>Risk rating</th><th>Risk band</th></tr></thead>
+        <tbody>${hazardList || '<tr><td colspan="5">No hazard rows linked to this ward.</td></tr>'}</tbody>
+      </table>
+    `;
+  }).join('');
+
+  const summaryTable = wardRows.map(w => `
+    <tr>
+      <td>${w.ward}</td>
+      <td>${escapeHtml(w.band || 'NO DATA')}</td>
+      <td>${w.avg == null ? '—' : Number(w.avg).toFixed(2)}</td>
+      <td>${w.p90 == null ? '—' : Number(w.p90).toFixed(2)}</td>
+      <td>${w.composite == null ? '—' : Number(w.composite).toFixed(2)}</td>
+      <td>${w.count || 0}</td>
+    </tr>
+  `).join('');
+
+  const legendRows = ['VERY HIGH','HIGH','MEDIUM','LOW','VERY LOW','NO DATA']
+    .map(l => `<div class="legend-row"><span class="dot" style="background:${BAND_COLORS[l] || '#999'}"></span>${l}</div>`)
+    .join('');
+
+  const methodology = `
+    <ul>
+      <li>Per-ward analysis uses HVC rows linked via <code>affected_wards</code>.</li>
+      <li>Ward average and P90 are computed from ${metricLabel.toLowerCase()} values.</li>
+      <li>Composite score = <strong>0.7 × Average + 0.3 × P90</strong>.</li>
+      <li>Ward bands are assigned by quantile breaks (5 bins) from composite scores across wards with data.</li>
+      <li>No values available → <strong>NO DATA</strong> band.</li>
+    </ul>
+  `;
+
+  const html = `
+  <html>
+    <head>
+      <title>${escapeHtml(modeLabel)} Report</title>
+      <style>
+        body{font-family:Inter,Arial,sans-serif;padding:24px;color:#111;line-height:1.45}
+        h1{margin:0 0 4px;font-size:22px}
+        h2{margin:20px 0 8px;font-size:16px}
+        h3{margin:16px 0 4px;font-size:14px}
+        .meta{font-size:12px;color:#555;margin-bottom:12px}
+        .map{width:100%;max-width:900px;border:1px solid #ccc;border-radius:8px}
+        .legend{display:flex;flex-wrap:wrap;gap:10px;margin:8px 0 12px}
+        .legend-row{display:flex;align-items:center;gap:6px;font-size:12px}
+        .dot{width:10px;height:10px;border-radius:50%;display:inline-block}
+        table{width:100%;border-collapse:collapse;margin-top:6px}
+        th,td{border:1px solid #ddd;padding:6px;font-size:11px;vertical-align:top}
+        th{background:#f5f5f5;text-align:left}
+      </style>
+    </head>
+    <body>
+      <h1>Risk Map Analysis Report</h1>
+      <div class="meta"><strong>Municipality:</strong> ${escapeHtml(muniName)} · <strong>Analysis:</strong> ${escapeHtml(modeLabel)} · <strong>Generated:</strong> ${escapeHtml(generatedAt)}</div>
+
+      <h2>Map</h2>
+      <img class="map" src="${mapImage}" alt="Risk map" />
+      <div class="legend">${legendRows}</div>
+
+      <h2>Methodology</h2>
+      ${methodology}
+
+      <h2>Ward Summary</h2>
+      <table>
+        <thead><tr><th>Ward</th><th>Band</th><th>Average</th><th>P90</th><th>Composite</th><th>Records</th></tr></thead>
+        <tbody>${summaryTable || '<tr><td colspan="6">No ward data.</td></tr>'}</tbody>
+      </table>
+
+      <h2>Ward Hazard Detail</h2>
+      ${detailRows || '<p>No ward-linked hazard data available.</p>'}
+    </body>
+  </html>`;
+
+  const win = window.open('', '_blank');
+  if (!win) { alert('Unable to open report window. Please allow popups.'); return; }
+  win.document.write(html);
+  win.document.close();
+  win.focus();
+  win.print();
+}
+
+function escapeHtml(v) {
+  return String(v ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 function downloadCurrentViewPng() {
