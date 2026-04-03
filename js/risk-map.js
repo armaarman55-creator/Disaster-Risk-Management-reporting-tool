@@ -663,13 +663,17 @@ function openReportPreview() {
         .dot{width:10px;height:10px;border-radius:50%;display:inline-block}
         table{width:100%;border-collapse:collapse;margin-top:6px}
         th,td{border:1px solid #ddd;padding:6px;font-size:11px;vertical-align:top}
-        th{background:#f5f5f5;text-align:left}
+        th{background:#e3e3e3;background:linear-gradient(180deg,#ececec 0%,#dddddd 100%);text-align:left;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+        @media print{
+          .no-print{display:none !important}
+          body{padding:12mm}
+        }
       </style>
     </head>
     <body>
       <h1>Risk Map Analysis Report</h1>
       <div class="meta"><strong>Municipality:</strong> ${escapeHtml(muniName)} · <strong>Analysis:</strong> ${escapeHtml(modeLabel)} · <strong>Generated:</strong> ${escapeHtml(generatedAt)}</div>
-      <div class="top-actions">
+      <div class="top-actions no-print">
         <button class="btn" onclick="window.print()">Download PDF</button>
         <button class="btn" onclick="window.print()">Print</button>
       </div>
