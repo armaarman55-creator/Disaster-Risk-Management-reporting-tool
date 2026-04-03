@@ -28,6 +28,7 @@ let _handlersBound = false;
 let _mode = 'hazard';
 let _mdbWardNumField = 'WARD_NO';
 let _currentFeatureCollection = null;
+let _navControlsAdded = false;
 
 export async function initRiskMap(user) {
   _user = user;
@@ -36,6 +37,7 @@ export async function initRiskMap(user) {
   const page = document.getElementById('page-risk-map');
   if (!page) return;
 
+  destroyMap();
   renderShell(page);
 
   if (!_muniId) {
@@ -58,6 +60,7 @@ function renderShell(page) {
           <div class="rm-sub">Ward-level analysis from HVC assessment scores</div>
         </div>
         <div class="rm-actions">
+          <button class="btn btn-sm" id="rm-reset">Reset map</button>
           <button class="btn btn-sm" id="rm-png-current">Download PNG (Current View)</button>
           <button class="btn btn-sm" id="rm-png-full">Download PNG (Full Map)</button>
         </div>
@@ -96,6 +99,7 @@ function bindUi() {
 
   bindWardSearch();
 
+  document.getElementById('rm-reset')?.addEventListener('click', () => resetMapView());
   document.getElementById('rm-png-current')?.addEventListener('click', () => downloadCurrentViewPng());
   document.getElementById('rm-png-full')?.addEventListener('click', () => downloadFullExtentPng());
 }
@@ -184,6 +188,11 @@ async function ensureMapInitialized() {
   });
 
   await new Promise(resolve => _map.once('load', resolve));
+
+  if (!_navControlsAdded && window.maplibregl?.NavigationControl) {
+    _map.addControl(new window.maplibregl.NavigationControl({ showCompass: false }), 'top-right');
+    _navControlsAdded = true;
+  }
 }
 
 async function renderMapLayers() {
@@ -421,6 +430,22 @@ function renderLegend() {
 function zoomToWard(wardNum) {
   if (!_map) return;
   zoomToWardOnMap(_map, wardNum, _wardFeatureIndex, _currentFeatureCollection?.features || [], { padding: 70, maxZoom: 13 });
+}
+
+function resetMapView() {
+  if (!_map || !_mapBounds) return;
+  _map.fitBounds([[_mapBounds.minX, _mapBounds.minY], [_mapBounds.maxX, _mapBounds.maxY]], { padding: 30, maxZoom: 12 });
+  document.getElementById('rm-ward-tooltip')?.remove();
+}
+
+function destroyMap() {
+  document.getElementById('rm-ward-tooltip')?.remove();
+  if (_map) {
+    _map.remove();
+    _map = null;
+  }
+  _handlersBound = false;
+  _navControlsAdded = false;
 }
 
 function downloadCurrentViewPng() {
