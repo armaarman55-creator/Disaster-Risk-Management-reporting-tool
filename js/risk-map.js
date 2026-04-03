@@ -65,7 +65,7 @@ function renderShell(page) {
         </div>
         <div class="rm-actions">
           <button class="btn btn-sm" id="rm-reset">Reset map</button>
-          <button class="btn btn-sm" id="rm-pdf-report">Download PDF Report</button>
+          <button class="btn btn-sm" id="rm-report-preview">Open Report</button>
           <button class="btn btn-sm" id="rm-png-current">Download PNG (Current View)</button>
           <button class="btn btn-sm" id="rm-png-full">Download PNG (Full Map)</button>
         </div>
@@ -104,7 +104,7 @@ function bindUi() {
   bindWardSearch();
 
   document.getElementById('rm-reset')?.addEventListener('click', () => resetMapView());
-  document.getElementById('rm-pdf-report')?.addEventListener('click', () => downloadPdfReport());
+  document.getElementById('rm-report-preview')?.addEventListener('click', () => openReportPreview());
   document.getElementById('rm-png-current')?.addEventListener('click', () => downloadCurrentViewPng());
   document.getElementById('rm-png-full')?.addEventListener('click', () => downloadFullExtentPng());
 }
@@ -571,7 +571,7 @@ function destroyMap() {
 }
 
 
-function downloadPdfReport() {
+function openReportPreview() {
   if (!_map) return;
   const mapImage = _map.getCanvas().toDataURL('image/png');
   const modeLabel = ANALYSIS_MODES.find(m => m.key === _mode)?.label || _mode;
@@ -634,11 +634,14 @@ function downloadPdfReport() {
 
   const methodology = `
     <ul>
-      <li>Per-ward analysis uses HVC rows linked via <code>affected_wards</code>.</li>
-      <li>Ward average and P90 are computed from ${metricLabel.toLowerCase()} values.</li>
-      <li>Composite score = <strong>0.7 × Average + 0.3 × P90</strong>.</li>
-      <li>Ward bands are assigned by quantile breaks (5 bins) from composite scores across wards with data.</li>
-      <li>No values available → <strong>NO DATA</strong> band.</li>
+      <li><strong>Input data:</strong> This analysis uses HVC records linked to each ward through <code>affected_wards</code>.</li>
+      <li><strong>Mode metric:</strong> The selected analysis uses ${metricLabel.toLowerCase()} as the per-record value.</li>
+      <li><strong>Average (Mean):</strong> Typical ward-level score across linked hazards.</li>
+      <li><strong>P90 (90th percentile):</strong> Score above which only 10% of linked records lie; captures elevated risk pressure without relying only on the maximum.</li>
+      <li><strong>Composite score:</strong> <code>0.7 × Average + 0.3 × P90</code> to balance general conditions and high-end risk behavior.</li>
+      <li><strong>Banding:</strong> Composite scores are split into five quantile classes (Very Low → Very High) so classes are relative to the municipality dataset.</li>
+      <li><strong>No Data:</strong> Assigned when no valid metric values are available for ward-linked records.</li>
+      <li><strong>Interpretation:</strong> Higher classes indicate comparatively higher local concentration of risk for the selected analysis mode.</li>
     </ul>
   `;
 
@@ -648,10 +651,12 @@ function downloadPdfReport() {
       <title>${escapeHtml(modeLabel)} Report</title>
       <style>
         body{font-family:Inter,Arial,sans-serif;padding:24px;color:#111;line-height:1.45}
-        h1{margin:0 0 4px;font-size:22px}
-        h2{margin:20px 0 8px;font-size:16px}
+        h1{margin:0 0 4px;font-size:22px;border-bottom:1px solid #ddd;padding-bottom:6px}
+        h2{margin:20px 0 8px;font-size:16px;border-bottom:1px solid #e6e6e6;padding-bottom:4px}
         h3{margin:16px 0 4px;font-size:14px}
         .meta{font-size:12px;color:#555;margin-bottom:12px}
+        .top-actions{position:sticky;top:0;background:#fff;padding:8px 0 10px;border-bottom:1px solid #ececec;margin-bottom:10px;display:flex;gap:8px;z-index:5}
+        .btn{border:1px solid #bbb;background:#fff;padding:6px 10px;border-radius:6px;font-size:12px;cursor:pointer}
         .map{width:100%;max-width:900px;border:1px solid #ccc;border-radius:8px}
         .legend{display:flex;flex-wrap:wrap;gap:10px;margin:8px 0 12px}
         .legend-row{display:flex;align-items:center;gap:6px;font-size:12px}
@@ -664,6 +669,10 @@ function downloadPdfReport() {
     <body>
       <h1>Risk Map Analysis Report</h1>
       <div class="meta"><strong>Municipality:</strong> ${escapeHtml(muniName)} · <strong>Analysis:</strong> ${escapeHtml(modeLabel)} · <strong>Generated:</strong> ${escapeHtml(generatedAt)}</div>
+      <div class="top-actions">
+        <button class="btn" onclick="window.print()">Download PDF</button>
+        <button class="btn" onclick="window.print()">Print</button>
+      </div>
 
       <h2>Map</h2>
       <img class="map" src="${mapImage}" alt="Risk map" />
@@ -688,7 +697,6 @@ function downloadPdfReport() {
   win.document.write(html);
   win.document.close();
   win.focus();
-  win.print();
 }
 
 function escapeHtml(v) {
