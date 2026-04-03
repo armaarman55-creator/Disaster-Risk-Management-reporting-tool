@@ -10,13 +10,12 @@ const ANALYSIS_MODES = [
 ];
 
 const BAND_COLORS = {
-  HIGH: '#f85149',
-  MEDIUM: '#d29922',
-  LOW: '#3fb950',
-  'NO DATA': '#6e7681'
+  'VERY LOW': '#8CE99A',
+  LOW: '#2B8A3E',
+  MEDIUM: '#F2C94C',
+  HIGH: '#EB5757',
+  'NO DATA': '#9CA3AF'
 };
-
-const BAND_WEIGHT = { HIGH: 3, MEDIUM: 2, LOW: 1, 'NO DATA': 0 };
 
 let _user = null;
 let _muniId = null;
@@ -282,37 +281,20 @@ function buildWardSummary() {
 
   const modeCfg = {
     hazard: {
-      value: (r) => Number.isFinite(r?.risk_rating) ? Number(r.risk_rating) : null,
-      band: (v, r) => {
-        if (r?.risk_band) {
-          const rb = String(r.risk_band).toLowerCase();
-          if (rb.includes('extremely') || rb === 'high') return 'HIGH';
-          if (rb === 'tolerable') return 'MEDIUM';
-          return 'LOW';
-        }
-        if (v == null) return 'NO DATA';
-        if (v > 15) return 'HIGH';
-        if (v > 10) return 'MEDIUM';
-        return 'LOW';
-      }
+      value: (r) => Number.isFinite(r?.hazard_score) ? Number(r.hazard_score) : null,
+      band: (v) => bandFromFiveScale(v)
     },
     vulnerability: {
       value: (r) => Number.isFinite(r?.vulnerability_score) ? Number(r.vulnerability_score) : null,
-      band: (v) => v == null ? 'NO DATA' : (v > 3.5 ? 'HIGH' : v > 2 ? 'MEDIUM' : 'LOW')
+      band: (v) => bandFromFiveScale(v)
     },
     capacity: {
       value: (r) => Number.isFinite(r?.capacity_score) ? Number(r.capacity_score) : null,
-      band: (v) => v == null ? 'NO DATA' : (v > 3.5 ? 'HIGH' : v > 2 ? 'MEDIUM' : 'LOW')
+      band: (v) => bandFromFiveScale(v)
     },
     priority: {
       value: (r) => Number.isFinite(r?.priority_index) ? Number(r.priority_index) : null,
-      band: (v, r) => {
-        if (r?.priority_level) {
-          const p = String(r.priority_level).toUpperCase();
-          if (p === 'HIGH' || p === 'MEDIUM' || p === 'LOW') return p;
-        }
-        return v == null ? 'NO DATA' : (v > 3.5 ? 'HIGH' : v > 2 ? 'MEDIUM' : 'LOW');
-      }
+      band: (v) => bandFromFiveScale(v)
     }
   }[_mode] || null;
 
@@ -321,25 +303,32 @@ function buildWardSummary() {
   _rows.forEach(r => {
     const wards = Array.isArray(r.affected_wards) ? r.affected_wards : [];
     const value = modeCfg.value(r);
-    const band = modeCfg.band(value, r);
 
     wards.forEach(wRaw => {
       const ward = parseInt(wRaw, 10);
       if (!Number.isFinite(ward)) return;
-      if (!map[ward]) map[ward] = { scores: [], peak: 'NO DATA', count: 0 };
+      if (!map[ward]) map[ward] = { scores: [], count: 0 };
 
       if (value != null) map[ward].scores.push(value);
       map[ward].count += 1;
-      if (BAND_WEIGHT[band] > BAND_WEIGHT[map[ward].peak]) map[ward].peak = band;
     });
   });
 
   Object.entries(map).forEach(([ward, rec]) => {
     const avg = rec.scores.length ? rec.scores.reduce((a, b) => a + b, 0) / rec.scores.length : null;
-    map[ward] = { band: rec.peak, avg, count: rec.count };
+    map[ward] = { band: modeCfg.band(avg), avg, count: rec.count };
   });
 
   return map;
+}
+
+
+function bandFromFiveScale(v) {
+  if (v == null) return 'NO DATA';
+  if (v <= 2) return 'VERY LOW';
+  if (v <= 3) return 'LOW';
+  if (v <= 4) return 'MEDIUM';
+  return 'HIGH';
 }
 
 function bindMapHandlers() {
@@ -420,7 +409,7 @@ function renderLegend() {
   const modeLabel = ANALYSIS_MODES.find(m => m.key === _mode)?.label || _mode;
   el.innerHTML = `
     <div class="rm-legend-title">${modeLabel} legend</div>
-    ${['HIGH', 'MEDIUM', 'LOW', 'NO DATA'].map(label => `
+    ${['HIGH', 'MEDIUM', 'LOW', 'VERY LOW', 'NO DATA'].map(label => `
       <div class="rm-leg-item">
         <span class="rm-leg-dot" style="background:${BAND_COLORS[label]}"></span>
         <span>${label}</span>
