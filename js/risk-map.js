@@ -13,7 +13,8 @@ const BAND_COLORS = {
   'VERY LOW': '#8CE99A',
   LOW: '#2B8A3E',
   MEDIUM: '#F2C94C',
-  HIGH: '#EB5757',
+  HIGH: '#F2994A',
+  'VERY HIGH': '#EB5757',
   'NO DATA': '#9CA3AF'
 };
 
@@ -29,6 +30,8 @@ let _mode = 'hazard';
 let _mdbWardNumField = 'WARD_NO';
 let _currentFeatureCollection = null;
 let _navControlsAdded = false;
+let _placesDebounceTimer = null;
+let _placesCacheKey = '';
 
 export async function initRiskMap(user) {
   _user = user;
@@ -83,9 +86,8 @@ function renderShell(page) {
 
       <div class="rm-map-wrap" id="risk-map-canvas-wrap">
         <div id="risk-maplibre-map"></div>
+        <div class="rm-legend rm-legend-overlay" id="rm-legend"></div>
       </div>
-
-      <div class="rm-legend" id="rm-legend"></div>
     </div>
   `;
 }
@@ -193,6 +195,11 @@ async function ensureMapInitialized() {
     _map.addControl(new window.maplibregl.NavigationControl({ showCompass: false }), 'top-right');
     _navControlsAdded = true;
   }
+
+  _map.on('moveend', () => {
+    if (_placesDebounceTimer) clearTimeout(_placesDebounceTimer);
+    _placesDebounceTimer = setTimeout(() => renderBackgroundPlaceNames(), 500);
+  });
 }
 
 async function renderMapLayers() {
@@ -217,6 +224,8 @@ async function renderMapLayers() {
           ward_number: wardNum,
           band: summary.band,
           avg_score: summary.avg,
+          p90_score: summary.p90,
+          composite_score: summary.composite,
           item_count: summary.count,
           fill_color: BAND_COLORS[summary.band] || BAND_COLORS['NO DATA']
         }
@@ -283,61 +292,163 @@ async function renderMapLayers() {
   }
 
   bindMapHandlers();
+  renderBackgroundPlaceNames();
 }
 
 function buildWardSummary() {
   const map = {};
 
-  const modeCfg = {
-    hazard: {
-      value: (r) => Number.isFinite(r?.hazard_score) ? Number(r.hazard_score) : null,
-      band: (v) => bandFromFiveScale(v)
-    },
-    vulnerability: {
-      value: (r) => Number.isFinite(r?.vulnerability_score) ? Number(r.vulnerability_score) : null,
-      band: (v) => bandFromFiveScale(v)
-    },
-    capacity: {
-      value: (r) => Number.isFinite(r?.capacity_score) ? Number(r.capacity_score) : null,
-      band: (v) => bandFromFiveScale(v)
-    },
-    priority: {
-      value: (r) => Number.isFinite(r?.priority_index) ? Number(r.priority_index) : null,
-      band: (v) => bandFromFiveScale(v)
-    }
-  }[_mode] || null;
+  const valueFn = {
+    hazard: (r) => Number.isFinite(r?.hazard_score) ? Number(r.hazard_score) : null,
+    vulnerability: (r) => Number.isFinite(r?.vulnerability_score) ? Number(r.vulnerability_score) : null,
+    capacity: (r) => Number.isFinite(r?.capacity_score) ? Number(r.capacity_score) : null,
+    priority: (r) => Number.isFinite(r?.priority_index) ? Number(r.priority_index) : null
+  }[_mode];
 
-  if (!modeCfg) return map;
+  if (!valueFn) return map;
 
   _rows.forEach(r => {
     const wards = Array.isArray(r.affected_wards) ? r.affected_wards : [];
-    const value = modeCfg.value(r);
+    const value = valueFn(r);
 
     wards.forEach(wRaw => {
       const ward = parseInt(wRaw, 10);
       if (!Number.isFinite(ward)) return;
       if (!map[ward]) map[ward] = { scores: [], count: 0 };
-
       if (value != null) map[ward].scores.push(value);
       map[ward].count += 1;
     });
   });
 
+  const composites = [];
   Object.entries(map).forEach(([ward, rec]) => {
     const avg = rec.scores.length ? rec.scores.reduce((a, b) => a + b, 0) / rec.scores.length : null;
-    map[ward] = { band: modeCfg.band(avg), avg, count: rec.count };
+    const p90 = rec.scores.length ? percentile(rec.scores, 0.9) : null;
+    const composite = (avg == null || p90 == null) ? null : (0.7 * avg + 0.3 * p90);
+    map[ward] = { avg, p90, composite, count: rec.count, band: 'NO DATA' };
+    if (composite != null) composites.push(composite);
+  });
+
+  const breaks = quantileBreaks(composites, 5);
+  Object.entries(map).forEach(([ward, rec]) => {
+    map[ward] = { ...rec, band: bandFromBreaks(rec.composite, breaks) };
   });
 
   return map;
 }
 
+function percentile(values, p) {
+  if (!Array.isArray(values) || !values.length) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const idx = (sorted.length - 1) * p;
+  const lo = Math.floor(idx);
+  const hi = Math.ceil(idx);
+  if (lo === hi) return sorted[lo];
+  const w = idx - lo;
+  return sorted[lo] * (1 - w) + sorted[hi] * w;
+}
 
-function bandFromFiveScale(v) {
-  if (v == null) return 'NO DATA';
-  if (v <= 2) return 'VERY LOW';
-  if (v <= 3) return 'LOW';
-  if (v <= 4) return 'MEDIUM';
-  return 'HIGH';
+function quantileBreaks(values, bins = 5) {
+  if (!Array.isArray(values) || !values.length) return [];
+  const b = [];
+  for (let i = 1; i < bins; i++) b.push(percentile(values, i / bins));
+  return b;
+}
+
+function bandFromBreaks(v, breaks) {
+  if (v == null || !Array.isArray(breaks) || breaks.length < 4) return 'NO DATA';
+  if (v <= breaks[0]) return 'VERY LOW';
+  if (v <= breaks[1]) return 'LOW';
+  if (v <= breaks[2]) return 'MEDIUM';
+  if (v <= breaks[3]) return 'HIGH';
+  return 'VERY HIGH';
+}
+
+async function renderBackgroundPlaceNames() {
+  if (!_map) return;
+  const zoom = _map.getZoom?.() || 0;
+
+  if (zoom < 10) {
+    if (_map.getLayer('rm-osm-place-label')) _map.removeLayer('rm-osm-place-label');
+    if (_map.getSource('rm-osm-place-source')) _map.removeSource('rm-osm-place-source');
+    _placesCacheKey = '';
+    return;
+  }
+
+  const b = _map.getBounds?.();
+  if (!b) return;
+  const bbox = { south: b.getSouth(), west: b.getWest(), north: b.getNorth(), east: b.getEast() };
+  const zBucket = Math.floor(zoom * 2) / 2;
+  const cacheKey = [zBucket, bbox.south.toFixed(3), bbox.west.toFixed(3), bbox.north.toFixed(3), bbox.east.toFixed(3)].join('|');
+  if (_placesCacheKey === cacheKey && _map.getSource('rm-osm-place-source')) return;
+  _placesCacheKey = cacheKey;
+
+  const placeTypes = zoom >= 13 ? 'city|town|village|suburb|neighbourhood' : 'city|town|village|suburb';
+  const query = `
+[out:json][timeout:20];
+(
+  node["place"~"${placeTypes}"](${bbox.south},${bbox.west},${bbox.north},${bbox.east});
+  way["place"~"${placeTypes}"](${bbox.south},${bbox.west},${bbox.north},${bbox.east});
+  relation["place"~"${placeTypes}"](${bbox.south},${bbox.west},${bbox.north},${bbox.east});
+);
+out center;
+`;
+
+  try {
+    const endpoints = [
+      'https://overpass.kumi.systems/api/interpreter',
+      'https://overpass-api.de/api/interpreter'
+    ];
+
+    let data = null;
+    for (const endpoint of endpoints) {
+      const r = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' }, body: `data=${encodeURIComponent(query)}` });
+      if (!r.ok) continue;
+      data = await r.json();
+      if (data?.elements) break;
+    }
+    if (!data?.elements) return;
+
+    const seen = new Set();
+    const features = data.elements.map(el => {
+      const name = el.tags?.name;
+      if (!name) return null;
+      const place = el.tags?.place || 'locality';
+      const key = `${name}|${place}`;
+      if (seen.has(key)) return null;
+      seen.add(key);
+      const lat = el.lat ?? el.center?.lat;
+      const lon = el.lon ?? el.center?.lon;
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+      return { type: 'Feature', geometry: { type: 'Point', coordinates: [lon, lat] }, properties: { name, place } };
+    }).filter(Boolean);
+
+    if (_map.getLayer('rm-osm-place-label')) _map.removeLayer('rm-osm-place-label');
+    if (_map.getSource('rm-osm-place-source')) _map.removeSource('rm-osm-place-source');
+
+    _map.addSource('rm-osm-place-source', { type: 'geojson', data: { type: 'FeatureCollection', features } });
+    _map.addLayer({
+      id: 'rm-osm-place-label',
+      type: 'symbol',
+      source: 'rm-osm-place-source',
+      minzoom: 10,
+      layout: {
+        'text-font': ['Noto Sans Regular'],
+        'text-field': ['get', 'name'],
+        'text-size': ['interpolate', ['linear'], ['zoom'], 10, 10, 13, 12],
+        'text-allow-overlap': false,
+        'text-ignore-placement': false
+      },
+      paint: {
+        'text-color': '#dbe6f3',
+        'text-halo-color': '#0d1117',
+        'text-halo-width': 1.1,
+        'text-opacity': 0.9
+      }
+    });
+  } catch (e) {
+    console.warn('[RiskMap] OSM place labels unavailable:', e.message);
+  }
 }
 
 function bindMapHandlers() {
@@ -378,6 +489,8 @@ function showWardTooltip(feature, clickX, clickY) {
   const ward = props.ward_number || '—';
   const band = props.band || 'NO DATA';
   const avg = props.avg_score;
+  const p90 = props.p90_score;
+  const composite = props.composite_score;
   const count = props.item_count || 0;
   const col = BAND_COLORS[band] || BAND_COLORS['NO DATA'];
 
@@ -399,7 +512,9 @@ function showWardTooltip(feature, clickX, clickY) {
     <div class="rm-pill" style="--pill-col:${col}">${band}</div>
     <div class="rm-tooltip-line"><span>Mode:</span><strong>${modeLabel}</strong></div>
     <div class="rm-tooltip-line"><span>Records:</span><strong>${count}</strong></div>
-    <div class="rm-tooltip-line"><span>Average score:</span><strong>${avg == null ? '—' : Number(avg).toFixed(2)}</strong></div>
+    <div class="rm-tooltip-line"><span>Composite:</span><strong>${composite == null ? '—' : Number(composite).toFixed(2)}</strong></div>
+    <div class="rm-tooltip-line"><span>Average:</span><strong>${avg == null ? '—' : Number(avg).toFixed(2)}</strong></div>
+    <div class="rm-tooltip-line"><span>P90:</span><strong>${p90 == null ? '—' : Number(p90).toFixed(2)}</strong></div>
   `;
 
   const wW = wrap.offsetWidth || 900;
@@ -418,7 +533,7 @@ function renderLegend() {
   const modeLabel = ANALYSIS_MODES.find(m => m.key === _mode)?.label || _mode;
   el.innerHTML = `
     <div class="rm-legend-title">${modeLabel} legend</div>
-    ${['HIGH', 'MEDIUM', 'LOW', 'VERY LOW', 'NO DATA'].map(label => `
+    ${['VERY HIGH', 'HIGH', 'MEDIUM', 'LOW', 'VERY LOW', 'NO DATA'].map(label => `
       <div class="rm-leg-item">
         <span class="rm-leg-dot" style="background:${BAND_COLORS[label]}"></span>
         <span>${label}</span>
@@ -446,6 +561,9 @@ function destroyMap() {
   }
   _handlersBound = false;
   _navControlsAdded = false;
+  _placesCacheKey = '';
+  if (_placesDebounceTimer) clearTimeout(_placesDebounceTimer);
+  _placesDebounceTimer = null;
 }
 
 function downloadCurrentViewPng() {
