@@ -125,6 +125,7 @@ export function navigateTo(pageId, navItem) {
     history:'Assessment history',
     mitigations:'Mitigations',
     idp:'IDP Linkage',
+    contingency:'Contingency plans',
     reports:'Reports'
   };
   setEl('tb-crumb', crumbs[pageId] || pageId);
@@ -173,6 +174,11 @@ async function loadPageModule(pageId) {
       case 'idp': {
         const m = await import('./idp.js');
         m.initIDP(_user);
+        break;
+      }
+      case 'contingency': {
+        const m = await import('./contingency-page.js');
+        m.initContingencyPage(_user);
         break;
       }
       case 'admin': {
