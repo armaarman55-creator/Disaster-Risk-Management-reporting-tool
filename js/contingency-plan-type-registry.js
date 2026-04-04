@@ -37,7 +37,10 @@ async function fetchRegistryRows() {
     .select('code,name,description,category,template_code,seed_group,active')
     .order('name');
 
-  if (error) throw error;
+  if (error) {
+    console.warn('[ContingencyRegistry] plan type source unavailable:', error.message || error);
+    return [];
+  }
   return data || [];
 }
 

@@ -184,30 +184,41 @@ function renderPlanDetail() {
 }
 
 function renderTypeOptions() {
-  const list = document.getElementById('cp-plan-type-list');
-  if (!list) return;
+  const select = document.getElementById('cp-plan-type');
+  const status = document.getElementById('cp-type-status');
+  const desc = document.getElementById('cp-plan-type-desc');
+  if (!select) return;
 
   if (!_activeCategory) {
-    list.innerHTML = '<div class="cp-empty">Select a category to load plan types.</div>';
+    select.innerHTML = '<option value="">Select category first</option>';
+    select.disabled = true;
+    if (desc) desc.textContent = '';
     return;
   }
 
   if (!_filteredPlanTypes.length) {
-    list.innerHTML = '<div class="cp-empty">No plan types available for this category.</div>';
+    select.innerHTML = '<option value="">No plan types available</option>';
+    select.disabled = true;
+    if (status) status.textContent = 'No plan types available for this category.';
+    if (desc) desc.textContent = '';
     return;
   }
 
-  list.innerHTML = _filteredPlanTypes
-    .map(
-      p => `<label class="cp-type-item">
-        <input type="radio" name="cp-plan-type" value="${esc(p.code)}" />
-        <div>
-          <div class="cp-type-name">${esc(p.name)}</div>
-          <div class="cp-type-desc">${esc(p.description || p.code)}</div>
-        </div>
-      </label>`
-    )
+  select.disabled = false;
+  select.innerHTML = ['<option value="">Select plan type</option>']
+    .concat(_filteredPlanTypes.map(p => `<option value="${esc(p.code)}">${esc(p.name)}</option>`))
     .join('');
+
+  if (status) status.textContent = '';
+  if (desc) desc.textContent = '';
+}
+
+function updateSelectedTypeDescription() {
+  const code = selectedPlanTypeCode();
+  const desc = document.getElementById('cp-plan-type-desc');
+  if (!desc) return;
+  const found = _filteredPlanTypes.find(p => p.code === code);
+  desc.textContent = found ? (found.description || `Code: ${found.code}`) : '';
 }
 
 async function loadTypesForCategory(category) {
@@ -226,40 +237,8 @@ async function loadTypesForCategory(category) {
   }
 }
 
-function filterTypesBySearch() {
-  const query = (document.getElementById('cp-plan-type-search')?.value || '').trim().toLowerCase();
-  if (!query) {
-    loadTypesForCategory(_activeCategory);
-    return;
-  }
-
-  const filtered = _filteredPlanTypes.filter(p => {
-    const name = (p.name || '').toLowerCase();
-    const desc = (p.description || '').toLowerCase();
-    const code = (p.code || '').toLowerCase();
-    return name.includes(query) || desc.includes(query) || code.includes(query);
-  });
-
-  const list = document.getElementById('cp-plan-type-list');
-  if (!list) return;
-
-  list.innerHTML = filtered.length
-    ? filtered
-        .map(
-          p => `<label class="cp-type-item">
-          <input type="radio" name="cp-plan-type" value="${esc(p.code)}" />
-          <div>
-            <div class="cp-type-name">${esc(p.name)}</div>
-            <div class="cp-type-desc">${esc(p.description || p.code)}</div>
-          </div>
-        </label>`
-        )
-        .join('')
-    : '<div class="cp-empty">No plan types match your search.</div>';
-}
-
 function selectedPlanTypeCode() {
-  return document.querySelector('input[name="cp-plan-type"]:checked')?.value || '';
+  return document.getElementById('cp-plan-type')?.value || '';
 }
 
 async function generatePlanFromWizard() {
@@ -380,8 +359,10 @@ export async function initContingencyPage(user) {
 
         <div class="fl">
           <span class="fl-label">Plan type</span>
-          <input id="cp-plan-type-search" class="fl-input" placeholder="Search plan types" />
-          <div id="cp-plan-type-list" class="cp-type-list"></div>
+          <select class="fl-select" id="cp-plan-type" disabled>
+            <option value="">Select category first</option>
+          </select>
+          <div id="cp-plan-type-desc" class="cp-hint"></div>
           <div id="cp-type-status" class="cp-hint"></div>
         </div>
 
@@ -402,11 +383,17 @@ export async function initContingencyPage(user) {
     </div>
   `;
 
-  await getAllPlanTypes();
+  try {
+    await getAllPlanTypes();
+  } catch (e) {
+    const status = document.getElementById('cp-type-status');
+    if (status) status.textContent = `Plan type registry unavailable: ${e.message || e}`;
+  }
+
   renderPlanList();
   renderPlanDetail();
 
   document.getElementById('cp-category')?.addEventListener('change', e => loadTypesForCategory(e.target.value));
-  document.getElementById('cp-plan-type-search')?.addEventListener('input', filterTypesBySearch);
+  document.getElementById('cp-plan-type')?.addEventListener('change', updateSelectedTypeDescription);
   document.getElementById('cp-generate')?.addEventListener('click', generatePlanFromWizard);
 }
