@@ -28,7 +28,11 @@ export function getCurrentPlanningContext(user) {
   const metadata = user?.user_metadata || user?.raw_user_meta_data || {};
 
   const municipalityId =
-    user?.municipality_id || profile?.municipality_id || metadata?.municipality_id || null;
+    user?.municipality_id ||
+    user?.municipalities?.id ||
+    profile?.municipality_id ||
+    metadata?.municipality_id ||
+    null;
   const municipalityName =
     user?.municipalities?.name ||
     profile?.municipality_name ||
@@ -262,8 +266,8 @@ async function generatePlanFromWizard() {
   const err = document.getElementById('cp-wizard-error');
   if (err) err.textContent = '';
 
-  if (!_context?.municipalityId || !_context?.organisationId) {
-    if (err) err.textContent = 'Your account is not linked to a municipality/organisation profile.';
+  if (!_context?.municipalityId) {
+    if (err) err.textContent = 'Your account is not linked to a municipality profile.';
     return;
   }
 
@@ -286,7 +290,7 @@ async function generatePlanFromWizard() {
     const includeHvc = !!document.getElementById('cp-opt-hvc')?.checked;
 
     const title = `${planType.name} (${_context.municipalityName})`;
-    const meta = `Template:${planType.templateCode}; SeedGroup:${planType.seedGroup || 'none'}; Org:${_context.organisationId}`;
+    const meta = `Template:${planType.templateCode}; SeedGroup:${planType.seedGroup || 'none'}; Org:${_context.organisationId || 'N/A'}`;
 
     let plan;
     if (includeSeed && planType.seedGroup) {
@@ -338,7 +342,7 @@ function renderBlockedState(page) {
     <div class="page-body" style="padding:16px">
       <div class="card" style="padding:18px">
         <div class="h3">Contingency Plans</div>
-        <div class="cp-blocker">Your account is not linked to a municipality/organisation profile.</div>
+        <div class="cp-blocker">Your account is not linked to a municipality profile.</div>
       </div>
     </div>
   `;
@@ -349,7 +353,7 @@ export async function initContingencyPage(user) {
   if (!page) return;
 
   _context = getCurrentPlanningContext(user);
-  if (!_context.municipalityId || !_context.organisationId) {
+  if (!_context.municipalityId) {
     renderBlockedState(page);
     return;
   }
@@ -360,7 +364,7 @@ export async function initContingencyPage(user) {
         <div class="h3">New Contingency Plan</div>
         <div class="cp-context">
           <div><strong>Municipality:</strong> ${esc(_context.municipalityName)}</div>
-          <div><strong>Organisation:</strong> ${esc(_context.organisationName || _context.organisationId)}</div>
+          <div><strong>Organisation:</strong> ${esc(_context.organisationName || _context.organisationId || 'Disaster Management Unit')}</div>
         </div>
 
         <div class="fl">
