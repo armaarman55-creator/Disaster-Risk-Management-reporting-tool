@@ -1,7 +1,7 @@
 -- Backend persistence for contingency plans (JSON snapshot storage)
 
 create table if not exists public.contingency_plans (
-  id uuid primary key,
+  id text primary key,
   municipality_id uuid not null references public.municipalities(id),
   organisation_id text,
   title text not null,

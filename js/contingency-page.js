@@ -430,7 +430,16 @@ async function generatePlanFromWizard() {
     ensurePlanHasSections(plan.id, planType);
 
     if (includeHvc) {
-      const fresh = getPlan(plan.id);
+      let fresh = getPlan(plan.id);
+      if (fresh && !fresh.sections.some(s => s.key === 'hvc_placeholders')) {
+        fresh = addSection(fresh, {
+          key: 'hvc_placeholders',
+          title: 'HVC Placeholders',
+          order: (fresh.sections?.length || 0) + 1,
+          editable: true,
+          content_blocks: []
+        });
+      }
       if (fresh) {
         updateSection(plan.id, 'hvc_placeholders', [
           {
