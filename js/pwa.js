@@ -4,7 +4,28 @@ let deferredPrompt = null;
 export function initPWA() {
   // Register service worker
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('/sw.js').catch(err => console.warn('SW registration failed:', err));
+    navigator.serviceWorker.register('/sw.js').then(reg => {
+      const requestUpdate = (sw) => {
+        if (!sw) return;
+        sw.postMessage({ type: 'SKIP_WAITING' });
+      };
+
+      if (reg.waiting) requestUpdate(reg.waiting);
+
+      reg.addEventListener('updatefound', () => {
+        const newWorker = reg.installing;
+        if (!newWorker) return;
+        newWorker.addEventListener('statechange', () => {
+          if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+            requestUpdate(newWorker);
+          }
+        });
+      });
+
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        window.location.reload();
+      });
+    }).catch(err => console.warn('SW registration failed:', err));
   }
 
   // Intercept browser install prompt
