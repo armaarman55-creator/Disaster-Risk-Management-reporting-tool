@@ -24,6 +24,8 @@
 <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css"/>
 
 <link rel="stylesheet" href="css/shell.css?v=1"/>
+<link rel="stylesheet" href="css/risk-map.css?v=1"/>
+<link rel="stylesheet" href="css/contingency.css?v=1"/>
 </head>
 <body>
 
@@ -172,6 +174,10 @@
       <div class="sni tni" data-page="idp">
         <div class="sni-icon"><svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" width="15" height="15"><rect x="2" y="2" width="10" height="10" rx="1"/><path d="M4 5h6M4 8h4M4 11h2"/></svg></div>
         <span class="sni-label">IDP Linkage</span>
+      </div>
+      <div class="sni tni" data-page="contingency">
+        <div class="sni-icon"><svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" width="15" height="15"><rect x="2" y="2" width="10" height="10" rx="1"/><path d="M4 5h6M4 8h6M4 11h3"/></svg></div>
+        <span class="sni-label">Contingency Plans</span>
       </div>
       <div class="sni tni" data-page="stakeholders">
         <div class="sni-icon"><svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" width="15" height="15"><circle cx="5" cy="4" r="2"/><path d="M1 12c0-2.2 1.8-4 4-4s4 1.8 4 4"/><circle cx="11" cy="5" r="1.5"/></svg></div>
@@ -383,10 +389,11 @@
         <div class="page" id="page-stakeholders"><div class="page-body" id="stakeholders-body"></div></div>
         <div class="page" id="page-admin"></div>
         <div class="page" id="page-profile"></div>
-        <div class="page" id="page-risk-map"><div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:12px;padding:40px;text-align:center"><div style="font-size:28px;opacity:.22">🗺</div><div style="font-size:16px;font-weight:700;color:var(--text)">Risk Map</div><div style="font-size:13px;color:var(--text3);max-width:290px;line-height:1.7">Complete HVC assessments to generate a full ward risk map.</div></div></div>
+        <div class="page" id="page-risk-map"></div>
         <div class="page" id="page-history"><div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:12px;padding:40px;text-align:center"><div style="font-size:28px;opacity:.22">📋</div><div style="font-size:16px;font-weight:700;color:var(--text)">Assessment History</div><div style="font-size:13px;color:var(--text3);max-width:290px;line-height:1.7">All completed HVC assessments will appear here.</div></div></div>
         <div class="page" id="page-mitigations"><div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:12px;padding:40px;text-align:center"><div style="font-size:28px;opacity:.22">🛡</div><div style="font-size:16px;font-weight:700;color:var(--text)">Mitigation Library</div><div style="font-size:13px;color:var(--text3);max-width:290px;line-height:1.7">Pre-built mitigations from the hazard library.</div></div></div>
         <div class="page" id="page-idp"></div>
+        <div class="page" id="page-contingency"></div>
         <div class="page" id="page-reports"><div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:12px;padding:40px;text-align:center"><div style="font-size:28px;opacity:.22">📊</div><div style="font-size:16px;font-weight:700;color:var(--text)">Reports</div><div style="font-size:13px;color:var(--text3);max-width:290px;line-height:1.7">Export centre — SitReps, HVC reports and IDP summaries.</div></div></div>
 
       </div><!-- /pages-wrap -->

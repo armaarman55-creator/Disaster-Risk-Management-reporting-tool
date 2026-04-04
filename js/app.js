@@ -125,6 +125,7 @@ export function navigateTo(pageId, navItem) {
     history:'Assessment history',
     mitigations:'Mitigations',
     idp:'IDP Linkage',
+    contingency:'Contingency plans',
     reports:'Reports'
   };
   setEl('tb-crumb', crumbs[pageId] || pageId);
@@ -175,6 +176,11 @@ async function loadPageModule(pageId) {
         m.initIDP(_user);
         break;
       }
+      case 'contingency': {
+        const m = await import('./contingency-page.js');
+        m.initContingencyPage(_user);
+        break;
+      }
       case 'admin': {
         const m = await import('./admin.js');
         m.initAdmin(_user);
@@ -185,9 +191,11 @@ async function loadPageModule(pageId) {
         m.initProfile(_user);
         break;
       }
-      case 'risk-map':
-        renderPlaceholder('risk-map', 'Risk map', 'Complete HVC assessments to generate a full risk map.');
+      case 'risk-map': {
+        const m = await import('./risk-map.js');
+        m.initRiskMap(_user);
         break;
+      }
       case 'history':
         renderPlaceholder('history', 'Assessment history', 'All completed HVC assessments will appear here.');
         break;
