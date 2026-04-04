@@ -1,4 +1,4 @@
-import { createPlan, generateFromSeed, getPlan, listPlans, updateSection } from './contingency-dist/plan-engine.js';
+import { addSection, createPlan, generateFromSeed, getPlan, listPlans, updateSection } from './contingency-dist/plan-engine.js';
 import { loadSeed } from './contingency-dist/seed-loader.js';
 import { exportPlan } from './contingency-dist/export-engine.js';
 import { saveVersionSnapshot, submitForReview, approvePlan } from './contingency-dist/versioning.js';
@@ -67,6 +67,59 @@ export function getCurrentPlanningContext(user) {
   };
 }
 
+
+function buildStarterSections(planType) {
+  const title = planType?.name || 'Contingency Plan';
+  return [
+    {
+      key: 'situation_overview',
+      title: 'Situation Overview',
+      order: 1,
+      editable: true,
+      content_blocks: [{ id: 'ov_1', type: 'text', content: `${title}: describe context, hazards and planning assumptions.` }]
+    },
+    {
+      key: 'objectives_scope',
+      title: 'Objectives and Scope',
+      order: 2,
+      editable: true,
+      content_blocks: [{ id: 'obj_1', type: 'list', content: ['Protect life', 'Protect infrastructure', 'Coordinate response'] }]
+    },
+    {
+      key: 'activation_triggers',
+      title: 'Activation and Triggers',
+      order: 3,
+      editable: true,
+      content_blocks: [{ id: 'act_1', type: 'text', content: 'Define trigger levels and activation authority for this plan type.' }]
+    },
+    {
+      key: 'operational_actions',
+      title: 'Operational Actions by Phase',
+      order: 4,
+      editable: true,
+      content_blocks: [{ id: 'ops_1', type: 'table', content: { headers: ['Phase', 'Action', 'Lead'], rows: [] } }]
+    },
+    {
+      key: 'communications_reporting',
+      title: 'Communications and Reporting',
+      order: 5,
+      editable: true,
+      content_blocks: [{ id: 'com_1', type: 'text', content: 'Document public messaging, reporting channels and contact escalation.' }]
+    }
+  ];
+}
+
+function ensurePlanHasSections(planId, planType) {
+  const fresh = getPlan(planId);
+  if (!fresh || (fresh.sections || []).length) return;
+
+  const starter = buildStarterSections(planType);
+  let working = fresh;
+  starter.forEach(section => {
+    working = addSection(working, section);
+  });
+}
+
 function downloadJson(filename, payload) {
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
@@ -129,6 +182,7 @@ function renderPlanDetail() {
       </div>
     </div>
     <div class="cp-sections">
+      ${!plan.sections.length ? '<div class="cp-empty">No sections found for this plan. Starter sections will be added on generate.</div>' : ''}
       ${plan.sections
         .map(
           s => `<div class="cp-section-card">
@@ -294,6 +348,8 @@ async function generatePlanFromWizard() {
         } catch {}
       });
     }
+
+    ensurePlanHasSections(plan.id, planType);
 
     if (includeHvc) {
       const fresh = getPlan(plan.id);
