@@ -20,3 +20,6 @@
 .cp-section-head{font-size:12px;font-weight:700;margin-bottom:8px}
 .cp-textarea{width:100%;min-height:120px;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:8px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px}
 .cp-row-end{display:flex;justify-content:flex-end;margin-top:8px}
+
+.cp-field{display:grid;gap:6px;font-size:11px;color:var(--text2);margin-bottom:8px}
+.cp-blocks{display:grid;gap:8px}

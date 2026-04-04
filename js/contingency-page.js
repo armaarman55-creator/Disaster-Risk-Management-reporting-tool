@@ -1,4 +1,4 @@
-import { addSection, createPlan, generateFromSeed, getPlan, listPlans, updateSection } from './contingency-dist/plan-engine.js';
+import { addSection, createPlan, generateFromSeed, getPlan, listPlans, setPlan, updateSection } from './contingency-dist/plan-engine.js';
 import { loadSeed } from './contingency-dist/seed-loader.js';
 import { exportPlan } from './contingency-dist/export-engine.js';
 import { saveVersionSnapshot, submitForReview, approvePlan } from './contingency-dist/versioning.js';
@@ -8,6 +8,7 @@ import {
   getPlanTypeByCode,
   getPlanTypesByCategory
 } from './contingency-plan-type-registry.js';
+import { fetchPlansFromBackend, savePlanToBackend } from './contingency-repo.js';
 
 let _activePlanId = null;
 let _activeCategory = '';
@@ -158,6 +159,79 @@ function renderPlanList() {
   });
 }
 
+
+function blockEditor(sectionKey, block, idx) {
+  const base = `data-sec="${esc(sectionKey)}" data-idx="${idx}"`;
+  if (block.type === 'text') {
+    return `<label class="cp-field">Text block
+      <textarea class="cp-textarea" ${base} data-kind="text">${esc(String(block.content ?? ''))}</textarea>
+    </label>`;
+  }
+  if (block.type === 'list') {
+    const value = Array.isArray(block.content) ? block.content.join('\n') : '';
+    return `<label class="cp-field">List block (one item per line)
+      <textarea class="cp-textarea" ${base} data-kind="list">${esc(value)}</textarea>
+    </label>`;
+  }
+  if (block.type === 'table') {
+    const headers = Array.isArray(block.content?.headers) ? block.content.headers.join(', ') : '';
+    const rows = Array.isArray(block.content?.rows) ? block.content.rows.map(r => (Array.isArray(r) ? r.join(' | ') : '')).join('\n') : '';
+    return `<div class="cp-field"><div>Table block</div>
+      <input class="fl-input" ${base} data-kind="table-headers" value="${esc(headers)}" placeholder="Headers (comma separated)" />
+      <textarea class="cp-textarea" ${base} data-kind="table-rows" placeholder="Rows (one row per line, columns separated by |)">${esc(rows)}</textarea>
+    </div>`;
+  }
+  return `<label class="cp-field">Block (${esc(block.type)})
+    <textarea class="cp-textarea" ${base} data-kind="text">${esc(String(block.content ?? ''))}</textarea>
+  </label>`;
+}
+
+function collectBlocksFromForm(host, section) {
+  const blocks = [];
+  (section.content_blocks || []).forEach((block, idx) => {
+    const q = (kind) => host.querySelector(`[data-sec="${section.key}"][data-idx="${idx}"][data-kind="${kind}"]`);
+    if (block.type === 'text') {
+      blocks.push({ ...block, content: q('text')?.value || '' });
+      return;
+    }
+    if (block.type === 'list') {
+      const items = (q('list')?.value || '').split('\n').map(v => v.trim()).filter(Boolean);
+      blocks.push({ ...block, content: items });
+      return;
+    }
+    if (block.type === 'table') {
+      const headers = (q('table-headers')?.value || '').split(',').map(v => v.trim()).filter(Boolean);
+      const rows = (q('table-rows')?.value || '').split('\n').map(r => r.trim()).filter(Boolean).map(r => r.split('|').map(c => c.trim()));
+      blocks.push({ ...block, content: { headers, rows } });
+      return;
+    }
+    blocks.push({ ...block, content: q('text')?.value || '' });
+  });
+  return blocks;
+}
+
+async function persistPlan(planId) {
+  const plan = getPlan(planId);
+  if (!plan) return;
+  try {
+    await savePlanToBackend(plan, _context);
+  } catch (e) {
+    console.warn('[Contingency] backend save failed:', e.message || e);
+  }
+}
+
+async function hydratePlansFromBackend() {
+  if (!_context?.municipalityId) return;
+  try {
+    const plans = await fetchPlansFromBackend(_context.municipalityId);
+    plans.forEach(p => {
+      if (p?.id) setPlan(p);
+    });
+  } catch (e) {
+    console.warn('[Contingency] backend load failed:', e.message || e);
+  }
+}
+
 function renderPlanDetail() {
   const host = document.getElementById('cp-plan-detail');
   if (!host) return;
@@ -187,11 +261,9 @@ function renderPlanDetail() {
         .map(
           s => `<div class="cp-section-card">
               <div class="cp-section-head">${esc(s.title)}</div>
-              <textarea data-section-key="${esc(s.key)}" class="cp-textarea">${esc(
-                JSON.stringify(s.content_blocks, null, 2)
-              )}</textarea>
+              <div class="cp-blocks">${(s.content_blocks || []).map((b, idx) => blockEditor(s.key, b, idx)).join('')}</div>
               <div class="cp-row-end">
-                <button class="btn" data-save-section="${esc(s.key)}">Save section JSON</button>
+                <button class="btn" data-save-section="${esc(s.key)}">Save section</button>
               </div>
             </div>`
         )
@@ -201,11 +273,14 @@ function renderPlanDetail() {
 
   document.getElementById('cp-save-version')?.addEventListener('click', () => {
     saveVersionSnapshot(plan, _context?.userId || 'local-user');
+    persistPlan(plan.id);
     renderPlanDetail();
   });
 
   document.getElementById('cp-submit-review')?.addEventListener('click', () => {
     submitForReview(plan.id, _context?.userId || 'local-user', 'Submitted from contingency page');
+    persistPlan(plan.id);
+    persistPlan(plan.id);
     renderPlanList();
     renderPlanDetail();
   });
@@ -225,13 +300,16 @@ function renderPlanDetail() {
   host.querySelectorAll('[data-save-section]').forEach(btn => {
     btn.addEventListener('click', () => {
       const key = btn.getAttribute('data-save-section');
-      const textarea = host.querySelector(`textarea[data-section-key="${key}"]`);
-      if (!key || !textarea) return;
+      if (!key) return;
       try {
-        updateSection(plan.id, key, JSON.parse(textarea.value));
+        const section = plan.sections.find(s => s.key === key);
+        if (!section) return;
+        const blocks = collectBlocksFromForm(host, section);
+        updateSection(plan.id, key, blocks);
+        persistPlan(plan.id);
         renderPlanDetail();
       } catch (e) {
-        alert(`Invalid section JSON (${key}): ${e.message}`);
+        alert(`Failed to save section (${key}): ${e.message}`);
       }
     });
   });
@@ -365,6 +443,7 @@ async function generatePlanFromWizard() {
     }
 
     _activePlanId = plan.id;
+    await persistPlan(plan.id);
     renderPlanList();
     renderPlanDetail();
   } catch (e) {
@@ -446,6 +525,7 @@ export async function initContingencyPage(user) {
     if (status) status.textContent = `Plan type registry unavailable: ${e.message || e}`;
   }
 
+  await hydratePlansFromBackend();
   renderPlanList();
   renderPlanDetail();
 
