@@ -1,12 +1,22 @@
 .cp-empty{font-size:12px;color:var(--text3);padding:10px;border:1px dashed var(--line);border-radius:10px}
+.cp-context{font-size:12px;line-height:1.6;background:var(--bg2);border:1px solid var(--line);border-radius:10px;padding:10px}
 .cp-plan-item{width:100%;text-align:left;background:var(--card);border:1px solid var(--line);color:var(--text);border-radius:10px;padding:8px 10px;margin-bottom:8px;cursor:pointer}
 .cp-plan-item.active{border-color:var(--blue);box-shadow:0 0 0 1px color-mix(in srgb,var(--blue) 35%,transparent)}
 .cp-plan-meta{font-size:11px;color:var(--text3)}
+.cp-type-list{max-height:220px;overflow:auto;border:1px solid var(--line);border-radius:10px;padding:6px;background:var(--bg2)}
+.cp-type-item{display:flex;gap:8px;align-items:flex-start;padding:7px;border-radius:8px;cursor:pointer}
+.cp-type-item:hover{background:var(--bg3)}
+.cp-type-name{font-size:12px;font-weight:700;color:var(--text)}
+.cp-type-desc{font-size:11px;color:var(--text3)}
+.cp-options{display:grid;gap:6px;font-size:12px;color:var(--text2)}
+.cp-hint{font-size:11px;color:var(--text3);margin-top:4px}
+.cp-error{font-size:12px;color:var(--red)}
+.cp-blocker{margin-top:10px;padding:12px;border:1px solid var(--amber);background:var(--amber-dim);border-radius:10px;color:var(--amber);font-size:12px;font-weight:600}
 .cp-detail-head{display:flex;justify-content:space-between;gap:10px;align-items:flex-start;margin-bottom:10px}
 .cp-detail-head h3{margin:0 0 4px}
 .cp-actions{display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end}
 .cp-sections{display:grid;gap:10px}
 .cp-section-card{border:1px solid var(--line);border-radius:10px;padding:10px;background:var(--bg2)}
 .cp-section-head{font-size:12px;font-weight:700;margin-bottom:8px}
-.cp-textarea{width:100%;min-height:120px;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:8px;font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;font-size:11px}
+.cp-textarea{width:100%;min-height:120px;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:8px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px}
 .cp-row-end{display:flex;justify-content:flex-end;margin-top:8px}

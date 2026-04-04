@@ -1,9 +1,18 @@
-import { generateFromSeed, getPlan, listPlans, updateSection } from './contingency-dist/plan-engine.js';
+import { createPlan, generateFromSeed, getPlan, listPlans, updateSection } from './contingency-dist/plan-engine.js';
 import { loadSeed } from './contingency-dist/seed-loader.js';
 import { exportPlan } from './contingency-dist/export-engine.js';
 import { saveVersionSnapshot, submitForReview, approvePlan } from './contingency-dist/versioning.js';
+import { createAnnexureFromTemplate, attachAnnexureToPlan } from './contingency-dist/annexure-engine.js';
+import {
+  getAllPlanTypes,
+  getPlanTypeByCode,
+  getPlanTypesByCategory
+} from './contingency-plan-type-registry.js';
 
 let _activePlanId = null;
+let _activeCategory = '';
+let _filteredPlanTypes = [];
+let _context = null;
 
 function esc(v) {
   return String(v ?? '')
@@ -14,16 +23,44 @@ function esc(v) {
     .replace(/'/g, '&#39;');
 }
 
-function planTypeLabel(type) {
-  const map = {
-    flood: 'Flood',
-    winter: 'Winter',
-    evacuation: 'Evacuation',
-    electricity_disruption: 'Electricity disruption',
-    hazmat: 'Hazmat',
-    shelter: 'Shelter'
+export function getCurrentPlanningContext(user) {
+  const profile = user?.profile || user?.profiles || {};
+  const metadata = user?.user_metadata || user?.raw_user_meta_data || {};
+
+  const municipalityId =
+    user?.municipality_id || profile?.municipality_id || metadata?.municipality_id || null;
+  const municipalityName =
+    user?.municipalities?.name ||
+    profile?.municipality_name ||
+    metadata?.municipality_name ||
+    user?.municipality_name ||
+    null;
+
+  const organisationId =
+    user?.organisation_id ||
+    user?.organization_id ||
+    profile?.organisation_id ||
+    profile?.organization_id ||
+    metadata?.organisation_id ||
+    metadata?.organization_id ||
+    null;
+
+  const organisationName =
+    user?.organisation_name ||
+    user?.organization_name ||
+    profile?.organisation_name ||
+    profile?.organization_name ||
+    metadata?.organisation_name ||
+    metadata?.organization_name ||
+    null;
+
+  return {
+    userId: user?.id || null,
+    municipalityId,
+    municipalityName,
+    organisationId,
+    organisationName
   };
-  return map[type] || type;
 }
 
 function downloadJson(filename, payload) {
@@ -42,7 +79,7 @@ function renderPlanList() {
   const plans = listPlans();
 
   if (!plans.length) {
-    host.innerHTML = '<div class="cp-empty">No contingency plans yet. Use quick create to start.</div>';
+    host.innerHTML = '<div class="cp-empty">No contingency plans yet. Use the wizard to create one.</div>';
     return;
   }
 
@@ -50,7 +87,7 @@ function renderPlanList() {
     .map(
       p => `<button class="cp-plan-item ${p.id === _activePlanId ? 'active' : ''}" data-plan-id="${esc(p.id)}">
         <div><strong>${esc(p.metadata.title)}</strong></div>
-        <div class="cp-plan-meta">${esc(planTypeLabel(p.metadata.plan_type))} · ${esc(p.status)}</div>
+        <div class="cp-plan-meta">${esc(p.metadata.plan_type)} · ${esc(p.status)}</div>
       </button>`
     )
     .join('');
@@ -82,7 +119,7 @@ function renderPlanDetail() {
       </div>
       <div class="cp-actions">
         <button id="cp-save-version" class="btn">Save version</button>
-        <button id="cp-submit-review" class="btn">Submit for review</button>
+        <button id="cp-submit-review" class="btn">Submit review</button>
         <button id="cp-approve" class="btn">Approve</button>
         <button id="cp-export" class="btn btn-primary">Export JSON</button>
       </div>
@@ -105,18 +142,18 @@ function renderPlanDetail() {
   `;
 
   document.getElementById('cp-save-version')?.addEventListener('click', () => {
-    saveVersionSnapshot(plan, 'local-user');
+    saveVersionSnapshot(plan, _context?.userId || 'local-user');
     renderPlanDetail();
   });
 
   document.getElementById('cp-submit-review')?.addEventListener('click', () => {
-    submitForReview(plan.id, 'local-user', 'Submitted from Contingency page');
+    submitForReview(plan.id, _context?.userId || 'local-user', 'Submitted from contingency page');
     renderPlanList();
     renderPlanDetail();
   });
 
   document.getElementById('cp-approve')?.addEventListener('click', () => {
-    approvePlan(plan.id, 'local-user', 'Approved from Contingency page');
+    approvePlan(plan.id, _context?.userId || 'local-user', 'Approved from contingency page');
     renderPlanList();
     renderPlanDetail();
   });
@@ -133,55 +170,239 @@ function renderPlanDetail() {
       const textarea = host.querySelector(`textarea[data-section-key="${key}"]`);
       if (!key || !textarea) return;
       try {
-        const parsed = JSON.parse(textarea.value);
-        updateSection(plan.id, key, parsed);
+        updateSection(plan.id, key, JSON.parse(textarea.value));
         renderPlanDetail();
       } catch (e) {
-        alert(`Invalid JSON for section ${key}: ${e.message}`);
+        alert(`Invalid section JSON (${key}): ${e.message}`);
       }
     });
   });
 }
 
-function createSeededPlan(type, user) {
-  const seed = loadSeed(type);
-  const plan = generateFromSeed(
-    {
-      category: type === 'winter' ? 'seasonal' : 'hazard_specific',
-      type,
-      title: `${planTypeLabel(type)} Contingency Plan`
-    },
-    seed
-  );
+function renderTypeOptions() {
+  const list = document.getElementById('cp-plan-type-list');
+  if (!list) return;
 
-  _activePlanId = plan.id;
-  renderPlanList();
-  renderPlanDetail();
+  if (!_activeCategory) {
+    list.innerHTML = '<div class="cp-empty">Select a category to load plan types.</div>';
+    return;
+  }
+
+  if (!_filteredPlanTypes.length) {
+    list.innerHTML = '<div class="cp-empty">No plan types available for this category.</div>';
+    return;
+  }
+
+  list.innerHTML = _filteredPlanTypes
+    .map(
+      p => `<label class="cp-type-item">
+        <input type="radio" name="cp-plan-type" value="${esc(p.code)}" />
+        <div>
+          <div class="cp-type-name">${esc(p.name)}</div>
+          <div class="cp-type-desc">${esc(p.description || p.code)}</div>
+        </div>
+      </label>`
+    )
+    .join('');
 }
 
-export function initContingencyPage(user) {
+async function loadTypesForCategory(category) {
+  _activeCategory = category;
+  const status = document.getElementById('cp-type-status');
+  if (status) status.textContent = 'Loading plan types...';
+
+  try {
+    _filteredPlanTypes = await getPlanTypesByCategory(category);
+    renderTypeOptions();
+    if (status) status.textContent = _filteredPlanTypes.length ? '' : 'No plan types available for this category.';
+  } catch (e) {
+    _filteredPlanTypes = [];
+    renderTypeOptions();
+    if (status) status.textContent = `Unable to load plan types: ${e.message}`;
+  }
+}
+
+function filterTypesBySearch() {
+  const query = (document.getElementById('cp-plan-type-search')?.value || '').trim().toLowerCase();
+  if (!query) {
+    loadTypesForCategory(_activeCategory);
+    return;
+  }
+
+  const filtered = _filteredPlanTypes.filter(p => {
+    const name = (p.name || '').toLowerCase();
+    const desc = (p.description || '').toLowerCase();
+    const code = (p.code || '').toLowerCase();
+    return name.includes(query) || desc.includes(query) || code.includes(query);
+  });
+
+  const list = document.getElementById('cp-plan-type-list');
+  if (!list) return;
+
+  list.innerHTML = filtered.length
+    ? filtered
+        .map(
+          p => `<label class="cp-type-item">
+          <input type="radio" name="cp-plan-type" value="${esc(p.code)}" />
+          <div>
+            <div class="cp-type-name">${esc(p.name)}</div>
+            <div class="cp-type-desc">${esc(p.description || p.code)}</div>
+          </div>
+        </label>`
+        )
+        .join('')
+    : '<div class="cp-empty">No plan types match your search.</div>';
+}
+
+function selectedPlanTypeCode() {
+  return document.querySelector('input[name="cp-plan-type"]:checked')?.value || '';
+}
+
+async function generatePlanFromWizard() {
+  const err = document.getElementById('cp-wizard-error');
+  if (err) err.textContent = '';
+
+  if (!_context?.municipalityId || !_context?.organisationId) {
+    if (err) err.textContent = 'Your account is not linked to a municipality/organisation profile.';
+    return;
+  }
+
+  const category = document.getElementById('cp-category')?.value || '';
+  const planTypeCode = selectedPlanTypeCode();
+  if (!category || !planTypeCode) {
+    if (err) err.textContent = 'Please select a category and plan type.';
+    return;
+  }
+
+  const planType = await getPlanTypeByCode(planTypeCode);
+  if (!planType) {
+    if (err) err.textContent = 'Invalid plan type selected.';
+    return;
+  }
+
+  try {
+    const includeSeed = !!document.getElementById('cp-opt-seed')?.checked;
+    const includeAnnex = !!document.getElementById('cp-opt-annex')?.checked;
+    const includeHvc = !!document.getElementById('cp-opt-hvc')?.checked;
+
+    const title = `${planType.name} (${_context.municipalityName})`;
+    const meta = `Template:${planType.templateCode}; SeedGroup:${planType.seedGroup || 'none'}; Org:${_context.organisationId}`;
+
+    let plan;
+    if (includeSeed && planType.seedGroup) {
+      const seed = loadSeed(planType.seedGroup);
+      plan = generateFromSeed({ category, type: planType.code, title, description: meta }, seed);
+    } else {
+      plan = createPlan(
+        { category, type: planType.code, title, description: meta },
+        {
+          municipality_id: _context.municipalityId,
+          municipality_name: _context.municipalityName,
+          owner_user_id: _context.userId
+        }
+      );
+    }
+
+    if (includeAnnex) {
+      ['contacts', 'shelters', 'ward_priorities', 'operational_assets'].forEach(key => {
+        try {
+          const annex = createAnnexureFromTemplate(key);
+          attachAnnexureToPlan(plan.id, annex);
+        } catch {}
+      });
+    }
+
+    if (includeHvc) {
+      const fresh = getPlan(plan.id);
+      if (fresh) {
+        updateSection(plan.id, 'hvc_placeholders', [
+          {
+            id: 'hvc_placeholder_1',
+            type: 'text',
+            content: 'HVC placeholders enabled. Integrate ward priorities and hazard drivers from HVC module.'
+          }
+        ]);
+      }
+    }
+
+    _activePlanId = plan.id;
+    renderPlanList();
+    renderPlanDetail();
+  } catch (e) {
+    if (err) err.textContent = `Could not generate plan: ${e.message}`;
+  }
+}
+
+function renderBlockedState(page) {
+  page.innerHTML = `
+    <div class="page-body" style="padding:16px">
+      <div class="card" style="padding:18px">
+        <div class="h3">Contingency Plans</div>
+        <div class="cp-blocker">Your account is not linked to a municipality/organisation profile.</div>
+      </div>
+    </div>
+  `;
+}
+
+export async function initContingencyPage(user) {
   const page = document.getElementById('page-contingency');
   if (!page) return;
 
+  _context = getCurrentPlanningContext(user);
+  if (!_context.municipalityId || !_context.organisationId) {
+    renderBlockedState(page);
+    return;
+  }
+
   page.innerHTML = `
-    <div class="page-body" style="padding:16px;display:grid;gap:12px;grid-template-columns:320px 1fr;align-items:start">
-      <div class="card" style="padding:12px">
-        <div class="h3" style="margin-bottom:8px">Contingency Plans</div>
-        <div class="cp-quick-actions" style="display:grid;gap:8px;margin-bottom:10px">
-          <button class="btn" id="cp-new-flood">+ New Flood Plan</button>
-          <button class="btn" id="cp-new-winter">+ New Winter Plan</button>
-          <button class="btn" id="cp-new-evac">+ New Evacuation Plan</button>
+    <div class="page-body" style="padding:16px;display:grid;gap:12px;grid-template-columns:360px 1fr;align-items:start">
+      <div class="card" style="padding:12px;display:grid;gap:10px">
+        <div class="h3">New Contingency Plan</div>
+        <div class="cp-context">
+          <div><strong>Municipality:</strong> ${esc(_context.municipalityName)}</div>
+          <div><strong>Organisation:</strong> ${esc(_context.organisationName || _context.organisationId)}</div>
         </div>
+
+        <div class="fl">
+          <span class="fl-label">Category</span>
+          <select class="fl-select" id="cp-category">
+            <option value="">Select category</option>
+            <option value="seasonal">Seasonal</option>
+            <option value="hazard_specific">Hazard specific</option>
+            <option value="functional">Functional</option>
+            <option value="event">Event</option>
+          </select>
+        </div>
+
+        <div class="fl">
+          <span class="fl-label">Plan type</span>
+          <input id="cp-plan-type-search" class="fl-input" placeholder="Search plan types" />
+          <div id="cp-plan-type-list" class="cp-type-list"></div>
+          <div id="cp-type-status" class="cp-hint"></div>
+        </div>
+
+        <div class="cp-options">
+          <label><input type="checkbox" id="cp-opt-seed" checked /> Include seed content</label>
+          <label><input type="checkbox" id="cp-opt-annex" checked /> Include default annexures</label>
+          <label><input type="checkbox" id="cp-opt-hvc" /> Include HVC placeholders</label>
+        </div>
+
+        <div id="cp-wizard-error" class="cp-error"></div>
+        <button class="btn btn-primary" id="cp-generate">Generate plan</button>
+
+        <hr style="border:none;border-top:1px solid var(--line);margin:2px 0"/>
+        <div class="h3" style="font-size:13px">Plans</div>
         <div id="cp-plan-list"></div>
       </div>
       <div class="card" id="cp-plan-detail" style="padding:12px"></div>
     </div>
   `;
 
-  document.getElementById('cp-new-flood')?.addEventListener('click', () => createSeededPlan('flood', user));
-  document.getElementById('cp-new-winter')?.addEventListener('click', () => createSeededPlan('winter', user));
-  document.getElementById('cp-new-evac')?.addEventListener('click', () => createSeededPlan('evacuation', user));
-
+  await getAllPlanTypes();
   renderPlanList();
   renderPlanDetail();
+
+  document.getElementById('cp-category')?.addEventListener('change', e => loadTypesForCategory(e.target.value));
+  document.getElementById('cp-plan-type-search')?.addEventListener('input', filterTypesBySearch);
+  document.getElementById('cp-generate')?.addEventListener('click', generatePlanFromWizard);
 }
