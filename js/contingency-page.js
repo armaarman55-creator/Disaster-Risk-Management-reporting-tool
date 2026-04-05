@@ -339,6 +339,10 @@ function renderPlanDetail() {
         <button id="cp-export-json" class="btn">Export JSON</button>
       </div>
     </div>
+    <div id="cp-suggestion-panel" class="cp-section-card" style="margin-bottom:8px">
+      <div class="cp-section-head">Suggestion Library (IDP-style)</div>
+      <div class="cp-blocks"><div class="cp-empty">Loading contextual suggestions...</div></div>
+    </div>
     <div class="cp-sections">
       ${!plan.sections.length ? '<div class="cp-empty">No sections found for this plan. Starter sections will be added on generate.</div>' : ''}
       ${plan.sections
@@ -384,6 +388,48 @@ function renderPlanDetail() {
     const fresh = getPlan(plan.id);
     if (!fresh) return;
     downloadJson(`contingency-plan-${fresh.id}.json`, exportPlan(fresh));
+  });
+  document.getElementById('cp-export-docx')?.addEventListener('click', (evt) => {
+    const fresh = getPlan(plan.id);
+    if (!fresh) return;
+    showDownloadMenu(evt.currentTarget, {
+      filename: `contingency-plan-${fresh.id}`,
+      getDocHTML: () => contingencyDocHtml(fresh),
+      dropup: true
+    });
+  });
+
+  host.querySelectorAll('[data-rich-cmd][data-rich-target]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const cmd = btn.getAttribute('data-rich-cmd');
+      const targetId = btn.getAttribute('data-rich-target');
+      const editor = targetId ? host.querySelector(`#${targetId}`) : null;
+      if (!cmd || !editor) return;
+      editor.focus();
+      document.execCommand(cmd, false);
+    });
+  });
+
+  host.querySelectorAll('[data-rich-cmd][data-rich-target]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const cmd = btn.getAttribute('data-rich-cmd');
+      const targetId = btn.getAttribute('data-rich-target');
+      const editor = targetId ? host.querySelector(`#${targetId}`) : null;
+      if (!cmd || !editor) return;
+      editor.focus();
+      document.execCommand(cmd, false);
+    });
+  });
+
+  host.querySelectorAll('[data-rich-cmd][data-rich-target]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const cmd = btn.getAttribute('data-rich-cmd');
+      const targetId = btn.getAttribute('data-rich-target');
+      const editor = targetId ? host.querySelector(`#${targetId}`) : null;
+      if (!cmd || !editor) return;
+      editor.focus();
+      document.execCommand(cmd, false);
+    });
   });
 
   host.querySelectorAll('[data-rich-cmd][data-rich-target]').forEach(btn => {

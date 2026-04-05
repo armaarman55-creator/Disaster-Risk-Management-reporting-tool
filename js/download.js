@@ -1,5 +1,5 @@
 // js/download.js — Universal download helper
-// Provides PDF (print), Excel (.csv), and Word-compatible HTML (.doc) exports
+// Provides PDF (print), Excel (.csv), and Word-compatible HTML (.docx) exports
 
 /**
  * Show a download dropdown menu anchored to a button.
@@ -9,7 +9,7 @@
  *   getPDF       {fn}      - Calls window.print() on a generated HTML page
  *   getXLSXBlob  {fn}      - Returns Blob for native .xlsx download
  *   getCSVRows   {fn}      - Returns array of arrays for CSV
- *   getDocHTML   {fn}      - Returns HTML string for Word-compatible .doc
+ *   getDocHTML   {fn}      - Returns HTML string for Word-compatible .docx
  *   filename     {string}  - Base filename without extension
  */
 export function showDownloadMenu(btn, options) {
@@ -45,7 +45,7 @@ export function showDownloadMenu(btn, options) {
       fn: () => downloadCSV(options.getCSVRows(), options.filename)
     });
   }
-  if (options.getDocHTML) items.push({ label: '↓ Word (.doc)', icon: '#58a6ff', fn: () => downloadDoc(options.getDocHTML(), options.filename) });
+  if (options.getDocHTML) items.push({ label: '↓ Word (.docx)', icon: '#58a6ff', fn: () => downloadDoc(options.getDocHTML(), options.filename) });
 
   menu.innerHTML = `
     <div style="padding:8px 12px;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--text3);border-bottom:1px solid var(--border)">
@@ -130,11 +130,11 @@ function downloadDoc(html, filename) {
   <body>${html}</body>
   </html>`;
 
-  const blob = new Blob([doc], { type: 'application/msword' });
+  const blob = new Blob([doc], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
   const url  = URL.createObjectURL(blob);
   Object.assign(document.createElement('a'), {
     href: url,
-    download: `${filename}-${new Date().toISOString().slice(0,10)}.doc`
+    download: `${filename}-${new Date().toISOString().slice(0,10)}.docx`
   }).click();
   URL.revokeObjectURL(url);
 }
