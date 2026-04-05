@@ -125,53 +125,11 @@ async function fetchHvcPlacementBlocks() {
   ];
 }
 
-async function fetchIdpStyleSuggestions() {
-  if (!_context?.municipalityId) return [];
-  const { data: assessment } = await supabase
-    .from('hvc_assessments')
-    .select('id')
-    .eq('municipality_id', _context.municipalityId)
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  if (!assessment?.id) return [];
-
-  const { data: scores } = await supabase
-    .from('hvc_hazard_scores')
-    .select('hazard_name')
-    .eq('assessment_id', assessment.id);
-
-  const hazardNames = [...new Set((scores || []).map(s => s.hazard_name).filter(Boolean))];
-  if (!hazardNames.length) return [];
-
-  const { data: suggestions } = await supabase
-    .from('mitigations')
-    .select('hazard_name,description,mitigation_type,idp_kpa')
-    .eq('is_library', true)
-    .in('hazard_name', hazardNames)
-    .limit(12);
-  return suggestions || [];
-}
-
 function scheduleAutoSave(planId) {
   clearTimeout(_autoSaveTimer);
   _autoSaveTimer = setTimeout(() => {
     persistPlan(planId);
   }, 900);
-}
-
-function appendSuggestionToPlan(plan, suggestion) {
-  const section = (plan.sections || []).find(s => (s.content_blocks || []).some(b => b.type === 'text'));
-  if (!section) return false;
-  const blocks = (section.content_blocks || []).map((b, idx) => {
-    if (b.type !== 'text' || idx !== 0) return b;
-    const plain = textFromHtml(b.content);
-    return { ...b, content: `${plain}
-
-Suggestion (${suggestion.hazard_name || 'library'}): ${suggestion.description || ''}`.trim() };
-  });
-  updateSection(plan.id, section.key, blocks);
-  return true;
 }
 
 function showContingencyExportMenu(anchorBtn, plan) {
@@ -469,6 +427,17 @@ function renderPlanDetail() {
     });
   });
 
+  host.querySelectorAll('[data-rich-cmd][data-rich-target]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const cmd = btn.getAttribute('data-rich-cmd');
+      const targetId = btn.getAttribute('data-rich-target');
+      const editor = targetId ? host.querySelector(`#${targetId}`) : null;
+      if (!cmd || !editor) return;
+      editor.focus();
+      document.execCommand(cmd, false);
+    });
+  });
+
   host.querySelectorAll('[data-save-section]').forEach(btn => {
     btn.addEventListener('click', () => {
       const key = btn.getAttribute('data-save-section');
@@ -490,39 +459,7 @@ function renderPlanDetail() {
     el.addEventListener('input', () => scheduleAutoSave(plan.id));
   });
 
-  const suggestionPanel = host.querySelector('#cp-suggestion-panel .cp-blocks');
-  fetchIdpStyleSuggestions()
-    .then(suggestions => {
-      if (!suggestionPanel) return;
-      if (!suggestions.length) {
-        suggestionPanel.innerHTML = '<div class="cp-empty">No matching suggestions yet. Add/mark library entries in IDP or complete HVC first.</div>';
-        return;
-      }
-      suggestionPanel.innerHTML = suggestions
-        .map(
-          (s, idx) => `<div class="cp-field" style="border:1px solid var(--line);padding:8px;border-radius:8px">
-            <div style="font-size:12px;margin-bottom:4px"><strong>${esc(s.hazard_name || 'Hazard')}</strong> · ${esc(s.mitigation_type || 'mitigation')}</div>
-            <div style="font-size:12px;color:var(--text2);margin-bottom:6px">${esc(s.description || '')}</div>
-            <button class="btn btn-sm" data-apply-suggestion="${idx}">+ Insert to plan</button>
-          </div>`
-        )
-        .join('');
-      suggestionPanel.querySelectorAll('[data-apply-suggestion]').forEach(btn => {
-        btn.addEventListener('click', () => {
-          const idx = Number(btn.getAttribute('data-apply-suggestion'));
-          const chosen = suggestions[idx];
-          const latest = getPlan(plan.id);
-          if (!chosen || !latest) return;
-          const applied = appendSuggestionToPlan(latest, chosen);
-          if (!applied) return alert('No text section available to insert suggestion.');
-          scheduleAutoSave(plan.id);
-          renderPlanDetail();
-        });
-      });
-    })
-    .catch(() => {
-      if (suggestionPanel) suggestionPanel.innerHTML = '<div class="cp-empty">Suggestion library unavailable.</div>';
-    });
+
 }
 
 function renderTypeOptions() {
