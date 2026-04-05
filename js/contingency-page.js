@@ -101,27 +101,21 @@ async function fetchHvcPlacementBlocks() {
     .limit(5);
   if (error || !data?.length) return [];
 
-  const listItems = data.map(
-    h =>
-      `${h.hazard_name || 'Hazard'} (${h.risk_band || 'Unbanded'} ${h.risk_rating != null ? `- ${h.risk_rating}` : ''})${
-        Array.isArray(h.affected_wards) && h.affected_wards.length ? ` - Wards: ${h.affected_wards.join(', ')}` : ''
-      }`
-  );
-  const tableRows = data.map(h => [
-    h.hazard_name || '—',
-    h.risk_band || '—',
-    h.risk_rating ?? '—',
-    Array.isArray(h.affected_wards) && h.affected_wards.length ? h.affected_wards.join(', ') : '—'
-  ]);
-
   return [
     {
       id: 'hvc_summary_1',
-      type: 'text',
-      content: `Integrated from latest HVC assessment (${new Date(assessment.created_at).toLocaleDateString('en-ZA')}). Validate and contextualise before approval.`
-    },
-    { id: 'hvc_summary_2', type: 'list', content: listItems },
-    { id: 'hvc_summary_3', type: 'table', content: { headers: ['Hazard', 'Risk Band', 'Risk Rating', 'Affected Wards'], rows: tableRows } }
+      type: 'table',
+      content: {
+        headers: ['Assessment Date', 'Hazard', 'Risk Band', 'Risk Rating', 'Affected Wards'],
+        rows: data.map(h => [
+          new Date(assessment.created_at).toLocaleDateString('en-ZA'),
+          h.hazard_name || '—',
+          h.risk_band || '—',
+          h.risk_rating ?? '—',
+          Array.isArray(h.affected_wards) && h.affected_wards.length ? h.affected_wards.join(', ') : '—'
+        ])
+      }
+    }
   ];
 }
 
@@ -402,6 +396,17 @@ function renderPlanDetail() {
       filename: `contingency-plan-${fresh.id}`,
       getDocHTML: () => contingencyDocHtml(fresh),
       dropup: true
+    });
+  });
+
+  host.querySelectorAll('[data-rich-cmd][data-rich-target]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const cmd = btn.getAttribute('data-rich-cmd');
+      const targetId = btn.getAttribute('data-rich-target');
+      const editor = targetId ? host.querySelector(`#${targetId}`) : null;
+      if (!cmd || !editor) return;
+      editor.focus();
+      document.execCommand(cmd, false);
     });
   });
 
