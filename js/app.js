@@ -25,6 +25,7 @@ export async function initApp(user) {
   }
 
   populateUserUI(_user);
+  fetchWeatherWarnings();
 
   // Onboarding removed: always go directly to dashboard.
   navigateTo('dashboard');
@@ -233,6 +234,49 @@ function applyTheme(theme) {
   document.documentElement.setAttribute('data-theme', theme);
   setEl('footer-theme-lbl', theme === 'dark' ? 'Light mode' : 'Dark mode');
   setEl('rail-theme-lbl',   theme === 'dark' ? 'Light mode' : 'Dark mode');
+}
+
+async function fetchWeatherWarnings() {
+  const key      = localStorage.getItem('drmsa_weather_key');
+  const provider = localStorage.getItem('drmsa_weather_provider') || 'none';
+  const lat      = localStorage.getItem('drmsa_lat');
+  const lng      = localStorage.getItem('drmsa_lng');
+  const bar      = document.getElementById('saws-alert-bar');
+  const desc     = document.getElementById('saws-bar-desc');
+
+  if (!key || provider === 'none' || !lat || !lng) {
+    if (bar) bar.style.display = 'none';
+    return;
+  }
+
+  try {
+    let alertText = null;
+
+    if (provider === 'openweathermap') {
+      const res  = await fetch(`https://api.openweathermap.org/data/3.0/onecall?lat=${lat}&lon=${lng}&exclude=minutely,hourly,daily&appid=${key}`);
+      const data = await res.json();
+      if (data.alerts?.length) {
+        alertText = `${data.alerts[0].event} — ${data.alerts[0].description?.slice(0, 140)}`;
+      }
+    } else if (provider === 'weatherapi') {
+      const res  = await fetch(`https://api.weatherapi.com/v1/forecast.json?key=${key}&q=${lat},${lng}&alerts=yes`);
+      const data = await res.json();
+      if (data.alerts?.alert?.length) {
+        alertText = data.alerts.alert[0].headline || data.alerts.alert[0].event;
+      }
+    } else if (provider === 'tomorrow') {
+      await fetch(`https://api.tomorrow.io/v4/weather/forecast?location=${lat},${lng}&apikey=${key}`);
+    }
+
+    if (bar) bar.style.display = alertText ? 'flex' : 'none';
+    if (desc && alertText) desc.textContent = alertText;
+  } catch(e) {
+    if (bar) bar.style.display = 'none';
+  }
+
+  document.getElementById('saws-dismiss')?.addEventListener('click', () => {
+    if (bar) bar.style.display = 'none';
+  });
 }
 
 function setEl(id, val) {

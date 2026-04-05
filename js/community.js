@@ -4,11 +4,6 @@ import { supabase } from './supabase.js';
 let _muniId    = null;
 let _activeTab = 'shelters';
 let _muniLogos = { main: null, dm: null, mode: 'main' };
-const PNG_TEMPLATES = [
-  { key: 'official', label: 'Official notice' },
-  { key: 'compact', label: 'Compact bulletin' },
-  { key: 'social', label: 'Social square' }
-];
 
 export async function initCommunity(user) {
   _muniId = user?.municipality_id;
@@ -50,6 +45,7 @@ async function loadTab(tab) {
   switch (tab) {
     case 'shelters':   await renderShelters(body);   break;
     case 'relief-ops': await renderReliefOps(body);  break;
+    case 'saws':       await renderSAWS(body);        break;
   }
 }
 
@@ -367,26 +363,21 @@ function renderShelterCard(s) {
     </div>`;
 }
 
-async function downloadShelterPNG(s, template = 'official') {
+async function downloadShelterPNG(s) {
   const muniName    = window._drmsaUser?.municipalities?.name || 'Municipality';
   const date        = new Date().toLocaleString('en-ZA');
   const pct         = s.capacity ? Math.round((s.current_occupancy||0) / s.capacity * 100) : 0;
   const accentColor = { open:'#1a6b3a', 'at-capacity':'#8b1a1a', partial:'#7a5200', closed:'#444444' }[s.status] || '#1a3a6b';
   const statusBg    = { open:'#1a6b3a', 'at-capacity':'#c0392b', partial:'#d4860a', closed:'#555555' }[s.status] || '#555';
   const statusLabel = (s.status || 'UNKNOWN').replace(/-/g, ' ').toUpperCase();
-  const cfg = {
-    official: { W: 900, H: 500, title: 'Shelter Notification', titleSize: 26, bodySize: 13, showOccupancy: true },
-    compact: { W: 900, H: 420, title: 'Shelter Update Bulletin', titleSize: 23, bodySize: 12, showOccupancy: false },
-    social: { W: 1080, H: 1080, title: 'Shelter Status Update', titleSize: 34, bodySize: 15, showOccupancy: true }
-  }[template] || { W: 900, H: 500, title: 'Shelter Notification', titleSize: 26, bodySize: 13, showOccupancy: true };
 
   const logoImgs = await loadLogoImages();
-  const { W, H } = cfg;
+  const W = 900, H = 500;
   const { ctx, canvas, SPLIT, bodyTop, FTR_H, RX } = buildNoticeCanvas(logoImgs, accentColor, muniName, date, W, H);
 
   // ── LEFT: Title
-  ctx.fillStyle = accentColor; ctx.font = `bold ${cfg.titleSize}px Arial, sans-serif`;
-  ctx.fillText(cfg.title, 20, bodyTop + (template === 'social' ? 48 : 38));
+  ctx.fillStyle = accentColor; ctx.font = 'bold 26px Arial, sans-serif';
+  ctx.fillText('Shelter Notification', 20, bodyTop + 38);
 
   // ── LEFT: Body paragraph
   const para = [
@@ -409,39 +400,36 @@ async function downloadShelterPNG(s, template = 'official') {
   ];
 
   let ty = bodyTop + 60;
-  wrapRichText(ctx, para, SPLIT - 40, cfg.bodySize).forEach(line => { drawRichLine(ctx, line, 20, ty, cfg.bodySize, '#1a1a1a'); ty += (cfg.bodySize + 7); });
+  wrapRichText(ctx, para, SPLIT - 40, 13).forEach(line => { drawRichLine(ctx, line, 20, ty, 13, '#1a1a1a'); ty += 20; });
   ty += 6;
-  wrapRichText(ctx, para2, SPLIT - 40, cfg.bodySize).forEach(line => { drawRichLine(ctx, line, 20, ty, cfg.bodySize, '#1a1a1a'); ty += (cfg.bodySize + 7); });
+  wrapRichText(ctx, para2, SPLIT - 40, 13).forEach(line => { drawRichLine(ctx, line, 20, ty, 13, '#1a1a1a'); ty += 20; });
 
   // ── LEFT: Occupancy bar
-  if (cfg.showOccupancy) {
-    ty += 14;
-    ctx.fillStyle = '#888888'; ctx.font = 'bold 9px Arial, sans-serif';
-    ctx.fillText('OCCUPANCY', 20, ty); ty += 12;
-    const barW = SPLIT - 40, barH = 10;
-    ctx.fillStyle = '#d0ccc4'; roundRect(ctx, 20, ty, barW, barH, 4); ctx.fill();
-    const fillW = Math.min(pct / 100 * barW, barW);
-    ctx.fillStyle = accentColor; roundRect(ctx, 20, ty, Math.max(fillW, 4), barH, 4); ctx.fill();
-    ctx.fillStyle = '#555555'; ctx.font = '11px Arial, sans-serif';
-    ctx.fillText(`${s.current_occupancy || 0} / ${s.capacity || 0} persons`, 20, ty + 24);
-  }
+  ty += 14;
+  ctx.fillStyle = '#888888'; ctx.font = 'bold 9px Arial, sans-serif';
+  ctx.fillText('OCCUPANCY', 20, ty); ty += 12;
+  const barW = SPLIT - 40, barH = 10;
+  ctx.fillStyle = '#d0ccc4'; roundRect(ctx, 20, ty, barW, barH, 4); ctx.fill();
+  const fillW = Math.min(pct / 100 * barW, barW);
+  ctx.fillStyle = accentColor; roundRect(ctx, 20, ty, Math.max(fillW, 4), barH, 4); ctx.fill();
+  ctx.fillStyle = '#555555'; ctx.font = '11px Arial, sans-serif';
+  ctx.fillText(`${s.current_occupancy || 0} / ${s.capacity || 0} persons`, 20, ty + 24);
 
   // ── RIGHT: Fields
-  const shelterFields = [
+  drawRightFields(ctx, RX, bodyTop + 16, W, [
     { label: 'Status',             badge: true, badgeText: statusLabel, badgeBg: statusBg },
     { label: 'Facility type',      value: s.facility_type || '—' },
     { label: 'Address',            value: s.address || '—' },
     { label: 'Ward',               value: String(s.ward_number || '—') },
     { label: 'Contact',            value: `${s.contact_name || '—'} · ${s.contact_number || '—'}` },
     { label: 'Wheelchair access',  value: s.wheelchair_accessible ? 'Yes' : 'No' }
-  ];
-  drawRightFields(ctx, RX, bodyTop + 16, W, template === 'compact' ? shelterFields.slice(0, 4) : shelterFields);
+  ]);
   drawIssuedBy(ctx, RX, W, H, FTR_H, muniName);
 
   canvas.toBlob(blob => {
     const url = URL.createObjectURL(blob);
     const a   = Object.assign(document.createElement('a'), {
-      href: url, download: `shelter-notice-${template}-${(s.name||'shelter').replace(/\s+/g,'-')}.png`
+      href: url, download: `shelter-notice-${(s.name||'shelter').replace(/\s+/g,'-')}.png`
     });
     a.click(); URL.revokeObjectURL(url);
   }, 'image/png');
@@ -493,7 +481,7 @@ function bindShelterEvents(shelters) {
       drop.style.cssText = `position:fixed;top:${rect.bottom + 4}px;left:${rect.left}px;z-index:9999;background:var(--bg2);border:1px solid var(--border);border-radius:6px;min-width:170px;overflow:hidden;box-shadow:0 6px 20px rgba(0,0,0,.35)`;
       drop.innerHTML = `
         <button data-sh-txt="${id}" style="display:block;width:100%;text-align:left;background:transparent;border:none;border-bottom:1px solid var(--border);padding:9px 14px;font-size:12px;color:var(--text);cursor:pointer;font-family:monospace">📄 Text file (.txt)</button>
-        ${PNG_TEMPLATES.map((tpl, idx) => `<button data-sh-png="${id}" data-template="${tpl.key}" style="display:block;width:100%;text-align:left;background:transparent;border:none;${idx === PNG_TEMPLATES.length - 1 ? '' : 'border-bottom:1px solid var(--border);'}padding:9px 14px;font-size:12px;color:var(--text);cursor:pointer;font-family:monospace">🖼 Image (.png) · ${tpl.label}</button>`).join('')}`;
+        <button data-sh-png="${id}" style="display:block;width:100%;text-align:left;background:transparent;border:none;padding:9px 14px;font-size:12px;color:var(--text);cursor:pointer;font-family:monospace">🖼 Image (.png)</button>`;
 
       drop.querySelector('[data-sh-txt]').addEventListener('click', () => {
         const s = shelters.find(x => x.id === id); drop.remove(); if (!s) return;
@@ -510,11 +498,9 @@ function bindShelterEvents(shelters) {
         URL.revokeObjectURL(url);
       });
 
-      drop.querySelectorAll('[data-sh-png]').forEach(pngBtn => {
-        pngBtn.addEventListener('click', () => {
-          const s = shelters.find(x => x.id === id); drop.remove(); if (!s) return;
-          downloadShelterPNG(s, pngBtn.dataset.template || 'official');
-        });
+      drop.querySelector('[data-sh-png]').addEventListener('click', () => {
+        const s = shelters.find(x => x.id === id); drop.remove(); if (!s) return;
+        downloadShelterPNG(s);
       });
 
       document.body.appendChild(drop);
@@ -652,25 +638,20 @@ function renderReliefCard(op) {
     </div>`;
 }
 
-async function downloadReliefPNG(op, template = 'official') {
+async function downloadReliefPNG(op) {
   const muniName    = window._drmsaUser?.municipalities?.name || 'Municipality';
   const date        = new Date().toLocaleString('en-ZA');
   const accentColor = { active:'#5a3a1a', upcoming:'#1a3a6b', ended:'#444444' }[op.status] || '#5a3a1a';
   const statusBg    = { active:'#5a3a1a', upcoming:'#1a3a6b', ended:'#555555' }[op.status] || '#5a3a1a';
   const statusLabel = (op.status || 'UNKNOWN').toUpperCase();
-  const cfg = {
-    official: { W: 900, H: 500, title: 'Relief Operation Notification', titleSize: 26, bodySize: 13 },
-    compact: { W: 900, H: 420, title: 'Relief Operation Bulletin', titleSize: 23, bodySize: 12 },
-    social: { W: 1080, H: 1080, title: 'Relief Operation Update', titleSize: 34, bodySize: 15 }
-  }[template] || { W: 900, H: 500, title: 'Relief Operation Notification', titleSize: 26, bodySize: 13 };
 
   const logoImgs = await loadLogoImages();
-  const { W, H } = cfg;
+  const W = 900, H = 500;
   const { ctx, canvas, SPLIT, bodyTop, FTR_H, RX } = buildNoticeCanvas(logoImgs, accentColor, muniName, date, W, H);
 
   // ── LEFT: Title
-  ctx.fillStyle = accentColor; ctx.font = `bold ${cfg.titleSize}px Arial, sans-serif`;
-  ctx.fillText(cfg.title, 20, bodyTop + (template === 'social' ? 48 : 38));
+  ctx.fillStyle = accentColor; ctx.font = 'bold 26px Arial, sans-serif';
+  ctx.fillText('Relief Operation Notification', 20, bodyTop + 38);
 
   // ── LEFT: Body paragraph
   const para = [
@@ -691,12 +672,12 @@ async function downloadReliefPNG(op, template = 'official') {
   ];
 
   let ty = bodyTop + 60;
-  wrapRichText(ctx, para, SPLIT - 40, cfg.bodySize).forEach(line => { drawRichLine(ctx, line, 20, ty, cfg.bodySize, '#1a1a1a'); ty += (cfg.bodySize + 7); });
+  wrapRichText(ctx, para, SPLIT - 40, 13).forEach(line => { drawRichLine(ctx, line, 20, ty, 13, '#1a1a1a'); ty += 20; });
   ty += 6;
-  wrapRichText(ctx, para2, SPLIT - 40, cfg.bodySize).forEach(line => { drawRichLine(ctx, line, 20, ty, cfg.bodySize, '#1a1a1a'); ty += (cfg.bodySize + 7); });
+  wrapRichText(ctx, para2, SPLIT - 40, 13).forEach(line => { drawRichLine(ctx, line, 20, ty, 13, '#1a1a1a'); ty += 20; });
 
   // ── RIGHT: Fields
-  const reliefFields = [
+  drawRightFields(ctx, RX, bodyTop + 16, W, [
     { label: 'Status',             badge: true, badgeText: statusLabel, badgeBg: statusBg },
     { label: 'Hazard',             value: op.hazard_name || '—' },
     { label: 'Ward',               value: String(op.ward_number || '—') },
@@ -704,14 +685,13 @@ async function downloadReliefPNG(op, template = 'official') {
     { label: 'Schedule',           value: op.schedule || '—' },
     { label: 'Public contact',     value: op.public_contact || '—' },
     { label: 'Ends',               value: op.end_date ? new Date(op.end_date).toLocaleDateString('en-ZA') : '—' }
-  ];
-  drawRightFields(ctx, RX, bodyTop + 16, W, template === 'compact' ? reliefFields.slice(0, 5) : reliefFields);
+  ]);
   drawIssuedBy(ctx, RX, W, H, FTR_H, muniName);
 
   canvas.toBlob(blob => {
     const url = URL.createObjectURL(blob);
     const a   = Object.assign(document.createElement('a'), {
-      href: url, download: `relief-op-notice-${template}-${(op.name||'op').replace(/\s+/g,'-')}.png`
+      href: url, download: `relief-op-notice-${(op.name||'op').replace(/\s+/g,'-')}.png`
     });
     a.click(); URL.revokeObjectURL(url);
   }, 'image/png');
@@ -750,7 +730,7 @@ function bindReliefEvents(ops) {
       drop.style.cssText = `position:fixed;top:${rect.bottom + 4}px;left:${rect.left}px;z-index:9999;background:var(--bg2);border:1px solid var(--border);border-radius:6px;min-width:170px;overflow:hidden;box-shadow:0 6px 20px rgba(0,0,0,.35)`;
       drop.innerHTML = `
         <button data-ro-txt="${id}" style="display:block;width:100%;text-align:left;background:transparent;border:none;border-bottom:1px solid var(--border);padding:9px 14px;font-size:12px;color:var(--text);cursor:pointer;font-family:monospace">📄 Text file (.txt)</button>
-        ${PNG_TEMPLATES.map((tpl, idx) => `<button data-ro-png="${id}" data-template="${tpl.key}" style="display:block;width:100%;text-align:left;background:transparent;border:none;${idx === PNG_TEMPLATES.length - 1 ? '' : 'border-bottom:1px solid var(--border);'}padding:9px 14px;font-size:12px;color:var(--text);cursor:pointer;font-family:monospace">🖼 Image (.png) · ${tpl.label}</button>`).join('')}`;
+        <button data-ro-png="${id}" style="display:block;width:100%;text-align:left;background:transparent;border:none;padding:9px 14px;font-size:12px;color:var(--text);cursor:pointer;font-family:monospace">🖼 Image (.png)</button>`;
 
       drop.querySelector('[data-ro-txt]').addEventListener('click', () => {
         const op = ops.find(o => o.id === id); drop.remove(); if (!op) return;
@@ -766,11 +746,9 @@ function bindReliefEvents(ops) {
         URL.revokeObjectURL(url);
       });
 
-      drop.querySelectorAll('[data-ro-png]').forEach(pngBtn => {
-        pngBtn.addEventListener('click', () => {
-          const op = ops.find(o => o.id === id); drop.remove(); if (!op) return;
-          downloadReliefPNG(op, pngBtn.dataset.template || 'official');
-        });
+      drop.querySelector('[data-ro-png]').addEventListener('click', () => {
+        const op = ops.find(o => o.id === id); drop.remove(); if (!op) return;
+        downloadReliefPNG(op);
       });
 
       document.body.appendChild(drop);
@@ -779,6 +757,100 @@ function bindReliefEvents(ops) {
 
   document.addEventListener('click', () => document.getElementById('shared-dl-drop')?.remove());
 }
+
+// ── SAWS ─────────────────────────────────────────────────
+async function renderSAWS(body) {
+  const { data: warnings } = await supabase
+    .from('saws_warnings').select('*')
+    .eq('municipality_id', _muniId).order('created_at', { ascending: false });
+
+  body.innerHTML = `
+    <div class="sec-hdr">
+      <div><div class="sec-hdr-title">SAWS weather warnings</div><div class="sec-hdr-sub">${warnings?.filter(w=>w.is_active).length||0} active</div></div>
+      <button class="btn btn-red btn-sm" id="add-saws-btn">+ Manual alert</button>
+    </div>
+    <div id="saws-form-area"></div>
+    ${warnings?.length ? warnings.map(w => renderSAWSCard(w)).join('') : emptyState('No active warnings.')}`;
+
+  document.getElementById('add-saws-btn')?.addEventListener('click', () => showSAWSForm(body, _muniId));
+}
+
+function showSAWSForm(body, muniId) {
+  const area = document.getElementById('saws-form-area');
+  if (!area) return;
+  if (area.innerHTML) { area.innerHTML = ''; return; }
+
+  area.innerHTML = `
+    <div style="background:var(--bg3);border:1px solid var(--red-mid);border-radius:8px;padding:16px;margin-bottom:16px">
+      <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:12px">Add manual weather warning</div>
+      <div class="fl"><span class="fl-label">Warning title</span><input class="fl-input" id="sw-title" placeholder="e.g. Severe thunderstorm warning"/></div>
+      <div class="frow">
+        <div class="fl"><span class="fl-label">Warning type</span>
+          <select class="fl-sel" id="sw-type">
+            <option>Thunderstorm</option><option>Flash Flood</option><option>Strong Wind</option>
+            <option>Fire Danger</option><option>Heatwave</option><option>Cold Front</option>
+            <option>Drought</option><option>Hailstorm</option>
+          </select>
+        </div>
+        <div class="fl"><span class="fl-label">Severity</span>
+          <select class="fl-sel" id="sw-severity">
+            <option value="advisory">Advisory</option>
+            <option value="warning">Warning</option>
+            <option value="severe">Severe</option>
+          </select>
+        </div>
+      </div>
+      <div class="fl"><span class="fl-label">Description</span><textarea class="fl-textarea" id="sw-desc" rows="3"></textarea></div>
+      <div class="frow">
+        <div class="fl"><span class="fl-label">Valid from</span><input class="fl-input" type="datetime-local" id="sw-from"/></div>
+        <div class="fl"><span class="fl-label">Valid to</span><input class="fl-input" type="datetime-local" id="sw-to"/></div>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button class="btn btn-red btn-sm" id="save-saws-btn">Save warning</button>
+        <button class="btn btn-sm" onclick="document.getElementById('saws-form-area').innerHTML=''">Cancel</button>
+      </div>
+    </div>`;
+
+  document.getElementById('save-saws-btn')?.addEventListener('click', async () => {
+    const title = document.getElementById('sw-title')?.value.trim();
+    if (!title) { alert('Please enter a warning title.'); return; }
+    const { error } = await supabase.from('saws_warnings').insert({
+      municipality_id: muniId, title,
+      warning_type:    document.getElementById('sw-type')?.value,
+      severity:        document.getElementById('sw-severity')?.value,
+      description:     document.getElementById('sw-desc')?.value,
+      valid_from:      document.getElementById('sw-from')?.value||null,
+      valid_to:        document.getElementById('sw-to')?.value||null,
+      is_active:true, is_manual:true, source:'Manual entry'
+    });
+    if (!error) { area.innerHTML=''; showToast('✓ Warning saved successfully!'); await renderSAWS(body); }
+    else showToast(error.message, true);
+  });
+}
+
+function renderSAWSCard(w) {
+  return `
+    <div class="rec-card" style="margin-bottom:12px${w.is_active?';border-color:rgba(248,81,73,.3)':''}">
+      <div class="rec-head">
+        ${w.is_active?'<div class="pulse-dot" style="width:8px;height:8px;margin-right:4px"></div>':''}
+        <div style="flex:1">
+          <div class="rec-name" style="color:${w.is_active?'var(--red)':'var(--text)'}">${w.title}</div>
+          <div class="rec-meta">${w.warning_type||''} · ${w.valid_from?new Date(w.valid_from).toLocaleString('en-ZA'):'—'} — ${w.valid_to?new Date(w.valid_to).toLocaleString('en-ZA'):'—'}</div>
+        </div>
+        <span class="badge ${w.is_active?'b-red':'b-gray'}">${w.is_active?'ACTIVE':'EXPIRED'}</span>
+      </div>
+      ${w.description?`<div style="padding:10px 16px;font-size:12px;color:var(--text2);line-height:1.6">${w.description}</div>`:''}
+      <div class="rec-foot">
+        <button class="btn btn-sm btn-red" onclick="deactivateSAWS('${w.id}')">Deactivate</button>
+      </div>
+    </div>`;
+}
+
+window.deactivateSAWS = async function(id) {
+  await supabase.from('saws_warnings').update({ is_active: false }).eq('id', id);
+  showToast('Warning deactivated');
+  await renderSAWS(document.getElementById('community-body'));
+};
 
 function emptyState(msg) {
   return `<div style="text-align:center;padding:48px 20px;color:var(--text3);font-size:12px">${msg}</div>`;

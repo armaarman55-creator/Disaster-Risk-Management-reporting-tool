@@ -313,7 +313,7 @@ function hideAuth() {
 }
 
 export async function signOut() {
-  // Remove only the Supabase session token — preserve local UI preferences
+  // Remove only the Supabase session token — preserve theme + weather settings
   Object.keys(localStorage)
     .filter(k => k.startsWith('sb-'))
     .forEach(k => localStorage.removeItem(k));

@@ -4,11 +4,6 @@ import { supabase } from './supabase.js';
 let _muniId   = null;
 let _closures = [];
 let _muniLogos = { main: null, dm: null, mode: 'main' };
-const ROUTE_PNG_TEMPLATES = [
-  { key: 'official', label: 'Official notice' },
-  { key: 'compact', label: 'Compact bulletin' },
-  { key: 'social', label: 'Social square' }
-];
 
 export async function initRoutes(user) {
   _muniId = user?.municipality_id;
@@ -263,25 +258,20 @@ function showEditClosureForm(closure) {
 }
 
 // ── PNG IMAGE DOWNLOAD ────────────────────────────────────
-async function downloadClosurePNG(c, template = 'official') {
+async function downloadClosurePNG(c) {
   const alt         = c.alternative_routes?.[0];
   const muniName    = window._drmsaUser?.municipalities?.name || 'Municipality';
   const date        = new Date().toLocaleString('en-ZA');
   const statusLabel = { closed:'FULLY CLOSED', partial:'PARTIAL CLOSURE', open:'REOPENED' }[c.status] || (c.status||'').toUpperCase();
   const accentColor = { closed:'#1a3a6b', partial:'#7a5200', open:'#1a6b3a' }[c.status] || '#1a3a6b';
   const statusBg    = { closed:'#c0392b', partial:'#d4860a', open:'#1a6b3a' }[c.status] || '#555';
-  const cfg = {
-    official: { W: 900, baseH: 480, altH: 580, title: 'Road Closure Notice', titleSize: 26, bodySize: 13 },
-    compact: { W: 900, baseH: 420, altH: 500, title: 'Road Closure Bulletin', titleSize: 23, bodySize: 12 },
-    social: { W: 1080, baseH: 860, altH: 980, title: 'Road Closure Update', titleSize: 34, bodySize: 15 }
-  }[template] || { W: 900, baseH: 480, altH: 580, title: 'Road Closure Notice', titleSize: 26, bodySize: 13 };
 
   const logoImgs = await loadLogoImages();
 
-  // Canvas dimensions depend on selected template
-  const W = cfg.W;
+  // Canvas dimensions: 900 wide, height depends on alt route
+  const W = 900;
   const HAS_ALT = !!alt;
-  const H = HAS_ALT ? cfg.altH : cfg.baseH;
+  const H = HAS_ALT ? 580 : 480;
   const SPLIT = Math.round(W * 0.63); // left column width
   const HDR_H = 76;  // header row height
   const FTR_H = 32;  // footer bar height
@@ -349,14 +339,14 @@ async function downloadClosurePNG(c, template = 'official') {
 
   // ── LEFT: Title
   ctx.fillStyle = accentColor;
-  ctx.font = `bold ${cfg.titleSize}px Arial, sans-serif`;
-  ctx.fillText(cfg.title, 20, bodyTop + (template === 'social' ? 48 : 38));
+  ctx.font = 'bold 26px Arial, sans-serif';
+  ctx.fillText('Road Closure Notice', 20, bodyTop + 38);
 
   // ── LEFT: Body paragraph
   const bodyLines = wrapRichText(ctx, [
     { text: c.road_name, bold: true },
     { text: ' is closed to all traffic.', bold: false }
-  ], SPLIT - 40, cfg.bodySize);
+  ], SPLIT - 40, 13);
 
   const para2 = [
     { text: 'The ', bold: false },
@@ -368,10 +358,10 @@ async function downloadClosurePNG(c, template = 'official') {
   ];
 
   let ty = bodyTop + 62;
-  bodyLines.forEach(line => { drawRichLine(ctx, line, 20, ty, cfg.bodySize, '#1a1a1a'); ty += (cfg.bodySize + 7); });
+  bodyLines.forEach(line => { drawRichLine(ctx, line, 20, ty, 13, '#1a1a1a'); ty += 20; });
   ty += 4;
-  const para2Lines = wrapRichText(ctx, para2, SPLIT - 40, cfg.bodySize);
-  para2Lines.forEach(line => { drawRichLine(ctx, line, 20, ty, cfg.bodySize, '#1a1a1a'); ty += (cfg.bodySize + 7); });
+  const para2Lines = wrapRichText(ctx, para2, SPLIT - 40, 13);
+  para2Lines.forEach(line => { drawRichLine(ctx, line, 20, ty, 13, '#1a1a1a'); ty += 20; });
 
   // ── LEFT: Alternative route box
   if (alt) {
@@ -409,10 +399,9 @@ async function downloadClosurePNG(c, template = 'official') {
     { label: 'Closed since',      value: c.closed_since ? new Date(c.closed_since).toLocaleString('en-ZA') : '—' },
     { label: 'Expected reopening',value: c.expected_reopen || 'Unknown' }
   ];
-  const routeFields = template === 'compact' ? fieldDefs.slice(0, 3) : fieldDefs;
 
   let ry = bodyTop + 18;
-  routeFields.forEach(f => {
+  fieldDefs.forEach(f => {
     ctx.fillStyle = '#888888';
     ctx.font = 'bold 9px Arial, sans-serif';
     ctx.fillText(f.label.toUpperCase(), RX, ry);
@@ -465,7 +454,7 @@ async function downloadClosurePNG(c, template = 'official') {
     const url = URL.createObjectURL(blob);
     const a   = Object.assign(document.createElement('a'), {
       href: url,
-      download: `road-closure-notice-${template}-${(c.road_name||'route').replace(/\s+/g,'-')}.png`
+      download: `road-closure-notice-${(c.road_name||'route').replace(/\s+/g,'-')}.png`
     });
     a.click(); URL.revokeObjectURL(url);
   }, 'image/png');
@@ -598,11 +587,11 @@ function bindClosureEvents() {
       const drop = document.createElement('div');
       drop.id = 'shared-dl-drop';
       drop.dataset.forId = id;
-      drop.style.cssText = `position:fixed;left:${rect.left}px;z-index:9999;background:var(--bg2);border:1px solid var(--border);border-radius:6px;min-width:170px;overflow:hidden;box-shadow:0 6px 20px rgba(0,0,0,.35);visibility:hidden`;
+      drop.style.cssText = `position:fixed;top:${rect.bottom + 4}px;left:${rect.left}px;z-index:9999;background:var(--bg2);border:1px solid var(--border);border-radius:6px;min-width:170px;overflow:hidden;box-shadow:0 6px 20px rgba(0,0,0,.35)`;
       drop.addEventListener('click', e => e.stopPropagation());
       drop.innerHTML = `
         <button data-dl-text="${id}" style="display:block;width:100%;text-align:left;background:transparent;border:none;border-bottom:1px solid var(--border);padding:9px 14px;font-size:12px;color:var(--text);cursor:pointer;font-family:monospace">📄 Text file (.txt)</button>
-        ${ROUTE_PNG_TEMPLATES.map((tpl, idx) => `<button data-dl-png="${id}" data-template="${tpl.key}" style="display:block;width:100%;text-align:left;background:transparent;border:none;${idx === ROUTE_PNG_TEMPLATES.length - 1 ? '' : 'border-bottom:1px solid var(--border);'}padding:9px 14px;font-size:12px;color:var(--text);cursor:pointer;font-family:monospace">🖼 Image (.png) · ${tpl.label}</button>`).join('')}`;
+        <button data-dl-png="${id}"  style="display:block;width:100%;text-align:left;background:transparent;border:none;padding:9px 14px;font-size:12px;color:var(--text);cursor:pointer;font-family:monospace">🖼 Image (.png)</button>`;
 
       drop.querySelector('[data-dl-text]').addEventListener('click', () => {
         const c = _closures.find(x => x.id === id); drop.remove(); if (!c) return;
@@ -620,19 +609,12 @@ function bindClosureEvents() {
         a.click(); URL.revokeObjectURL(url);
       });
 
-      drop.querySelectorAll('[data-dl-png]').forEach(pngBtn => {
-        pngBtn.addEventListener('click', () => {
-          const c = _closures.find(x => x.id === id); drop.remove(); if (!c) return;
-          downloadClosurePNG(c, pngBtn.dataset.template || 'official');
-        });
+      drop.querySelector('[data-dl-png]').addEventListener('click', () => {
+        const c = _closures.find(x => x.id === id); drop.remove(); if (!c) return;
+        downloadClosurePNG(c);
       });
 
       document.body.appendChild(drop);
-
-      // Route downloads should open upward by default.
-      const menuTop = rect.top - drop.offsetHeight - 4;
-      drop.style.top = `${Math.max(8, menuTop)}px`;
-      drop.style.visibility = 'visible';
     });
   });
 

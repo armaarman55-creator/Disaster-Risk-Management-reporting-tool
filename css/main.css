@@ -183,6 +183,14 @@ a{text-decoration:none;color:inherit}
 .alt-route-box{background:var(--green-dim);border:1px solid rgba(63,185,80,.2);border-radius:var(--r-md);padding:10px 12px;margin:0 16px 12px}
 .alt-label{font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--green);margin-bottom:4px}
 
+/* ── SAWS BAR ── */
+.saws-bar{background:var(--red-dim);border:1px solid var(--red-mid);border-radius:var(--r-lg);padding:11px 16px;display:flex;align-items:center;gap:12px;margin-bottom:16px}
+.saws-bar-line{width:2px;height:32px;background:var(--red);border-radius:1px;flex-shrink:0}
+.saws-bar-body{flex:1}
+.saws-bar-title{font-size:12px;font-weight:700;color:var(--red);text-transform:uppercase;letter-spacing:.02em}
+.saws-bar-desc{font-size:12px;color:rgba(248,81,73,.7);margin-top:2px}
+.saws-dismiss{font-size:11px;color:var(--text3);cursor:pointer;white-space:nowrap}
+
 /* ── INSTALL BANNER ── */
 .install-banner{position:fixed;bottom:60px;left:50%;transform:translateX(-50%);background:var(--bg2);border:1px solid var(--border2);border-radius:var(--r-lg);padding:12px 18px;display:flex;align-items:center;gap:14px;z-index:999;box-shadow:0 8px 32px rgba(0,0,0,.3);min-width:320px;max-width:480px}
 .install-banner-title{font-size:13px;font-weight:700;color:var(--text)}

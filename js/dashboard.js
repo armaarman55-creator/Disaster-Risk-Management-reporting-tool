@@ -80,6 +80,8 @@ export async function initDashboard(user) {
     const dash = document.getElementById('page-dashboard');
     const kpiStrip = dash?.querySelector('.kpi-strip');
     const bodyGrid = dash?.querySelector('.body-grid');
+    const sawsBar  = document.getElementById('saws-alert-bar');
+    if (sawsBar) sawsBar.style.display = 'none';
     if (kpiStrip) kpiStrip.style.opacity = '0.3';
     if (bodyGrid) bodyGrid.innerHTML = `
       <div style="grid-column:1/-1;text-align:center;padding:60px 20px">
@@ -1391,6 +1393,9 @@ function initDashboardEvents() {
         updateMapLegend();
       }
     });
+  });
+  document.getElementById('saws-dismiss')?.addEventListener('click', () => {
+    document.getElementById('saws-alert-bar')?.remove();
   });
 }
 

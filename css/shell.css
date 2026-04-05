@@ -206,13 +206,6 @@ select { font-family: inherit; }
   margin-bottom: 2px;
   border-radius: var(--r-md);
 }
-.sidebar.collapsed .sni,
-.sidebar.collapsed .sni:hover,
-.sidebar.collapsed .sni.on {
-  background: transparent;
-  box-shadow: none;
-  border-color: transparent;
-}
 .sidebar.collapsed .sni-label { opacity: 0; max-width: 0; pointer-events: none; }
 
 /* ── JS-portal tooltip (appended to body) ── */
@@ -508,6 +501,18 @@ select { font-family: inherit; }
   transition: border-color var(--transition);
 }
 .map-search-input:focus { border-color: var(--blue); }
+
+/* SAWS alert */
+.saws-bar {
+  display: flex; align-items: center; gap: 12px;
+  background: var(--amber-dim);
+  border: 1px solid rgba(194,124,26,.22);
+  border-radius: var(--r-lg); padding: 9px 14px; flex-shrink: 0;
+}
+.saws-bar-title { font-size: 12px; font-weight: 700; color: var(--amber); }
+.saws-bar-desc  { font-size: 11px; color: var(--text2); }
+.saws-dismiss   { font-size: 11px; color: var(--text3); cursor: pointer; margin-left: auto; }
+.saws-dismiss:hover { color: var(--text); }
 
 /* Generic btn */
 .btn {
