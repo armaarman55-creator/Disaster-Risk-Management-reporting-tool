@@ -591,6 +591,7 @@ function renderPlanDetail() {
   host.querySelectorAll('.cp-tbl-del-row[data-grid]').forEach(btn => {
     btn.addEventListener('click', function () { this.closest('tr')?.remove(); scheduleAutoSave(plan.id); });
   });
+}
 
 function renderTypeOptions() {
   const select = document.getElementById('cp-plan-type');
