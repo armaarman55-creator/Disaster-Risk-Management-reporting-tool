@@ -1,4 +1,4 @@
-import { addSection, createPlan, generateFromSeed, getPlan, listPlans, setPlan, updateSection } from './contingency-dist/plan-engine.js';
+import { addSection, createPlan, deletePlan, generateFromSeed, getPlan, listPlans, setPlan, updateSection } from './contingency-dist/plan-engine.js';
 import { loadSeed } from './contingency-dist/seed-loader.js';
 import { saveVersionSnapshot, submitForReview, approvePlan } from './contingency-dist/versioning.js';
 import { createAnnexureFromTemplate, attachAnnexureToPlan } from './contingency-dist/annexure-engine.js';
@@ -45,6 +45,12 @@ function textFromHtml(html) {
     .trim();
 }
 
+// Safely render a cell/item value for Word export — strip any HTML tags that
+// may have been stored by the rich-text editor, then re-escape for XML safety.
+function safeDocText(v) {
+  return esc(String(v ?? '').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim());
+}
+
 function contingencyDocHtml(plan) {
   const meta = plan?.metadata || {};
   const secHtml = (plan.sections || [])
@@ -55,23 +61,32 @@ function contingencyDocHtml(plan) {
           if (b.type === 'table') {
             const headers = Array.isArray(b.content?.headers) ? b.content.headers : [];
             const rows = Array.isArray(b.content?.rows) ? b.content.rows : [];
-            return `<table><thead><tr>${headers.map(h => `<th>${esc(h)}</th>`).join('')}</tr></thead><tbody>${
-              rows.map(r => `<tr>${(Array.isArray(r) ? r : []).map(c => `<td>${esc(c)}</td>`).join('')}</tr>`).join('')
-            }</tbody></table>`;
+            // Omit empty tables (no rows yet) — just show the header row so Word layout is clean
+            return `<table>
+              <thead><tr>${headers.map(h => `<th>${safeDocText(h)}</th>`).join('')}</tr></thead>
+              <tbody>${rows.length
+                ? rows.map(r => `<tr>${(Array.isArray(r) ? r : []).map(c => `<td>${safeDocText(c)}</td>`).join('')}</tr>`).join('')
+                : `<tr><td colspan="${headers.length || 1}" style="color:#999;font-style:italic">No entries — fill in this table in the plan editor</td></tr>`
+              }</tbody>
+            </table>`;
           }
           if (b.type === 'list') {
             const items = Array.isArray(b.content) ? b.content : [];
-            return `<ul>${items.map(i => `<li>${esc(i)}</li>`).join('')}</ul>`;
+            return `<ul>${items.map(i => `<li>${safeDocText(i)}</li>`).join('')}</ul>`;
           }
-          return `<div>${richBlockHtml(b.content)}</div>`;
+          // Rich text — content may contain HTML tags from contenteditable; pass through as-is
+          // since downloadDoc wraps in a full HTML document that Word can parse.
+          const raw = String(b.content ?? '');
+          const rendered = raw.includes('<') ? raw : esc(raw).replace(/\n/g, '<br/>');
+          return `<p>${rendered}</p>`;
         })
         .join('');
-      return `<h2>${esc(s.title)}</h2>${blockHtml}`;
+      return `<h2>${safeDocText(s.title)}</h2>${blockHtml}`;
     })
     .join('');
 
   return `${docHeader(`Contingency Plan — ${meta.title || 'Plan'}`, meta.municipality_name || 'Municipality')}
-    <div class="meta">Category: ${esc(meta.plan_category || '—')} · Type: ${esc(meta.plan_type || '—')} · Status: ${esc(plan.status || 'draft')}</div>
+    <div class="meta">Category: ${safeDocText(meta.plan_category || '—')} · Type: ${safeDocText(meta.plan_type || '—')} · Status: ${safeDocText(plan.status || 'draft')}</div>
     ${secHtml}`;
 }
 
@@ -392,16 +407,56 @@ function renderPlanList() {
 
   host.innerHTML = plans
     .map(
-      p => `<button class="cp-plan-item ${p.id === _activePlanId ? 'active' : ''}" data-plan-id="${esc(p.id)}">
-        <div><strong>${esc(p.metadata.title)}</strong></div>
-        <div class="cp-plan-meta">${esc(p.metadata.plan_type)} · ${esc(p.status)}</div>
-      </button>`
+      p => `<div class="cp-plan-item ${p.id === _activePlanId ? 'active' : ''}"
+              style="display:flex;align-items:center;gap:6px;padding:8px 10px;border-radius:6px;cursor:pointer;
+                     border:1px solid ${p.id === _activePlanId ? 'var(--accent,#2563eb)' : 'transparent'};
+                     background:${p.id === _activePlanId ? 'var(--bg3,#eff3fb)' : 'transparent'};
+                     transition:background .12s">
+        <div class="cp-plan-item-info" data-plan-id="${esc(p.id)}" style="flex:1;min-width:0;overflow:hidden">
+          <div style="font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(p.metadata.title)}</div>
+          <div class="cp-plan-meta" style="font-size:11px;color:var(--text3,#888);margin-top:1px">${esc(p.metadata.plan_type)} · ${esc(p.status)}</div>
+        </div>
+        <button class="cp-plan-delete btn btn-sm"
+          data-plan-id="${esc(p.id)}"
+          data-plan-title="${esc(p.metadata.title)}"
+          title="Delete this plan"
+          style="flex-shrink:0;padding:2px 7px;font-size:11px;color:#c44;border-color:#c44;opacity:.7;transition:opacity .12s"
+          onmouseenter="this.style.opacity='1'"
+          onmouseleave="this.style.opacity='.7'">✕</button>
+      </div>`
     )
     .join('');
 
-  host.querySelectorAll('[data-plan-id]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      _activePlanId = btn.getAttribute('data-plan-id');
+  // Select plan on info-zone click
+  host.querySelectorAll('.cp-plan-item-info[data-plan-id]').forEach(el => {
+    el.addEventListener('click', () => {
+      _activePlanId = el.getAttribute('data-plan-id');
+      renderPlanList();
+      renderPlanDetail();
+    });
+  });
+
+  // Delete plan on ✕ click
+  host.querySelectorAll('.cp-plan-delete[data-plan-id]').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      const id = btn.getAttribute('data-plan-id');
+      const title = btn.getAttribute('data-plan-title') || 'this plan';
+      if (!confirm(`Delete "${title}"?\n\nThis cannot be undone.`)) return;
+      try {
+        // Use engine deletePlan if available, otherwise fall back to setPlan with deleted flag
+        if (typeof deletePlan === 'function') {
+          deletePlan(id);
+        } else {
+          const p = getPlan(id);
+          if (p) setPlan({ ...p, deleted: true, status: 'deleted' });
+        }
+      } catch (err) {
+        console.warn('[Contingency] deletePlan error:', err);
+      }
+      if (_activePlanId === id) {
+        _activePlanId = null;
+      }
       renderPlanList();
       renderPlanDetail();
     });
@@ -428,11 +483,61 @@ function blockEditor(sectionKey, block, idx) {
     </label>`;
   }
   if (block.type === 'table') {
-    const headers = Array.isArray(block.content?.headers) ? block.content.headers.join(', ') : '';
-    const rows = Array.isArray(block.content?.rows) ? block.content.rows.map(r => (Array.isArray(r) ? r.join(' | ') : '')).join('\n') : '';
-    return `<div class="cp-field"><div>Table block</div>
-      <input class="fl-input" ${base} data-kind="table-headers" value="${esc(headers)}" placeholder="Headers (comma separated)" />
-      <textarea class="cp-textarea" ${base} data-kind="table-rows" placeholder="Rows (one row per line, columns separated by |)">${esc(rows)}</textarea>
+    const headers = Array.isArray(block.content?.headers) ? block.content.headers : [];
+    const rows = Array.isArray(block.content?.rows) ? block.content.rows : [];
+    const gridId = `cp_tbl_${esc(sectionKey)}_${idx}`;
+    const colCount = headers.length;
+
+    // Build one <tr> of inputs per existing row, plus a blank row if none exist yet
+    const buildRowHtml = (cells, rowIdx) => {
+      const tds = headers.map((_, ci) => {
+        const val = esc(cells[ci] ?? '');
+        return `<td style="padding:2px 4px">
+          <input
+            class="cp-table-cell"
+            data-grid="${gridId}"
+            data-row="${rowIdx}"
+            data-col="${ci}"
+            value="${val}"
+            placeholder="—"
+            style="width:100%;min-width:60px;box-sizing:border-box;padding:4px 6px;border:1px solid var(--border,#ccc);border-radius:3px;font-size:12px;background:var(--bg,#fff);color:var(--text,#111)"
+          />
+        </td>`;
+      }).join('');
+      return `<tr data-row="${rowIdx}">
+        ${tds}
+        <td style="padding:2px 4px;width:28px;vertical-align:middle">
+          <button type="button" class="cp-tbl-del-row btn btn-sm"
+            data-grid="${gridId}" data-row="${rowIdx}"
+            style="padding:2px 6px;font-size:11px;color:#c44;border-color:#c44;line-height:1"
+            title="Delete row">✕</button>
+        </td>
+      </tr>`;
+    };
+
+    const initialRows = rows.length > 0
+      ? rows.map((r, ri) => buildRowHtml(Array.isArray(r) ? r : [], ri)).join('')
+      : buildRowHtml(Array(colCount).fill(''), 0);
+
+    return `<div class="cp-field cp-table-block" data-grid-id="${gridId}" ${base} data-kind="table-grid">
+      <div style="font-size:11px;font-weight:600;margin-bottom:6px;color:var(--text3,#888)">Table</div>
+      <div style="overflow-x:auto">
+        <table id="${gridId}" style="width:100%;border-collapse:collapse;font-size:12px">
+          <thead>
+            <tr style="background:var(--bg3,#f0f4fa)">
+              ${headers.map(h => `<th style="text-align:left;padding:5px 8px;font-size:11px;font-weight:600;color:var(--text2,#333);border-bottom:2px solid var(--border2,#c0cadf);white-space:nowrap">${esc(h)}</th>`).join('')}
+              <th style="width:28px;border-bottom:2px solid var(--border2,#c0cadf)"></th>
+            </tr>
+          </thead>
+          <tbody id="${gridId}_body">
+            ${initialRows}
+          </tbody>
+        </table>
+      </div>
+      <button type="button" class="cp-tbl-add-row btn btn-sm"
+        data-grid="${gridId}"
+        data-cols="${colCount}"
+        style="margin-top:6px;font-size:11px">+ Add row</button>
     </div>`;
   }
   return `<label class="cp-field">Block (${esc(block.type)})
@@ -455,8 +560,28 @@ function collectBlocksFromForm(host, section) {
       return;
     }
     if (block.type === 'table') {
-      const headers = (q('table-headers')?.value || '').split(',').map(v => v.trim()).filter(Boolean);
-      const rows = (q('table-rows')?.value || '').split('\n').map(r => r.trim()).filter(Boolean).map(r => r.split('|').map(c => c.trim()));
+      // Headers are frozen (defined by library) — read from the rendered <th> elements
+      const gridId = `cp_tbl_${section.key}_${idx}`;
+      const tableEl = host.querySelector(`#${gridId}`);
+      // Read headers from the block definition (source of truth — never let user change them)
+      const headers = Array.isArray(block.content?.headers) ? block.content.headers : [];
+      const rows = [];
+      if (tableEl) {
+        const tbody = tableEl.querySelector('tbody');
+        if (tbody) {
+          tbody.querySelectorAll('tr[data-row]').forEach(tr => {
+            const cells = [];
+            tr.querySelectorAll('input.cp-table-cell').forEach(inp => {
+              cells[parseInt(inp.dataset.col)] = inp.value.trim();
+            });
+            // Only include rows that have at least one non-empty cell
+            if (cells.some(c => c)) rows.push(cells);
+          });
+        }
+      } else {
+        // Fallback: grid not in DOM (e.g. during programmatic save), preserve existing rows
+        if (Array.isArray(block.content?.rows)) rows.push(...block.content.rows);
+      }
       blocks.push({ ...block, content: { headers, rows } });
       return;
     }
@@ -610,7 +735,59 @@ function renderPlanDetail() {
   host.querySelectorAll('textarea,input,[contenteditable="true"]').forEach(el => {
     el.addEventListener('input', () => scheduleAutoSave(plan.id));
   });
-}
+
+  // ── Table grid: Add row ──
+  host.querySelectorAll('.cp-tbl-add-row[data-grid]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const gridId = btn.getAttribute('data-grid');
+      const colCount = parseInt(btn.getAttribute('data-cols')) || 1;
+      const tbody = host.querySelector(`#${gridId}_body`);
+      if (!tbody) return;
+      const nextRow = tbody.querySelectorAll('tr[data-row]').length;
+      const tr = document.createElement('tr');
+      tr.setAttribute('data-row', nextRow);
+      let tds = '';
+      for (let ci = 0; ci < colCount; ci++) {
+        tds += `<td style="padding:2px 4px">
+          <input
+            class="cp-table-cell"
+            data-grid="${gridId}"
+            data-row="${nextRow}"
+            data-col="${ci}"
+            value=""
+            placeholder="—"
+            style="width:100%;min-width:60px;box-sizing:border-box;padding:4px 6px;border:1px solid var(--border,#ccc);border-radius:3px;font-size:12px;background:var(--bg,#fff);color:var(--text,#111)"
+          />
+        </td>`;
+      }
+      tds += `<td style="padding:2px 4px;width:28px;vertical-align:middle">
+        <button type="button" class="cp-tbl-del-row btn btn-sm"
+          data-grid="${gridId}" data-row="${nextRow}"
+          style="padding:2px 6px;font-size:11px;color:#c44;border-color:#c44;line-height:1"
+          title="Delete row">✕</button>
+      </td>`;
+      tr.innerHTML = tds;
+      tbody.appendChild(tr);
+      // Wire delete on newly added row
+      tr.querySelector('.cp-tbl-del-row')?.addEventListener('click', function() {
+        this.closest('tr')?.remove();
+        scheduleAutoSave(plan.id);
+      });
+      // Wire autosave on new inputs
+      tr.querySelectorAll('input').forEach(inp => {
+        inp.addEventListener('input', () => scheduleAutoSave(plan.id));
+      });
+      scheduleAutoSave(plan.id);
+    });
+  });
+
+  // ── Table grid: Delete row (for rows rendered in initial HTML) ──
+  host.querySelectorAll('.cp-tbl-del-row[data-grid]').forEach(btn => {
+    btn.addEventListener('click', function() {
+      this.closest('tr')?.remove();
+      scheduleAutoSave(plan.id);
+    });
+  });
 
 function renderTypeOptions() {
   const select = document.getElementById('cp-plan-type');
