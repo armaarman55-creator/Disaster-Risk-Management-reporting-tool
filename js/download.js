@@ -108,7 +108,7 @@ function downloadCSV(rows, filename) {
 }
 
 function downloadDoc(html, filename) {
-  // Word-compatible HTML — opens in Word/LibreOffice
+  // Word-compatible HTML payload
   const doc = `<html xmlns:o="urn:schemas-microsoft-com:office:office"
     xmlns:w="urn:schemas-microsoft-com:office:word"
     xmlns="http://www.w3.org/TR/REC-html40">
