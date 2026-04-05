@@ -8,7 +8,7 @@ import {
   getPlanTypesByCategory
 } from './contingency-plan-type-registry.js';
 import { fetchPlansFromBackend, savePlanToBackend } from './contingency-repo.js';
-import { buildLibrarySections, HVC_HAZARD_MAP, HVC_SECTION_TARGETS } from './contingency-section-library.js';
+import { buildLibrarySections } from './contingency-section-library.js';
 import { showDownloadMenu, docHeader } from './download.js';
 import { supabase } from './supabase.js';
 
@@ -45,14 +45,17 @@ function textFromHtml(html) {
     .trim();
 }
 
-// Safely render a cell/item value for Word export — strip any HTML tags that
-// may have been stored by the rich-text editor, then re-escape for XML safety.
-function safeDocText(v) {
-  return esc(String(v ?? '').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim());
+function hvcSectionsAsList(plan) {
+  return (plan.sections || [])
+    .filter(s => s.key === 'hvc_placeholders' || s.key === 'environmental_health_safety')
+    .map(s => `• ${s.title}`)
+    .join('\n');
 }
 
 function contingencyDocHtml(plan) {
   const meta = plan?.metadata || {};
+  // Strip any HTML tags a value may contain before escaping for Word output
+  const docEsc = v => esc(String(v ?? '').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim());
   const secHtml = (plan.sections || [])
     .sort((a, b) => a.order - b.order)
     .map(s => {
@@ -61,161 +64,64 @@ function contingencyDocHtml(plan) {
           if (b.type === 'table') {
             const headers = Array.isArray(b.content?.headers) ? b.content.headers : [];
             const rows = Array.isArray(b.content?.rows) ? b.content.rows : [];
-            // Omit empty tables (no rows yet) — just show the header row so Word layout is clean
-            return `<table>
-              <thead><tr>${headers.map(h => `<th>${safeDocText(h)}</th>`).join('')}</tr></thead>
-              <tbody>${rows.length
-                ? rows.map(r => `<tr>${(Array.isArray(r) ? r : []).map(c => `<td>${safeDocText(c)}</td>`).join('')}</tr>`).join('')
-                : `<tr><td colspan="${headers.length || 1}" style="color:#999;font-style:italic">No entries — fill in this table in the plan editor</td></tr>`
-              }</tbody>
-            </table>`;
+            return `<table><thead><tr>${headers.map(h => `<th>${docEsc(h)}</th>`).join('')}</tr></thead><tbody>${
+              rows.length
+                ? rows.map(r => `<tr>${(Array.isArray(r) ? r : []).map(c => `<td>${docEsc(c)}</td>`).join('')}</tr>`).join('')
+                : `<tr><td colspan="${headers.length || 1}" style="color:#999;font-style:italic">No entries yet</td></tr>`
+            }</tbody></table>`;
           }
           if (b.type === 'list') {
             const items = Array.isArray(b.content) ? b.content : [];
-            return `<ul>${items.map(i => `<li>${safeDocText(i)}</li>`).join('')}</ul>`;
+            return `<ul>${items.map(i => `<li>${docEsc(i)}</li>`).join('')}</ul>`;
           }
-          // Rich text — content may contain HTML tags from contenteditable; pass through as-is
-          // since downloadDoc wraps in a full HTML document that Word can parse.
-          const raw = String(b.content ?? '');
-          const rendered = raw.includes('<') ? raw : esc(raw).replace(/\n/g, '<br/>');
-          return `<p>${rendered}</p>`;
+          return `<div>${richBlockHtml(b.content)}</div>`;
         })
         .join('');
-      return `<h2>${safeDocText(s.title)}</h2>${blockHtml}`;
+      return `<h2>${docEsc(s.title)}</h2>${blockHtml}`;
     })
     .join('');
 
   return `${docHeader(`Contingency Plan — ${meta.title || 'Plan'}`, meta.municipality_name || 'Municipality')}
-    <div class="meta">Category: ${safeDocText(meta.plan_category || '—')} · Type: ${safeDocText(meta.plan_type || '—')} · Status: ${safeDocText(plan.status || 'draft')}</div>
+    <div class="meta">Category: ${docEsc(meta.plan_category || '—')} · Type: ${docEsc(meta.plan_type || '—')} · Status: ${docEsc(plan.status || 'draft')}</div>
+    ${hvcSectionsAsList(plan) ? `<p><strong>HVC/Environmental enrichments</strong><br/>${esc(hvcSectionsAsList(plan)).replace(/\n/g, '<br/>')}</p>` : ''}
     ${secHtml}`;
 }
 
-// ---------------------------------------------------------------------------
-// HVC FETCH — plan-type-scoped
-// Fetches only the hazard scores relevant to the specific plan type being
-// generated, using the HVC_HAZARD_MAP filter. Plans with an empty filter
-// array (e.g. evacuation, logistics) receive the top-5 overall risk scores
-// as those plans are cross-cutting. Target sections listed in
-// HVC_SECTION_TARGETS receive the HVC table block injected directly into
-// the relevant section's content, not just a generic hvc_placeholders section.
-// ---------------------------------------------------------------------------
-async function fetchHvcBlocksForPlanType(planTypeCode) {
-  if (!_context?.municipalityId) return { blocks: [], sectionBlocks: {} };
-
-  // Get the most recent HVC assessment for this municipality
+async function fetchHvcPlacementBlocks() {
+  if (!_context?.municipalityId) return [];
   const { data: assessment, error: assessmentErr } = await supabase
     .from('hvc_assessments')
-    .select('id, created_at, assessment_year, assessment_period')
+    .select('id,created_at')
     .eq('municipality_id', _context.municipalityId)
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle();
+  if (assessmentErr || !assessment?.id) return [];
 
-  if (assessmentErr || !assessment?.id) return { blocks: [], sectionBlocks: {} };
-
-  // Build the hazard name filter for this plan type
-  const hazardFilter = HVC_HAZARD_MAP[planTypeCode] || [];
-  const isUnfiltered = hazardFilter.length === 0;
-
-  let query = supabase
+  const { data, error } = await supabase
     .from('hvc_hazard_scores')
-    .select('hazard_name, hazard_category, risk_band, risk_rating, likelihood_score, consequence_score, affected_wards, mitigation_measures, residual_risk')
+    .select('hazard_name,risk_band,risk_rating,affected_wards')
     .eq('assessment_id', assessment.id)
-    .order('risk_rating', { ascending: false });
+    .order('risk_rating', { ascending: false })
+    .limit(5);
+  if (error || !data?.length) return [];
 
-  // Apply hazard name filter only when the plan type has specific hazards defined.
-  // Use ilike with OR logic to match partial names (e.g. "flood" matches "flash flood").
-  if (!isUnfiltered && hazardFilter.length > 0) {
-    // Build an OR filter string for ilike matching against each hazard keyword
-    const filterStr = hazardFilter.map(h => `hazard_name.ilike.%${h}%`).join(',');
-    query = query.or(filterStr);
-  }
-
-  // Limit: specific plans get their relevant hazards (max 10); cross-cutting plans get top 5 overall
-  query = query.limit(isUnfiltered ? 5 : 10);
-
-  const { data, error } = await query;
-  if (error || !data?.length) return { blocks: [], sectionBlocks: {} };
-
-  const assessmentLabel = assessment.assessment_year
-    ? `${assessment.assessment_period || 'Annual'} ${assessment.assessment_year}`
-    : new Date(assessment.created_at).toLocaleDateString('en-ZA');
-
-  const hazardLabel = isUnfiltered
-    ? 'Top Municipal Hazards (All Categories)'
-    : `Relevant Hazards for ${planTypeCode.replace(/_/g, ' ')} Plan`;
-
-  // Build the main HVC summary table block for hvc_placeholders section
-  const summaryBlock = {
-    id: 'hvc_summary_1',
-    type: 'table',
-    content: {
-      headers: ['Assessment', 'Hazard', 'Category', 'Risk Band', 'Risk Rating', 'Likelihood', 'Consequence', 'Affected Wards'],
-      rows: data.map(h => [
-        assessmentLabel,
-        h.hazard_name || '—',
-        h.hazard_category || '—',
-        h.risk_band || '—',
-        h.risk_rating ?? '—',
-        h.likelihood_score ?? '—',
-        h.consequence_score ?? '—',
-        Array.isArray(h.affected_wards) && h.affected_wards.length
-          ? h.affected_wards.join(', ')
-          : '—'
-      ])
-    }
-  };
-
-  // Build a context note block
-  const contextBlock = {
-    id: 'hvc_context_1',
-    type: 'text',
-    content: `HVC Risk Data — ${hazardLabel} (Assessment: ${assessmentLabel}). ${
-      isUnfiltered
-        ? 'This plan type is cross-cutting; the top 5 municipal hazards are shown.'
-        : `Filtered to hazards relevant to the ${planTypeCode.replace(/_/g, ' ')} plan type. Review and update thresholds against current assessment data.`
-    } Source: Municipal HVC Assessment, municipality ID ${_context.municipalityId}.`
-  };
-
-  const blocks = [summaryBlock, contextBlock];
-
-  // Build per-section HVC blocks for injection into specific target sections
-  // (e.g. hazard_risk_profile, flood_risk_zones etc.)
-  const sectionBlocks = {};
-  const targetSections = HVC_SECTION_TARGETS[planTypeCode] || [];
-
-  if (targetSections.length > 0 && data.length > 0) {
-    // Compact table for inline section injection (fewer columns for readability)
-    const inlineBlock = {
-      id: 'hvc_inline_risk',
+  return [
+    {
+      id: 'hvc_summary_1',
       type: 'table',
       content: {
-        headers: ['Hazard', 'Risk Band', 'Risk Rating', 'Affected Wards', 'Mitigation Measures'],
+        headers: ['Assessment Date', 'Hazard', 'Risk Band', 'Risk Rating', 'Affected Wards'],
         rows: data.map(h => [
+          new Date(assessment.created_at).toLocaleDateString('en-ZA'),
           h.hazard_name || '—',
           h.risk_band || '—',
           h.risk_rating ?? '—',
-          Array.isArray(h.affected_wards) && h.affected_wards.length
-            ? h.affected_wards.join(', ')
-            : '—',
-          h.mitigation_measures || 'See municipal risk register'
+          Array.isArray(h.affected_wards) && h.affected_wards.length ? h.affected_wards.join(', ') : '—'
         ])
       }
-    };
-
-    const inlineNote = {
-      id: 'hvc_inline_note',
-      type: 'text',
-      content: `Risk data sourced from HVC Assessment (${assessmentLabel}). Update annually in line with the municipal Disaster Risk Assessment review cycle.`
-    };
-
-    // Inject the same inline block into each target section key
-    targetSections.forEach(sectionKey => {
-      sectionBlocks[sectionKey] = [inlineBlock, inlineNote];
-    });
-  }
-
-  return { blocks, sectionBlocks };
+    }
+  ];
 }
 
 function scheduleAutoSave(planId) {
@@ -257,43 +163,15 @@ function stripLegacySuggestionArtifacts(plan) {
   return cleaned;
 }
 
-// ---------------------------------------------------------------------------
-// refreshLibraryContent — migration utility
-// Updates thin (< 10 word) text blocks in existing plans with the enriched
-// library content. Only replaces blocks that were generated by library:v1.
-// Safe to call on any plan — skips sections already on library:v2.
-// ---------------------------------------------------------------------------
-function refreshLibraryContent(planId, planType) {
-  const fresh = getPlan(planId);
-  if (!fresh) return;
-
-  const librarySections = buildLibrarySections(planType?.category, planType?.code);
-  if (!librarySections.length) return;
-
-  const libraryMap = new Map(librarySections.map(s => [s.key, s]));
-  let working = fresh;
-
-  (fresh.sections || []).forEach(section => {
-    const libSection = libraryMap.get(section.key);
-    if (!libSection) return;
-    // Only migrate sections that were generated by library:v1 (the old thin content)
-    if (section.seed_source && section.seed_source !== 'library:v1') return;
-
-    updateSection(planId, section.key, libSection.content_blocks);
+function purgeLegacySuggestionNodes(root) {
+  if (!root) return;
+  root.querySelectorAll('*').forEach(node => {
+    const txt = (node.textContent || '').toLowerCase().trim();
+    if (!txt) return;
+    if (txt === 'loading contextual suggestions...' || txt === 'suggestion library (idp-style)') {
+      node.remove();
+    }
   });
-
-  // Mark the plan as migrated
-  const migrated = getPlan(planId);
-  if (migrated) {
-    setPlan({
-      ...migrated,
-      metadata: {
-        ...migrated.metadata,
-        library_version: 'v2',
-        library_migrated_at: new Date().toISOString()
-      }
-    });
-  }
 }
 
 function applyLayoutState() {
@@ -377,6 +255,7 @@ export function getCurrentPlanningContext(user) {
   };
 }
 
+
 function ensurePlanHasSections(planId, planType) {
   const fresh = getPlan(planId);
   if (!fresh) return;
@@ -408,27 +287,20 @@ function renderPlanList() {
   host.innerHTML = plans
     .map(
       p => `<div class="cp-plan-item ${p.id === _activePlanId ? 'active' : ''}"
-              style="display:flex;align-items:center;gap:6px;padding:8px 10px;border-radius:6px;cursor:pointer;
-                     border:1px solid ${p.id === _activePlanId ? 'var(--accent,#2563eb)' : 'transparent'};
-                     background:${p.id === _activePlanId ? 'var(--bg3,#eff3fb)' : 'transparent'};
-                     transition:background .12s">
-        <div class="cp-plan-item-info" data-plan-id="${esc(p.id)}" style="flex:1;min-width:0;overflow:hidden">
-          <div style="font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(p.metadata.title)}</div>
-          <div class="cp-plan-meta" style="font-size:11px;color:var(--text3,#888);margin-top:1px">${esc(p.metadata.plan_type)} · ${esc(p.status)}</div>
+        style="display:flex;align-items:center;gap:6px;padding:8px 10px;border-radius:6px;
+               border:1px solid ${p.id === _activePlanId ? 'var(--accent,#2563eb)' : 'transparent'};
+               background:${p.id === _activePlanId ? 'var(--bg3,#eff3fb)' : 'transparent'}">
+        <div class="cp-plan-item-select" data-plan-id="${esc(p.id)}" style="flex:1;min-width:0;cursor:pointer">
+          <div><strong>${esc(p.metadata.title)}</strong></div>
+          <div class="cp-plan-meta">${esc(p.metadata.plan_type)} · ${esc(p.status)}</div>
         </div>
-        <button class="cp-plan-delete btn btn-sm"
-          data-plan-id="${esc(p.id)}"
-          data-plan-title="${esc(p.metadata.title)}"
-          title="Delete this plan"
-          style="flex-shrink:0;padding:2px 7px;font-size:11px;color:#c44;border-color:#c44;opacity:.7;transition:opacity .12s"
-          onmouseenter="this.style.opacity='1'"
-          onmouseleave="this.style.opacity='.7'">✕</button>
+        <button class="cp-plan-delete btn btn-sm" data-plan-id="${esc(p.id)}" data-plan-title="${esc(p.metadata.title)}"
+          style="flex-shrink:0;padding:2px 7px;font-size:11px;color:#c44;border-color:#c44" title="Delete plan">✕</button>
       </div>`
     )
     .join('');
 
-  // Select plan on info-zone click
-  host.querySelectorAll('.cp-plan-item-info[data-plan-id]').forEach(el => {
+  host.querySelectorAll('.cp-plan-item-select[data-plan-id]').forEach(el => {
     el.addEventListener('click', () => {
       _activePlanId = el.getAttribute('data-plan-id');
       renderPlanList();
@@ -436,32 +308,25 @@ function renderPlanList() {
     });
   });
 
-  // Delete plan on ✕ click
   host.querySelectorAll('.cp-plan-delete[data-plan-id]').forEach(btn => {
     btn.addEventListener('click', e => {
       e.stopPropagation();
       const id = btn.getAttribute('data-plan-id');
       const title = btn.getAttribute('data-plan-title') || 'this plan';
       if (!confirm(`Delete "${title}"?\n\nThis cannot be undone.`)) return;
-      try {
-        // Use engine deletePlan if available, otherwise fall back to setPlan with deleted flag
-        if (typeof deletePlan === 'function') {
-          deletePlan(id);
-        } else {
-          const p = getPlan(id);
-          if (p) setPlan({ ...p, deleted: true, status: 'deleted' });
-        }
-      } catch (err) {
-        console.warn('[Contingency] deletePlan error:', err);
+      if (typeof deletePlan === 'function') {
+        deletePlan(id);
+      } else {
+        const p = getPlan(id);
+        if (p) setPlan({ ...p, deleted: true, status: 'deleted' });
       }
-      if (_activePlanId === id) {
-        _activePlanId = null;
-      }
+      if (_activePlanId === id) _activePlanId = null;
       renderPlanList();
       renderPlanDetail();
     });
   });
 }
+
 
 function blockEditor(sectionKey, block, idx) {
   const base = `data-sec="${esc(sectionKey)}" data-idx="${idx}"`;
@@ -488,55 +353,35 @@ function blockEditor(sectionKey, block, idx) {
     const gridId = `cp_tbl_${esc(sectionKey)}_${idx}`;
     const colCount = headers.length;
 
-    // Build one <tr> of inputs per existing row, plus a blank row if none exist yet
     const buildRowHtml = (cells, rowIdx) => {
-      const tds = headers.map((_, ci) => {
-        const val = esc(cells[ci] ?? '');
-        return `<td style="padding:2px 4px">
-          <input
-            class="cp-table-cell"
-            data-grid="${gridId}"
-            data-row="${rowIdx}"
-            data-col="${ci}"
-            value="${val}"
-            placeholder="—"
-            style="width:100%;min-width:60px;box-sizing:border-box;padding:4px 6px;border:1px solid var(--border,#ccc);border-radius:3px;font-size:12px;background:var(--bg,#fff);color:var(--text,#111)"
-          />
-        </td>`;
-      }).join('');
-      return `<tr data-row="${rowIdx}">
-        ${tds}
+      const tds = headers.map((_, ci) => `<td style="padding:2px 4px">
+          <input class="cp-table-cell" data-grid="${gridId}" data-row="${rowIdx}" data-col="${ci}"
+            value="${esc(cells[ci] ?? '')}" placeholder="—"
+            style="width:100%;min-width:60px;box-sizing:border-box;padding:4px 6px;border:1px solid var(--border,#ccc);border-radius:3px;font-size:12px;background:var(--bg,#fff);color:var(--text,#111)"/>
+        </td>`).join('');
+      return `<tr data-row="${rowIdx}">${tds}
         <td style="padding:2px 4px;width:28px;vertical-align:middle">
-          <button type="button" class="cp-tbl-del-row btn btn-sm"
-            data-grid="${gridId}" data-row="${rowIdx}"
-            style="padding:2px 6px;font-size:11px;color:#c44;border-color:#c44;line-height:1"
-            title="Delete row">✕</button>
-        </td>
-      </tr>`;
+          <button type="button" class="cp-tbl-del-row btn btn-sm" data-grid="${gridId}"
+            style="padding:2px 6px;font-size:11px;color:#c44;border-color:#c44;line-height:1" title="Delete row">✕</button>
+        </td></tr>`;
     };
 
-    const initialRows = rows.length > 0
+    const initialRows = rows.length
       ? rows.map((r, ri) => buildRowHtml(Array.isArray(r) ? r : [], ri)).join('')
       : buildRowHtml(Array(colCount).fill(''), 0);
 
-    return `<div class="cp-field cp-table-block" data-grid-id="${gridId}" ${base} data-kind="table-grid">
+    return `<div class="cp-field" ${base} data-kind="table-grid">
       <div style="font-size:11px;font-weight:600;margin-bottom:6px;color:var(--text3,#888)">Table</div>
       <div style="overflow-x:auto">
         <table id="${gridId}" style="width:100%;border-collapse:collapse;font-size:12px">
-          <thead>
-            <tr style="background:var(--bg3,#f0f4fa)">
-              ${headers.map(h => `<th style="text-align:left;padding:5px 8px;font-size:11px;font-weight:600;color:var(--text2,#333);border-bottom:2px solid var(--border2,#c0cadf);white-space:nowrap">${esc(h)}</th>`).join('')}
-              <th style="width:28px;border-bottom:2px solid var(--border2,#c0cadf)"></th>
-            </tr>
-          </thead>
-          <tbody id="${gridId}_body">
-            ${initialRows}
-          </tbody>
+          <thead><tr style="background:var(--bg3,#f0f4fa)">
+            ${headers.map(h => `<th style="text-align:left;padding:5px 8px;font-size:11px;font-weight:600;color:var(--text2,#333);border-bottom:2px solid var(--border2,#c0cadf);white-space:nowrap">${esc(h)}</th>`).join('')}
+            <th style="width:28px;border-bottom:2px solid var(--border2,#c0cadf)"></th>
+          </tr></thead>
+          <tbody id="${gridId}_body">${initialRows}</tbody>
         </table>
       </div>
-      <button type="button" class="cp-tbl-add-row btn btn-sm"
-        data-grid="${gridId}"
-        data-cols="${colCount}"
+      <button type="button" class="cp-tbl-add-row btn btn-sm" data-grid="${gridId}" data-cols="${colCount}"
         style="margin-top:6px;font-size:11px">+ Add row</button>
     </div>`;
   }
@@ -560,27 +405,20 @@ function collectBlocksFromForm(host, section) {
       return;
     }
     if (block.type === 'table') {
-      // Headers are frozen (defined by library) — read from the rendered <th> elements
       const gridId = `cp_tbl_${section.key}_${idx}`;
-      const tableEl = host.querySelector(`#${gridId}`);
-      // Read headers from the block definition (source of truth — never let user change them)
       const headers = Array.isArray(block.content?.headers) ? block.content.headers : [];
       const rows = [];
-      if (tableEl) {
-        const tbody = tableEl.querySelector('tbody');
-        if (tbody) {
-          tbody.querySelectorAll('tr[data-row]').forEach(tr => {
-            const cells = [];
-            tr.querySelectorAll('input.cp-table-cell').forEach(inp => {
-              cells[parseInt(inp.dataset.col)] = inp.value.trim();
-            });
-            // Only include rows that have at least one non-empty cell
-            if (cells.some(c => c)) rows.push(cells);
+      const tbody = host.querySelector(`#${gridId}_body`);
+      if (tbody) {
+        tbody.querySelectorAll('tr[data-row]').forEach(tr => {
+          const cells = [];
+          tr.querySelectorAll('input.cp-table-cell').forEach(inp => {
+            cells[parseInt(inp.dataset.col)] = inp.value.trim();
           });
-        }
-      } else {
-        // Fallback: grid not in DOM (e.g. during programmatic save), preserve existing rows
-        if (Array.isArray(block.content?.rows)) rows.push(...block.content.rows);
+          if (cells.some(c => c)) rows.push(cells);
+        });
+      } else if (Array.isArray(block.content?.rows)) {
+        rows.push(...block.content.rows);
       }
       blocks.push({ ...block, content: { headers, rows } });
       return;
@@ -622,15 +460,6 @@ function renderPlanDetail() {
     return;
   }
 
-  // Detect if this plan was generated with the old library (v1) and show a migration prompt
-  const isLegacy = !plan.metadata?.library_version || plan.metadata.library_version === 'v1';
-  const legacyBanner = isLegacy
-    ? `<div class="cp-notice" style="background:#fff8e1;border:1px solid #f9a825;padding:10px;border-radius:6px;margin-bottom:8px;font-size:12px">
-        ⚠️ This plan was generated with an older library version. Section content may be placeholder-style.
-        <button class="btn btn-sm" id="cp-migrate-library" style="margin-left:10px">Update to rich content (library v2)</button>
-      </div>`
-    : '';
-
   host.innerHTML = `
     <div class="cp-detail-wrap">
       <div class="cp-editor-pane">
@@ -646,7 +475,10 @@ function renderPlanDetail() {
         <button id="cp-export" class="btn btn-primary">Export Word</button>
       </div>
     </div>
-    ${legacyBanner}
+    <div id="cp-suggestion-panel" class="cp-section-card" style="margin-bottom:8px">
+      <div class="cp-section-head">Suggestion Library (IDP-style)</div>
+      <div class="cp-blocks"><div class="cp-empty">Loading contextual suggestions...</div></div>
+    </div>
     <div class="cp-sections">
       ${!plan.sections.length ? '<div class="cp-empty">No sections found for this plan. Starter sections will be added on generate.</div>' : ''}
       ${plan.sections
@@ -668,16 +500,7 @@ function renderPlanDetail() {
       </div>
     </div>
   `;
-
-  // Migration button — refresh library content for legacy plans
-  document.getElementById('cp-migrate-library')?.addEventListener('click', async () => {
-    const planType = await getPlanTypeByCode(plan.metadata?.plan_type);
-    if (planType) {
-      refreshLibraryContent(plan.id, planType);
-      await persistPlan(plan.id);
-      renderPlanDetail();
-    }
-  });
+  purgeLegacySuggestionNodes(host);
 
   document.getElementById('cp-save-version')?.addEventListener('click', () => {
     saveVersionSnapshot(plan, _context?.userId || 'local-user');
@@ -687,6 +510,7 @@ function renderPlanDetail() {
 
   document.getElementById('cp-submit-review')?.addEventListener('click', () => {
     submitForReview(plan.id, _context?.userId || 'local-user', 'Submitted from contingency page');
+    persistPlan(plan.id);
     persistPlan(plan.id);
     renderPlanList();
     renderPlanDetail();
@@ -736,7 +560,7 @@ function renderPlanDetail() {
     el.addEventListener('input', () => scheduleAutoSave(plan.id));
   });
 
-  // ── Table grid: Add row ──
+  // Table grid: Add row
   host.querySelectorAll('.cp-tbl-add-row[data-grid]').forEach(btn => {
     btn.addEventListener('click', () => {
       const gridId = btn.getAttribute('data-grid');
@@ -748,45 +572,24 @@ function renderPlanDetail() {
       tr.setAttribute('data-row', nextRow);
       let tds = '';
       for (let ci = 0; ci < colCount; ci++) {
-        tds += `<td style="padding:2px 4px">
-          <input
-            class="cp-table-cell"
-            data-grid="${gridId}"
-            data-row="${nextRow}"
-            data-col="${ci}"
-            value=""
-            placeholder="—"
-            style="width:100%;min-width:60px;box-sizing:border-box;padding:4px 6px;border:1px solid var(--border,#ccc);border-radius:3px;font-size:12px;background:var(--bg,#fff);color:var(--text,#111)"
-          />
-        </td>`;
+        tds += `<td style="padding:2px 4px"><input class="cp-table-cell" data-grid="${gridId}" data-row="${nextRow}" data-col="${ci}" value="" placeholder="—"
+          style="width:100%;min-width:60px;box-sizing:border-box;padding:4px 6px;border:1px solid var(--border,#ccc);border-radius:3px;font-size:12px;background:var(--bg,#fff);color:var(--text,#111)"/></td>`;
       }
       tds += `<td style="padding:2px 4px;width:28px;vertical-align:middle">
-        <button type="button" class="cp-tbl-del-row btn btn-sm"
-          data-grid="${gridId}" data-row="${nextRow}"
-          style="padding:2px 6px;font-size:11px;color:#c44;border-color:#c44;line-height:1"
-          title="Delete row">✕</button>
+        <button type="button" class="cp-tbl-del-row btn btn-sm" data-grid="${gridId}"
+          style="padding:2px 6px;font-size:11px;color:#c44;border-color:#c44;line-height:1" title="Delete row">✕</button>
       </td>`;
       tr.innerHTML = tds;
       tbody.appendChild(tr);
-      // Wire delete on newly added row
-      tr.querySelector('.cp-tbl-del-row')?.addEventListener('click', function() {
-        this.closest('tr')?.remove();
-        scheduleAutoSave(plan.id);
-      });
-      // Wire autosave on new inputs
-      tr.querySelectorAll('input').forEach(inp => {
-        inp.addEventListener('input', () => scheduleAutoSave(plan.id));
-      });
+      tr.querySelector('.cp-tbl-del-row')?.addEventListener('click', function () { this.closest('tr')?.remove(); scheduleAutoSave(plan.id); });
+      tr.querySelectorAll('input').forEach(inp => inp.addEventListener('input', () => scheduleAutoSave(plan.id)));
       scheduleAutoSave(plan.id);
     });
   });
 
-  // ── Table grid: Delete row (for rows rendered in initial HTML) ──
+  // Table grid: Delete row (initial rows)
   host.querySelectorAll('.cp-tbl-del-row[data-grid]').forEach(btn => {
-    btn.addEventListener('click', function() {
-      this.closest('tr')?.remove();
-      scheduleAutoSave(plan.id);
-    });
+    btn.addEventListener('click', function () { this.closest('tr')?.remove(); scheduleAutoSave(plan.id); });
   });
 
 function renderTypeOptions() {
@@ -887,8 +690,7 @@ async function generatePlanFromWizard() {
         {
           municipality_id: _context.municipalityId,
           municipality_name: _context.municipalityName,
-          owner_user_id: _context.userId,
-          library_version: 'v2'
+          owner_user_id: _context.userId
         }
       );
     }
@@ -902,56 +704,34 @@ async function generatePlanFromWizard() {
       });
     }
 
-    // Ensure all library sections are present (adds missing ones, skips existing)
     ensurePlanHasSections(plan.id, planType);
 
     if (includeHvc) {
-      // ── HVC INTEGRATION ──
-      // 1. Fetch plan-type-scoped HVC blocks (filtered by hazard relevance)
-      const { blocks: hvcBlocks, sectionBlocks } = await fetchHvcBlocksForPlanType(planTypeCode);
-
-      // 2. Create the hvc_placeholders section for the full risk summary
       let fresh = getPlan(plan.id);
       if (fresh && !fresh.sections.some(s => s.key === 'hvc_placeholders')) {
         fresh = addSection(fresh, {
           key: 'hvc_placeholders',
-          title: 'HVC Risk Data — Plan-Specific',
+          title: 'HVC Placeholders',
           order: (fresh.sections?.length || 0) + 1,
           editable: true,
-          seed_source: 'hvc:live',
           content_blocks: []
         });
       }
-
-      // 3. Populate the hvc_placeholders section
-      updateSection(
-        plan.id,
-        'hvc_placeholders',
-        hvcBlocks.length
-          ? hvcBlocks
-          : [
-              {
-                id: 'hvc_placeholder_1',
-                type: 'text',
-                content: `No HVC risk records found for this municipality and plan type (${planTypeCode}). Complete a HVC assessment and return to auto-populate this section. Relevant hazard categories for this plan type: ${(HVC_HAZARD_MAP[planTypeCode] || []).join(', ') || 'all hazards (cross-cutting plan)'}.`
-              }
-            ]
-      );
-
-      // 4. Inject inline HVC risk tables into target sections (e.g. hazard_risk_profile, flood_risk_zones)
-      // This puts relevant risk data directly in the section where the planner will use it,
-      // not just in a separate placeholder section.
-      if (Object.keys(sectionBlocks).length > 0) {
-        const currentPlan = getPlan(plan.id);
-        if (currentPlan) {
-          Object.entries(sectionBlocks).forEach(([sectionKey, inlineBlocks]) => {
-            const section = currentPlan.sections.find(s => s.key === sectionKey);
-            if (!section) return;
-            // Append HVC blocks to the existing section content (don't replace it)
-            const mergedBlocks = [...(section.content_blocks || []), ...inlineBlocks];
-            updateSection(plan.id, sectionKey, mergedBlocks);
-          });
-        }
+      if (fresh) {
+        const hvcBlocks = await fetchHvcPlacementBlocks();
+        updateSection(
+          plan.id,
+          'hvc_placeholders',
+          hvcBlocks.length
+            ? hvcBlocks
+            : [
+                {
+                  id: 'hvc_placeholder_1',
+                  type: 'text',
+                  content: 'No HVC records found for this municipality yet. Complete HVC assessment to auto-populate this section.'
+                }
+              ]
+        );
       }
     }
 
@@ -1022,7 +802,7 @@ export async function initContingencyPage(user) {
         <div class="cp-options">
           <label><input type="checkbox" id="cp-opt-seed" checked /> Include seed content</label>
           <label><input type="checkbox" id="cp-opt-annex" checked /> Include default annexures</label>
-          <label><input type="checkbox" id="cp-opt-hvc" /> Include HVC risk data (plan-specific)</label>
+          <label><input type="checkbox" id="cp-opt-hvc" /> Include HVC placeholders</label>
         </div>
 
         <div id="cp-wizard-error" class="cp-error"></div>
@@ -1036,7 +816,7 @@ export async function initContingencyPage(user) {
       <div class="card" id="cp-plan-detail" style="padding:12px"></div>
     </div>
   `;
-
+  purgeLegacySuggestionNodes(page);
   applyLayoutState();
 
   try {
