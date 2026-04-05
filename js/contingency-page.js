@@ -133,6 +133,20 @@ function showContingencyExportMenu(anchorBtn, plan) {
   });
 }
 
+function stripLegacySuggestionArtifacts(plan) {
+  if (!plan || !Array.isArray(plan.sections)) return plan;
+  const cleaned = {
+    ...plan,
+    sections: plan.sections.filter(
+      s =>
+        s?.key !== 'cp-suggestion-panel' &&
+        !/suggestion library/i.test(String(s?.title || '')) &&
+        !(Array.isArray(s?.content_blocks) && s.content_blocks.some(b => /loading contextual suggestions/i.test(String(b?.content || ''))))
+    )
+  };
+  return cleaned;
+}
+
 export function getCurrentPlanningContext(user) {
   const profile = user?.profile || user?.profiles || {};
   const metadata = user?.user_metadata || user?.raw_user_meta_data || {};
@@ -297,7 +311,7 @@ async function hydratePlansFromBackend() {
   try {
     const plans = await fetchPlansFromBackend(_context.municipalityId);
     plans.forEach(p => {
-      if (p?.id) setPlan(p);
+      if (p?.id) setPlan(stripLegacySuggestionArtifacts(p));
     });
   } catch (e) {
     console.warn('[Contingency] backend load failed:', e.message || e);
@@ -308,7 +322,7 @@ function renderPlanDetail() {
   const host = document.getElementById('cp-plan-detail');
   if (!host) return;
 
-  const plan = _activePlanId ? getPlan(_activePlanId) : null;
+  const plan = _activePlanId ? stripLegacySuggestionArtifacts(getPlan(_activePlanId)) : null;
   if (!plan) {
     host.innerHTML = '<div class="cp-empty">Select a plan from the list to view details.</div>';
     return;
@@ -371,59 +385,6 @@ function renderPlanDetail() {
     const fresh = getPlan(plan.id);
     if (!fresh) return;
     showContingencyExportMenu(evt.currentTarget, fresh);
-  });
-
-  host.querySelectorAll('[data-rich-cmd][data-rich-target]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const cmd = btn.getAttribute('data-rich-cmd');
-      const targetId = btn.getAttribute('data-rich-target');
-      const editor = targetId ? host.querySelector(`#${targetId}`) : null;
-      if (!cmd || !editor) return;
-      editor.focus();
-      document.execCommand(cmd, false);
-    });
-  });
-  document.getElementById('cp-export-docx')?.addEventListener('click', (evt) => {
-    const fresh = getPlan(plan.id);
-    if (!fresh) return;
-    showDownloadMenu(evt.currentTarget, {
-      filename: `contingency-plan-${fresh.id}`,
-      getDocHTML: () => contingencyDocHtml(fresh),
-      dropup: true
-    });
-  });
-
-  host.querySelectorAll('[data-rich-cmd][data-rich-target]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const cmd = btn.getAttribute('data-rich-cmd');
-      const targetId = btn.getAttribute('data-rich-target');
-      const editor = targetId ? host.querySelector(`#${targetId}`) : null;
-      if (!cmd || !editor) return;
-      editor.focus();
-      document.execCommand(cmd, false);
-    });
-  });
-
-  host.querySelectorAll('[data-rich-cmd][data-rich-target]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const cmd = btn.getAttribute('data-rich-cmd');
-      const targetId = btn.getAttribute('data-rich-target');
-      const editor = targetId ? host.querySelector(`#${targetId}`) : null;
-      if (!cmd || !editor) return;
-      editor.focus();
-      document.execCommand(cmd, false);
-    });
-  });
-
-  host.querySelectorAll('[data-rich-cmd][data-rich-target]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const cmd = btn.getAttribute('data-rich-cmd');
-      const targetId = btn.getAttribute('data-rich-target');
-      const editor = targetId ? host.querySelector(`#${targetId}`) : null;
-      if (!cmd || !editor) return;
-      editor.focus();
-      document.execCommand(cmd, false);
-    });
   });
 
   host.querySelectorAll('[data-rich-cmd][data-rich-target]').forEach(btn => {
