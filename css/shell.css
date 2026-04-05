@@ -206,6 +206,13 @@ select { font-family: inherit; }
   margin-bottom: 2px;
   border-radius: var(--r-md);
 }
+.sidebar.collapsed .sni,
+.sidebar.collapsed .sni:hover,
+.sidebar.collapsed .sni.on {
+  background: transparent;
+  box-shadow: none;
+  border-color: transparent;
+}
 .sidebar.collapsed .sni-label { opacity: 0; max-width: 0; pointer-events: none; }
 
 /* ── JS-portal tooltip (appended to body) ── */
