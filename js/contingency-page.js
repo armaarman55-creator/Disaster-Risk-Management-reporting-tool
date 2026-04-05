@@ -9,11 +9,15 @@ import {
   getPlanTypesByCategory
 } from './contingency-plan-type-registry.js';
 import { fetchPlansFromBackend, savePlanToBackend } from './contingency-repo.js';
+import { buildLibrarySections } from './contingency-section-library.js';
+import { showDownloadMenu, docHeader } from './download.js';
+import { supabase } from './supabase.js';
 
 let _activePlanId = null;
 let _activeCategory = '';
 let _filteredPlanTypes = [];
 let _context = null;
+let _autoSaveTimer = null;
 
 function esc(v) {
   return String(v ?? '')
@@ -22,6 +26,160 @@ function esc(v) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
+}
+
+function richBlockHtml(content) {
+  const raw = String(content ?? '');
+  if (!raw.trim()) return '';
+  if (raw.includes('<') && raw.includes('>')) return raw;
+  return esc(raw).replace(/\n/g, '<br/>');
+}
+
+function textFromHtml(html) {
+  return String(html ?? '')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(p|div|li|h[1-6])>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+function hvcSectionsAsList(plan) {
+  return (plan.sections || [])
+    .filter(s => s.key === 'hvc_placeholders' || s.key === 'environmental_health_safety')
+    .map(s => `• ${s.title}`)
+    .join('\n');
+}
+
+function contingencyDocHtml(plan) {
+  const meta = plan?.metadata || {};
+  const secHtml = (plan.sections || [])
+    .sort((a, b) => a.order - b.order)
+    .map(s => {
+      const blockHtml = (s.content_blocks || [])
+        .map(b => {
+          if (b.type === 'table') {
+            const headers = Array.isArray(b.content?.headers) ? b.content.headers : [];
+            const rows = Array.isArray(b.content?.rows) ? b.content.rows : [];
+            return `<table><thead><tr>${headers.map(h => `<th>${esc(h)}</th>`).join('')}</tr></thead><tbody>${
+              rows.map(r => `<tr>${(Array.isArray(r) ? r : []).map(c => `<td>${esc(c)}</td>`).join('')}</tr>`).join('')
+            }</tbody></table>`;
+          }
+          if (b.type === 'list') {
+            const items = Array.isArray(b.content) ? b.content : [];
+            return `<ul>${items.map(i => `<li>${esc(i)}</li>`).join('')}</ul>`;
+          }
+          return `<div>${richBlockHtml(b.content)}</div>`;
+        })
+        .join('');
+      return `<h2>${esc(s.title)}</h2>${blockHtml}`;
+    })
+    .join('');
+
+  return `${docHeader(`Contingency Plan — ${meta.title || 'Plan'}`, meta.municipality_name || 'Municipality')}
+    <div class="meta">Category: ${esc(meta.plan_category || '—')} · Type: ${esc(meta.plan_type || '—')} · Status: ${esc(plan.status || 'draft')}</div>
+    ${hvcSectionsAsList(plan) ? `<p><strong>HVC/Environmental enrichments</strong><br/>${esc(hvcSectionsAsList(plan)).replace(/\n/g, '<br/>')}</p>` : ''}
+    ${secHtml}`;
+}
+
+async function fetchHvcPlacementBlocks() {
+  if (!_context?.municipalityId) return [];
+  const { data: assessment, error: assessmentErr } = await supabase
+    .from('hvc_assessments')
+    .select('id,created_at')
+    .eq('municipality_id', _context.municipalityId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (assessmentErr || !assessment?.id) return [];
+
+  const { data, error } = await supabase
+    .from('hvc_hazard_scores')
+    .select('hazard_name,risk_band,risk_rating,affected_wards')
+    .eq('assessment_id', assessment.id)
+    .order('risk_rating', { ascending: false })
+    .limit(5);
+  if (error || !data?.length) return [];
+
+  const listItems = data.map(
+    h =>
+      `${h.hazard_name || 'Hazard'} (${h.risk_band || 'Unbanded'} ${h.risk_rating != null ? `- ${h.risk_rating}` : ''})${
+        Array.isArray(h.affected_wards) && h.affected_wards.length ? ` - Wards: ${h.affected_wards.join(', ')}` : ''
+      }`
+  );
+  const tableRows = data.map(h => [
+    h.hazard_name || '—',
+    h.risk_band || '—',
+    h.risk_rating ?? '—',
+    Array.isArray(h.affected_wards) && h.affected_wards.length ? h.affected_wards.join(', ') : '—'
+  ]);
+
+  return [
+    {
+      id: 'hvc_summary_1',
+      type: 'text',
+      content: `Integrated from latest HVC assessment (${new Date(assessment.created_at).toLocaleDateString('en-ZA')}). Validate and contextualise before approval.`
+    },
+    { id: 'hvc_summary_2', type: 'list', content: listItems },
+    { id: 'hvc_summary_3', type: 'table', content: { headers: ['Hazard', 'Risk Band', 'Risk Rating', 'Affected Wards'], rows: tableRows } }
+  ];
+}
+
+async function fetchIdpStyleSuggestions() {
+  if (!_context?.municipalityId) return [];
+  const { data: assessment } = await supabase
+    .from('hvc_assessments')
+    .select('id')
+    .eq('municipality_id', _context.municipalityId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (!assessment?.id) return [];
+
+  const { data: scores } = await supabase
+    .from('hvc_hazard_scores')
+    .select('hazard_name')
+    .eq('assessment_id', assessment.id);
+
+  const hazardNames = [...new Set((scores || []).map(s => s.hazard_name).filter(Boolean))];
+  if (!hazardNames.length) return [];
+
+  const { data: suggestions } = await supabase
+    .from('mitigations')
+    .select('hazard_name,description,mitigation_type,idp_kpa')
+    .eq('is_library', true)
+    .in('hazard_name', hazardNames)
+    .limit(12);
+  return suggestions || [];
+}
+
+function scheduleAutoSave(planId) {
+  clearTimeout(_autoSaveTimer);
+  _autoSaveTimer = setTimeout(() => {
+    persistPlan(planId);
+  }, 900);
+}
+
+function appendSuggestionToPlan(plan, suggestion) {
+  const section = (plan.sections || []).find(s => (s.content_blocks || []).some(b => b.type === 'text'));
+  if (!section) return false;
+  const blocks = (section.content_blocks || []).map((b, idx) => {
+    if (b.type !== 'text' || idx !== 0) return b;
+    const plain = textFromHtml(b.content);
+    return { ...b, content: `${plain}
+
+Suggestion (${suggestion.hazard_name || 'library'}): ${suggestion.description || ''}`.trim() };
+  });
+  updateSection(plan.id, section.key, blocks);
+  return true;
+}
+
+function showContingencyExportMenu(anchorBtn, plan) {
+  showDownloadMenu(anchorBtn, {
+    filename: `contingency-plan-${plan.id}`,
+    getDocHTML: () => contingencyDocHtml(plan),
+    dropup: true
+  });
 }
 
 export function getCurrentPlanningContext(user) {
@@ -69,55 +227,21 @@ export function getCurrentPlanningContext(user) {
 }
 
 
-function buildStarterSections(planType) {
-  const title = planType?.name || 'Contingency Plan';
-  return [
-    {
-      key: 'situation_overview',
-      title: 'Situation Overview',
-      order: 1,
-      editable: true,
-      content_blocks: [{ id: 'ov_1', type: 'text', content: `${title}: describe context, hazards and planning assumptions.` }]
-    },
-    {
-      key: 'objectives_scope',
-      title: 'Objectives and Scope',
-      order: 2,
-      editable: true,
-      content_blocks: [{ id: 'obj_1', type: 'list', content: ['Protect life', 'Protect infrastructure', 'Coordinate response'] }]
-    },
-    {
-      key: 'activation_triggers',
-      title: 'Activation and Triggers',
-      order: 3,
-      editable: true,
-      content_blocks: [{ id: 'act_1', type: 'text', content: 'Define trigger levels and activation authority for this plan type.' }]
-    },
-    {
-      key: 'operational_actions',
-      title: 'Operational Actions by Phase',
-      order: 4,
-      editable: true,
-      content_blocks: [{ id: 'ops_1', type: 'table', content: { headers: ['Phase', 'Action', 'Lead'], rows: [] } }]
-    },
-    {
-      key: 'communications_reporting',
-      title: 'Communications and Reporting',
-      order: 5,
-      editable: true,
-      content_blocks: [{ id: 'com_1', type: 'text', content: 'Document public messaging, reporting channels and contact escalation.' }]
-    }
-  ];
-}
-
 function ensurePlanHasSections(planId, planType) {
   const fresh = getPlan(planId);
-  if (!fresh || (fresh.sections || []).length) return;
+  if (!fresh) return;
 
-  const starter = buildStarterSections(planType);
+  const librarySections = buildLibrarySections(planType?.category, planType?.code);
+  if (!librarySections.length) return;
+
+  const existing = new Set((fresh.sections || []).map(s => s.key));
   let working = fresh;
-  starter.forEach(section => {
-    working = addSection(working, section);
+  librarySections.forEach(section => {
+    if (existing.has(section.key)) return;
+    working = addSection(working, {
+      ...section,
+      order: (working.sections?.length || 0) + 1
+    });
   });
 }
 
@@ -163,9 +287,15 @@ function renderPlanList() {
 function blockEditor(sectionKey, block, idx) {
   const base = `data-sec="${esc(sectionKey)}" data-idx="${idx}"`;
   if (block.type === 'text') {
-    return `<label class="cp-field">Text block
-      <textarea class="cp-textarea" ${base} data-kind="text">${esc(String(block.content ?? ''))}</textarea>
-    </label>`;
+    const editorId = `cp_rich_${esc(sectionKey)}_${idx}`;
+    return `<div class="cp-field"><div style="font-size:12px;margin-bottom:6px">Text block</div>
+      <div class="cp-rich-tools" style="display:flex;gap:6px;margin-bottom:6px">
+        <button type="button" class="btn btn-sm" data-rich-cmd="bold" data-rich-target="${editorId}"><b>B</b></button>
+        <button type="button" class="btn btn-sm" data-rich-cmd="italic" data-rich-target="${editorId}"><i>I</i></button>
+        <button type="button" class="btn btn-sm" data-rich-cmd="insertUnorderedList" data-rich-target="${editorId}">• List</button>
+      </div>
+      <div class="cp-textarea" ${base} data-kind="rich-text" id="${editorId}" contenteditable="true" style="min-height:96px">${richBlockHtml(block.content)}</div>
+    </div>`;
   }
   if (block.type === 'list') {
     const value = Array.isArray(block.content) ? block.content.join('\n') : '';
@@ -191,7 +321,8 @@ function collectBlocksFromForm(host, section) {
   (section.content_blocks || []).forEach((block, idx) => {
     const q = (kind) => host.querySelector(`[data-sec="${section.key}"][data-idx="${idx}"][data-kind="${kind}"]`);
     if (block.type === 'text') {
-      blocks.push({ ...block, content: q('text')?.value || '' });
+      const html = q('rich-text')?.innerHTML || '';
+      blocks.push({ ...block, content: html || textFromHtml(q('text')?.value || '') });
       return;
     }
     if (block.type === 'list') {
@@ -252,8 +383,13 @@ function renderPlanDetail() {
         <button id="cp-save-version" class="btn">Save version</button>
         <button id="cp-submit-review" class="btn">Submit review</button>
         <button id="cp-approve" class="btn">Approve</button>
-        <button id="cp-export" class="btn btn-primary">Export JSON</button>
+        <button id="cp-export" class="btn btn-primary">Export Word</button>
+        <button id="cp-export-json" class="btn">Export JSON</button>
       </div>
+    </div>
+    <div id="cp-suggestion-panel" class="cp-section-card" style="margin-bottom:8px">
+      <div class="cp-section-head">Suggestion Library (IDP-style)</div>
+      <div class="cp-blocks"><div class="cp-empty">Loading contextual suggestions...</div></div>
     </div>
     <div class="cp-sections">
       ${!plan.sections.length ? '<div class="cp-empty">No sections found for this plan. Starter sections will be added on generate.</div>' : ''}
@@ -291,10 +427,26 @@ function renderPlanDetail() {
     renderPlanDetail();
   });
 
-  document.getElementById('cp-export')?.addEventListener('click', () => {
+  document.getElementById('cp-export')?.addEventListener('click', (evt) => {
+    const fresh = getPlan(plan.id);
+    if (!fresh) return;
+    showContingencyExportMenu(evt.currentTarget, fresh);
+  });
+  document.getElementById('cp-export-json')?.addEventListener('click', () => {
     const fresh = getPlan(plan.id);
     if (!fresh) return;
     downloadJson(`contingency-plan-${fresh.id}.json`, exportPlan(fresh));
+  });
+
+  host.querySelectorAll('[data-rich-cmd][data-rich-target]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const cmd = btn.getAttribute('data-rich-cmd');
+      const targetId = btn.getAttribute('data-rich-target');
+      const editor = targetId ? host.querySelector(`#${targetId}`) : null;
+      if (!cmd || !editor) return;
+      editor.focus();
+      document.execCommand(cmd, false);
+    });
   });
 
   host.querySelectorAll('[data-save-section]').forEach(btn => {
@@ -313,6 +465,44 @@ function renderPlanDetail() {
       }
     });
   });
+
+  host.querySelectorAll('textarea,input,[contenteditable="true"]').forEach(el => {
+    el.addEventListener('input', () => scheduleAutoSave(plan.id));
+  });
+
+  const suggestionPanel = host.querySelector('#cp-suggestion-panel .cp-blocks');
+  fetchIdpStyleSuggestions()
+    .then(suggestions => {
+      if (!suggestionPanel) return;
+      if (!suggestions.length) {
+        suggestionPanel.innerHTML = '<div class="cp-empty">No matching suggestions yet. Add/mark library entries in IDP or complete HVC first.</div>';
+        return;
+      }
+      suggestionPanel.innerHTML = suggestions
+        .map(
+          (s, idx) => `<div class="cp-field" style="border:1px solid var(--line);padding:8px;border-radius:8px">
+            <div style="font-size:12px;margin-bottom:4px"><strong>${esc(s.hazard_name || 'Hazard')}</strong> · ${esc(s.mitigation_type || 'mitigation')}</div>
+            <div style="font-size:12px;color:var(--text2);margin-bottom:6px">${esc(s.description || '')}</div>
+            <button class="btn btn-sm" data-apply-suggestion="${idx}">+ Insert to plan</button>
+          </div>`
+        )
+        .join('');
+      suggestionPanel.querySelectorAll('[data-apply-suggestion]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const idx = Number(btn.getAttribute('data-apply-suggestion'));
+          const chosen = suggestions[idx];
+          const latest = getPlan(plan.id);
+          if (!chosen || !latest) return;
+          const applied = appendSuggestionToPlan(latest, chosen);
+          if (!applied) return alert('No text section available to insert suggestion.');
+          scheduleAutoSave(plan.id);
+          renderPlanDetail();
+        });
+      });
+    })
+    .catch(() => {
+      if (suggestionPanel) suggestionPanel.innerHTML = '<div class="cp-empty">Suggestion library unavailable.</div>';
+    });
 }
 
 function renderTypeOptions() {
@@ -441,13 +631,20 @@ async function generatePlanFromWizard() {
         });
       }
       if (fresh) {
-        updateSection(plan.id, 'hvc_placeholders', [
-          {
-            id: 'hvc_placeholder_1',
-            type: 'text',
-            content: 'HVC placeholders enabled. Integrate ward priorities and hazard drivers from HVC module.'
-          }
-        ]);
+        const hvcBlocks = await fetchHvcPlacementBlocks();
+        updateSection(
+          plan.id,
+          'hvc_placeholders',
+          hvcBlocks.length
+            ? hvcBlocks
+            : [
+                {
+                  id: 'hvc_placeholder_1',
+                  type: 'text',
+                  content: 'No HVC records found for this municipality yet. Complete HVC assessment to auto-populate this section.'
+                }
+              ]
+        );
       }
     }
 
