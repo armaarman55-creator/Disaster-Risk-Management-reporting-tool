@@ -17,6 +17,8 @@ let _activeCategory = '';
 let _filteredPlanTypes = [];
 let _context = null;
 let _autoSaveTimer = null;
+let _menuCollapsed = false;
+let _splitView = false;
 
 function esc(v) {
   return String(v ?? '')
@@ -166,6 +168,41 @@ function purgeLegacySuggestionNodes(root) {
       node.remove();
     }
   });
+}
+
+function applyLayoutState() {
+  const layout = document.getElementById('cp-layout');
+  const toggleMenu = document.getElementById('cp-toggle-menu');
+  const toggleSplit = document.getElementById('cp-toggle-split');
+  if (!layout) return;
+  layout.classList.toggle('menu-collapsed', !!_menuCollapsed);
+  layout.classList.toggle('split-view', !!_splitView);
+  if (toggleMenu) toggleMenu.textContent = _menuCollapsed ? 'Expand menu' : 'Collapse menu';
+  if (toggleSplit) toggleSplit.textContent = _splitView ? 'Single view' : 'Split view';
+}
+
+function planPreviewHtml(plan) {
+  return (plan.sections || [])
+    .sort((a, b) => a.order - b.order)
+    .map(
+      s => `<div class="cp-preview-section">
+        <div class="cp-preview-title">${esc(s.title)}</div>
+        ${(s.content_blocks || [])
+          .map(b => {
+            if (b.type === 'list') {
+              const items = Array.isArray(b.content) ? b.content : [];
+              return `<ul>${items.map(i => `<li>${esc(i)}</li>`).join('')}</ul>`;
+            }
+            if (b.type === 'table') {
+              const headers = Array.isArray(b.content?.headers) ? b.content.headers : [];
+              return `<div class="cp-preview-table">${esc(headers.join(' | '))}</div>`;
+            }
+            return `<p>${richBlockHtml(b.content)}</p>`;
+          })
+          .join('')}
+      </div>`
+    )
+    .join('');
 }
 
 export function getCurrentPlanningContext(user) {
@@ -350,6 +387,8 @@ function renderPlanDetail() {
   }
 
   host.innerHTML = `
+    <div class="cp-detail-wrap">
+      <div class="cp-editor-pane">
     <div class="cp-detail-head">
       <div>
         <h3>${esc(plan.metadata.title)}</h3>
@@ -379,6 +418,12 @@ function renderPlanDetail() {
             </div>`
         )
         .join('')}
+    </div>
+      </div>
+      <div class="cp-preview-pane">
+        <div class="cp-section-head">Live preview</div>
+        <div class="cp-preview-body">${planPreviewHtml(plan)}</div>
+      </div>
     </div>
   `;
   purgeLegacySuggestionNodes(host);
@@ -618,8 +663,12 @@ export async function initContingencyPage(user) {
   }
 
   page.innerHTML = `
-    <div class="page-body" style="padding:16px;display:grid;gap:12px;grid-template-columns:360px 1fr;align-items:start">
-      <div class="card" style="padding:12px;display:grid;gap:10px">
+    <div class="page-body cp-layout" id="cp-layout" style="padding:16px;display:grid;gap:12px;grid-template-columns:360px 1fr;align-items:start">
+      <div class="card" id="cp-sidebar" style="padding:12px;display:grid;gap:10px">
+        <div class="cp-actions" style="justify-content:space-between">
+          <button class="btn" id="cp-toggle-menu">Collapse menu</button>
+          <button class="btn" id="cp-toggle-split">Split view</button>
+        </div>
         <div class="h3">New Contingency Plan</div>
         <div class="cp-context">
           <div><strong>Municipality:</strong> ${esc(_context.municipalityName)}</div>
@@ -663,6 +712,7 @@ export async function initContingencyPage(user) {
     </div>
   `;
   purgeLegacySuggestionNodes(page);
+  applyLayoutState();
 
   try {
     await getAllPlanTypes();
@@ -678,4 +728,12 @@ export async function initContingencyPage(user) {
   document.getElementById('cp-category')?.addEventListener('change', e => loadTypesForCategory(e.target.value));
   document.getElementById('cp-plan-type')?.addEventListener('change', updateSelectedTypeDescription);
   document.getElementById('cp-generate')?.addEventListener('click', generatePlanFromWizard);
+  document.getElementById('cp-toggle-menu')?.addEventListener('click', () => {
+    _menuCollapsed = !_menuCollapsed;
+    applyLayoutState();
+  });
+  document.getElementById('cp-toggle-split')?.addEventListener('click', () => {
+    _splitView = !_splitView;
+    applyLayoutState();
+  });
 }
