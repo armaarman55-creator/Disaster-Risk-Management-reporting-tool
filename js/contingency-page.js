@@ -1,6 +1,5 @@
 import { addSection, createPlan, generateFromSeed, getPlan, listPlans, setPlan, updateSection } from './contingency-dist/plan-engine.js';
 import { loadSeed } from './contingency-dist/seed-loader.js';
-import { exportPlan } from './contingency-dist/export-engine.js';
 import { saveVersionSnapshot, submitForReview, approvePlan } from './contingency-dist/versioning.js';
 import { createAnnexureFromTemplate, attachAnnexureToPlan } from './contingency-dist/annexure-engine.js';
 import {
@@ -197,16 +196,6 @@ function ensurePlanHasSections(planId, planType) {
   });
 }
 
-function downloadJson(filename, payload) {
-  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
-}
-
 function renderPlanList() {
   const host = document.getElementById('cp-plan-list');
   if (!host) return;
@@ -336,7 +325,6 @@ function renderPlanDetail() {
         <button id="cp-submit-review" class="btn">Submit review</button>
         <button id="cp-approve" class="btn">Approve</button>
         <button id="cp-export" class="btn btn-primary">Export Word</button>
-        <button id="cp-export-json" class="btn">Export JSON</button>
       </div>
     </div>
     <div id="cp-suggestion-panel" class="cp-section-card" style="margin-bottom:8px">
@@ -384,10 +372,16 @@ function renderPlanDetail() {
     if (!fresh) return;
     showContingencyExportMenu(evt.currentTarget, fresh);
   });
-  document.getElementById('cp-export-json')?.addEventListener('click', () => {
-    const fresh = getPlan(plan.id);
-    if (!fresh) return;
-    downloadJson(`contingency-plan-${fresh.id}.json`, exportPlan(fresh));
+
+  host.querySelectorAll('[data-rich-cmd][data-rich-target]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const cmd = btn.getAttribute('data-rich-cmd');
+      const targetId = btn.getAttribute('data-rich-target');
+      const editor = targetId ? host.querySelector(`#${targetId}`) : null;
+      if (!cmd || !editor) return;
+      editor.focus();
+      document.execCommand(cmd, false);
+    });
   });
   document.getElementById('cp-export-docx')?.addEventListener('click', (evt) => {
     const fresh = getPlan(plan.id);

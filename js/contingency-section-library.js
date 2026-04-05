@@ -298,5 +298,11 @@ export function buildLibrarySections(category, planTypeCode) {
     merged.push(def);
   });
 
+  const reviewIdx = merged.findIndex(def => def.key === 'plan_review');
+  if (reviewIdx >= 0) {
+    const [planReview] = merged.splice(reviewIdx, 1);
+    merged.push(planReview);
+  }
+
   return merged.map((def, idx) => toPlanSection(def, idx + 1));
 }
