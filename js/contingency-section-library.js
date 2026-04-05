@@ -21,7 +21,7 @@ function table(headers) {
 // the HVC query so only plan-relevant hazard scores are injected, not the full
 // municipal risk register.
 // ---------------------------------------------------------------------------
-export const HVC_HAZARD_MAP = {
+const HVC_HAZARD_MAP = {
   // hazard_specific
   flood:                  ['flood', 'flash flood', 'riverine flood', 'coastal flood', 'stormwater flooding'],
   wildfire:               ['veld fire', 'wildfire', 'forest fire', 'informal settlement fire', 'fire'],
@@ -55,7 +55,7 @@ export const HVC_HAZARD_MAP = {
 
 // Section keys within each plan type that should receive HVC risk data inline
 // (injected as an additional block into that specific section, not just hvc_placeholders)
-export const HVC_SECTION_TARGETS = {
+const HVC_SECTION_TARGETS = {
   flood:                  ['hazard_risk_profile', 'flood_risk_zones'],
   wildfire:               ['hazard_risk_profile', 'veld_fire_risk_rating'],
   severe_weather:         ['hazard_risk_profile', 'saws_warning_thresholds'],
@@ -1903,3 +1903,8 @@ export function buildLibrarySections(category, planTypeCode) {
 
   return merged.map((def, idx) => toPlanSection(def, idx + 1));
 }
+
+// Named exports — HVC maps are defined as plain const above and exported here,
+// matching the single-export-block pattern so module loaders don't trip on
+// top-level export statements scattered through the file.
+export { HVC_HAZARD_MAP, HVC_SECTION_TARGETS };
