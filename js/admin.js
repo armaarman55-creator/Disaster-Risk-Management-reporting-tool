@@ -48,7 +48,7 @@ async function renderAdmin(page) {
             <div class="pb" id="users-list">Loading…</div>
           </div>
           <div class="panel">
-            <div class="ph"><div class="ph-title">API integrations</div><div class="ph-sub">Weather warnings · External data</div></div>
+            <div class="ph"><div class="ph-title">API integrations</div><div class="ph-sub">External data</div></div>
             <div class="pb" id="api-settings">Loading…</div>
           </div>
         </div>
@@ -408,105 +408,12 @@ function loadApiSettings() {
   const el = document.getElementById('api-settings');
   if (!el) return;
 
-  const savedKey  = localStorage.getItem('drmsa_weather_key') || '';
-  const savedProv = localStorage.getItem('drmsa_weather_provider') || 'openweathermap';
-
   el.innerHTML = `
     <div style="font-size:12px;color:var(--text2);line-height:1.7;margin-bottom:14px">
-      Supports plugging in your own weather API key for severe weather warnings.
-      Recommended free options for South Africa:
-      <ul style="margin:8px 0 0 16px;color:var(--text3)">
-        <li><strong style="color:var(--text2)">OpenWeatherMap</strong> — free tier, good SA coverage · openweathermap.org</li>
-        <li><strong style="color:var(--text2)">WeatherAPI.com</strong> — free tier, 1M calls/month · weatherapi.com</li>
-        <li><strong style="color:var(--text2)">Tomorrow.io</strong> — free tier, has severe alerts · tomorrow.io</li>
-      </ul>
+      API integration settings are currently unavailable in this module.
     </div>
-    <div class="fl">
-      <span class="fl-label">Weather API provider</span>
-      <select class="fl-sel" id="weather-provider">
-        <option value="openweathermap" ${savedProv==='openweathermap'?'selected':''}>OpenWeatherMap</option>
-        <option value="weatherapi"     ${savedProv==='weatherapi'?'selected':''}>WeatherAPI.com</option>
-        <option value="tomorrow"       ${savedProv==='tomorrow'?'selected':''}>Tomorrow.io</option>
-        <option value="none"           ${savedProv==='none'?'selected':''}>None — manual entry only</option>
-      </select>
-    </div>
-    <div class="fl">
-      <span class="fl-label">API key</span>
-      <div class="pw-wrap">
-        <input class="fl-input" type="password" id="weather-key" value="${savedKey}" placeholder="Paste your API key here"/>
-        <button class="pw-toggle" type="button" onclick="toggleApiKey()">
-          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M1 8s2.5-5 7-5 7 5 7 5-2.5 5-7 5-7-5-7-5z"/><circle cx="8" cy="8" r="2"/></svg>
-        </button>
-      </div>
-    </div>
-    <div class="fl">
-      <span class="fl-label">Municipality location (for weather queries)</span>
-      <div class="frow">
-        <input class="fl-input" id="weather-lat" placeholder="Latitude e.g. -33.5869" value="${localStorage.getItem('drmsa_lat')||''}"/>
-        <input class="fl-input" id="weather-lng" placeholder="Longitude e.g. 22.2065" value="${localStorage.getItem('drmsa_lng')||''}"/>
-      </div>
-    </div>
-    <div style="display:flex;gap:8px;margin-top:4px">
-      <button class="btn btn-green btn-sm" id="save-api-btn">Save API settings</button>
-      <button class="btn btn-sm" id="test-api-btn">Test connection</button>
-    </div>
-    <div id="api-test-result" style="margin-top:8px;font-size:12px;font-family:monospace;display:none"></div>`;
-
-  document.getElementById('save-api-btn')?.addEventListener('click', () => {
-    localStorage.setItem('drmsa_weather_key',      document.getElementById('weather-key')?.value.trim());
-    localStorage.setItem('drmsa_weather_provider', document.getElementById('weather-provider')?.value);
-    localStorage.setItem('drmsa_lat',              document.getElementById('weather-lat')?.value.trim());
-    localStorage.setItem('drmsa_lng',              document.getElementById('weather-lng')?.value.trim());
-    showToast('API settings saved');
-  });
-
-  document.getElementById('test-api-btn')?.addEventListener('click', testWeatherApi);
+  `;
 }
-
-async function testWeatherApi() {
-  const key      = document.getElementById('weather-key')?.value.trim();
-  const provider = document.getElementById('weather-provider')?.value;
-  const lat      = document.getElementById('weather-lat')?.value.trim();
-  const lng      = document.getElementById('weather-lng')?.value.trim();
-  const result   = document.getElementById('api-test-result');
-  if (!result) return;
-
-  if (!key || provider === 'none') { result.style.display='block'; result.style.color='var(--amber)'; result.textContent='No API key set.'; return; }
-  if (!lat || !lng) { result.style.display='block'; result.style.color='var(--amber)'; result.textContent='Please enter lat/lng coordinates.'; return; }
-
-  result.style.display='block'; result.style.color='var(--text3)'; result.textContent='Testing…';
-
-  try {
-    let url, data;
-    if (provider === 'openweathermap') {
-      url = `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lng}&appid=${key}&units=metric`;
-      const res = await fetch(url); data = await res.json();
-      if (data.cod !== 200) throw new Error(data.message || 'API error');
-      result.style.color='var(--green)';
-      result.textContent = `✓ Connected — ${data.name}: ${Math.round(data.main.temp)}°C, ${data.weather[0].description}`;
-    } else if (provider === 'weatherapi') {
-      url = `https://api.weatherapi.com/v1/current.json?key=${key}&q=${lat},${lng}`;
-      const res = await fetch(url); data = await res.json();
-      if (data.error) throw new Error(data.error.message);
-      result.style.color='var(--green)';
-      result.textContent = `✓ Connected — ${data.location.name}: ${data.current.temp_c}°C, ${data.current.condition.text}`;
-    } else if (provider === 'tomorrow') {
-      url = `https://api.tomorrow.io/v4/weather/realtime?location=${lat},${lng}&apikey=${key}`;
-      const res = await fetch(url); data = await res.json();
-      if (data.code) throw new Error(data.message);
-      result.style.color='var(--green)';
-      result.textContent = `✓ Connected — Temp: ${data.data?.values?.temperature}°C`;
-    }
-  } catch(e) {
-    result.style.color='var(--red)';
-    result.textContent = `✗ Failed: ${e.message}`;
-  }
-}
-
-window.toggleApiKey = function() {
-  const inp = document.getElementById('weather-key');
-  if (inp) inp.type = inp.type === 'password' ? 'text' : 'password';
-};
 
 window.approveUser = async function(id, name) {
   const { error } = await supabase.from('user_profiles').update({ status: 'active' }).eq('id', id);
