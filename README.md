@@ -49,7 +49,7 @@ Record road closures with reasons, ward numbers and authority. Add alternative r
 Maintain a full directory of emergency stakeholders including SAPS, EMS, Fire Brigade, SANDF, NGOs, utilities and community organisations. Export the directory as CSV (opens in Excel) or PDF. Stakeholders serve as hazard owners in HVC assessments.
 
 ### Disaster Admin Panel
-Manage your municipality's users, settings and API keys. Approve new users, assign roles, set weather API keys, and configure your municipality's social media links for sharing.
+Manage your municipality's users and settings. Approve new users, assign roles, and configure your municipality's social media links for sharing.
 
 ---
 
@@ -80,21 +80,7 @@ Manage your municipality's users, settings and API keys. Approve new users, assi
 
 ---
 
-## Setting Up APIs
-
-### Weather API (optional but recommended)
-DRMSA supports weather warnings from three providers. You will need to register for a free API key from one of these services:
-
-- **OpenWeatherMap** — [openweathermap.org/api](https://openweathermap.org/api) — recommended, free tier available
-- **WeatherAPI.com** — [weatherapi.com](https://www.weatherapi.com)
-- **Tomorrow.io** — [tomorrow.io](https://www.tomorrow.io)
-
-Once you have a key:
-1. Go to **Disaster Admin Panel → Weather API settings**
-2. Select your provider
-3. Paste your API key
-4. Enter your municipality's latitude and longitude (centre point)
-5. Click **Test connection**
+## Settings
 
 ### Social media links (for sharing)
 To enable sharing to your municipality's social media pages:
@@ -200,8 +186,6 @@ Municipal ward boundary data is sourced from the **Municipal Demarcation Board (
 DRMSA is provided as a tool to support — not replace — the professional judgement of qualified disaster risk management officials. All assessments, reports and decisions made using this platform remain the responsibility of the municipality and its designated officials.
 
 Ward boundary data is sourced from the MDB and may not reflect the most recent demarcation changes. Always verify with the official MDB data portal for legal boundary purposes.
-
-Weather warnings are sourced from third-party weather API providers and are not official SAWS alerts. For official severe weather warnings, always consult the South African Weather Service at [saws.ac.za](https://www.saws.ac.za) or intergrate the SAWS severe weather API.
 
 ---
 

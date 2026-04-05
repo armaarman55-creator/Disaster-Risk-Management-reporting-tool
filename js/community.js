@@ -45,7 +45,6 @@ async function loadTab(tab) {
   switch (tab) {
     case 'shelters':   await renderShelters(body);   break;
     case 'relief-ops': await renderReliefOps(body);  break;
-    case 'saws':       await renderSAWS(body);        break;
   }
 }
 
@@ -757,100 +756,6 @@ function bindReliefEvents(ops) {
 
   document.addEventListener('click', () => document.getElementById('shared-dl-drop')?.remove());
 }
-
-// ── SAWS ─────────────────────────────────────────────────
-async function renderSAWS(body) {
-  const { data: warnings } = await supabase
-    .from('saws_warnings').select('*')
-    .eq('municipality_id', _muniId).order('created_at', { ascending: false });
-
-  body.innerHTML = `
-    <div class="sec-hdr">
-      <div><div class="sec-hdr-title">SAWS weather warnings</div><div class="sec-hdr-sub">${warnings?.filter(w=>w.is_active).length||0} active</div></div>
-      <button class="btn btn-red btn-sm" id="add-saws-btn">+ Manual alert</button>
-    </div>
-    <div id="saws-form-area"></div>
-    ${warnings?.length ? warnings.map(w => renderSAWSCard(w)).join('') : emptyState('No active warnings.')}`;
-
-  document.getElementById('add-saws-btn')?.addEventListener('click', () => showSAWSForm(body, _muniId));
-}
-
-function showSAWSForm(body, muniId) {
-  const area = document.getElementById('saws-form-area');
-  if (!area) return;
-  if (area.innerHTML) { area.innerHTML = ''; return; }
-
-  area.innerHTML = `
-    <div style="background:var(--bg3);border:1px solid var(--red-mid);border-radius:8px;padding:16px;margin-bottom:16px">
-      <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:12px">Add manual weather warning</div>
-      <div class="fl"><span class="fl-label">Warning title</span><input class="fl-input" id="sw-title" placeholder="e.g. Severe thunderstorm warning"/></div>
-      <div class="frow">
-        <div class="fl"><span class="fl-label">Warning type</span>
-          <select class="fl-sel" id="sw-type">
-            <option>Thunderstorm</option><option>Flash Flood</option><option>Strong Wind</option>
-            <option>Fire Danger</option><option>Heatwave</option><option>Cold Front</option>
-            <option>Drought</option><option>Hailstorm</option>
-          </select>
-        </div>
-        <div class="fl"><span class="fl-label">Severity</span>
-          <select class="fl-sel" id="sw-severity">
-            <option value="advisory">Advisory</option>
-            <option value="warning">Warning</option>
-            <option value="severe">Severe</option>
-          </select>
-        </div>
-      </div>
-      <div class="fl"><span class="fl-label">Description</span><textarea class="fl-textarea" id="sw-desc" rows="3"></textarea></div>
-      <div class="frow">
-        <div class="fl"><span class="fl-label">Valid from</span><input class="fl-input" type="datetime-local" id="sw-from"/></div>
-        <div class="fl"><span class="fl-label">Valid to</span><input class="fl-input" type="datetime-local" id="sw-to"/></div>
-      </div>
-      <div style="display:flex;gap:8px;margin-top:8px">
-        <button class="btn btn-red btn-sm" id="save-saws-btn">Save warning</button>
-        <button class="btn btn-sm" onclick="document.getElementById('saws-form-area').innerHTML=''">Cancel</button>
-      </div>
-    </div>`;
-
-  document.getElementById('save-saws-btn')?.addEventListener('click', async () => {
-    const title = document.getElementById('sw-title')?.value.trim();
-    if (!title) { alert('Please enter a warning title.'); return; }
-    const { error } = await supabase.from('saws_warnings').insert({
-      municipality_id: muniId, title,
-      warning_type:    document.getElementById('sw-type')?.value,
-      severity:        document.getElementById('sw-severity')?.value,
-      description:     document.getElementById('sw-desc')?.value,
-      valid_from:      document.getElementById('sw-from')?.value||null,
-      valid_to:        document.getElementById('sw-to')?.value||null,
-      is_active:true, is_manual:true, source:'Manual entry'
-    });
-    if (!error) { area.innerHTML=''; showToast('✓ Warning saved successfully!'); await renderSAWS(body); }
-    else showToast(error.message, true);
-  });
-}
-
-function renderSAWSCard(w) {
-  return `
-    <div class="rec-card" style="margin-bottom:12px${w.is_active?';border-color:rgba(248,81,73,.3)':''}">
-      <div class="rec-head">
-        ${w.is_active?'<div class="pulse-dot" style="width:8px;height:8px;margin-right:4px"></div>':''}
-        <div style="flex:1">
-          <div class="rec-name" style="color:${w.is_active?'var(--red)':'var(--text)'}">${w.title}</div>
-          <div class="rec-meta">${w.warning_type||''} · ${w.valid_from?new Date(w.valid_from).toLocaleString('en-ZA'):'—'} — ${w.valid_to?new Date(w.valid_to).toLocaleString('en-ZA'):'—'}</div>
-        </div>
-        <span class="badge ${w.is_active?'b-red':'b-gray'}">${w.is_active?'ACTIVE':'EXPIRED'}</span>
-      </div>
-      ${w.description?`<div style="padding:10px 16px;font-size:12px;color:var(--text2);line-height:1.6">${w.description}</div>`:''}
-      <div class="rec-foot">
-        <button class="btn btn-sm btn-red" onclick="deactivateSAWS('${w.id}')">Deactivate</button>
-      </div>
-    </div>`;
-}
-
-window.deactivateSAWS = async function(id) {
-  await supabase.from('saws_warnings').update({ is_active: false }).eq('id', id);
-  showToast('Warning deactivated');
-  await renderSAWS(document.getElementById('community-body'));
-};
 
 function emptyState(msg) {
   return `<div style="text-align:center;padding:48px 20px;color:var(--text3);font-size:12px">${msg}</div>`;
