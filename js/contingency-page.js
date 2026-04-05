@@ -1,4 +1,4 @@
-import { addSection, createPlan, deletePlan, generateFromSeed, getPlan, listPlans, setPlan, updateSection } from './contingency-dist/plan-engine.js';
+import { addSection, createPlan, generateFromSeed, getPlan, listPlans, setPlan, updateSection } from './contingency-dist/plan-engine.js';
 import { loadSeed } from './contingency-dist/seed-loader.js';
 import { saveVersionSnapshot, submitForReview, approvePlan } from './contingency-dist/versioning.js';
 import { createAnnexureFromTemplate, attachAnnexureToPlan } from './contingency-dist/annexure-engine.js';
@@ -277,7 +277,7 @@ function ensurePlanHasSections(planId, planType) {
 function renderPlanList() {
   const host = document.getElementById('cp-plan-list');
   if (!host) return;
-  const plans = listPlans();
+  const plans = listPlans().filter(p => !p?.deleted && p?.status !== 'deleted');
 
   if (!plans.length) {
     host.innerHTML = '<div class="cp-empty">No contingency plans yet. Use the wizard to create one.</div>';
@@ -314,12 +314,8 @@ function renderPlanList() {
       const id = btn.getAttribute('data-plan-id');
       const title = btn.getAttribute('data-plan-title') || 'this plan';
       if (!confirm(`Delete "${title}"?\n\nThis cannot be undone.`)) return;
-      if (typeof deletePlan === 'function') {
-        deletePlan(id);
-      } else {
-        const p = getPlan(id);
-        if (p) setPlan({ ...p, deleted: true, status: 'deleted' });
-      }
+      const p = getPlan(id);
+      if (p) setPlan({ ...p, deleted: true, status: 'deleted' });
       if (_activePlanId === id) _activePlanId = null;
       renderPlanList();
       renderPlanDetail();
@@ -455,7 +451,7 @@ function renderPlanDetail() {
   if (!host) return;
 
   const plan = _activePlanId ? stripLegacySuggestionArtifacts(getPlan(_activePlanId)) : null;
-  if (!plan) {
+  if (!plan || plan.deleted || plan.status === 'deleted') {
     host.innerHTML = '<div class="cp-empty">Select a plan from the list to view details.</div>';
     return;
   }
@@ -591,6 +587,7 @@ function renderPlanDetail() {
   host.querySelectorAll('.cp-tbl-del-row[data-grid]').forEach(btn => {
     btn.addEventListener('click', function () { this.closest('tr')?.remove(); scheduleAutoSave(plan.id); });
   });
+}
 
 function renderTypeOptions() {
   const select = document.getElementById('cp-plan-type');
