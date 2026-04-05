@@ -137,14 +137,35 @@ function stripLegacySuggestionArtifacts(plan) {
   if (!plan || !Array.isArray(plan.sections)) return plan;
   const cleaned = {
     ...plan,
-    sections: plan.sections.filter(
-      s =>
-        s?.key !== 'cp-suggestion-panel' &&
-        !/suggestion library/i.test(String(s?.title || '')) &&
-        !(Array.isArray(s?.content_blocks) && s.content_blocks.some(b => /loading contextual suggestions/i.test(String(b?.content || ''))))
-    )
+    sections: plan.sections
+      .filter(s => s?.key !== 'cp-suggestion-panel')
+      .map(s => ({
+        ...s,
+        title: String(s.title || '').replace(/suggestion library\s*\(idp-style\)/gi, '').trim() || s.title,
+        content_blocks: (s.content_blocks || []).map(b => ({
+          ...b,
+          content:
+            typeof b.content === 'string'
+              ? b.content
+                  .replace(/loading contextual suggestions\.\.\./gi, '')
+                  .replace(/suggestion library\s*\(idp-style\)/gi, '')
+                  .trim()
+              : b.content
+        }))
+      }))
   };
   return cleaned;
+}
+
+function purgeLegacySuggestionNodes(root) {
+  if (!root) return;
+  root.querySelectorAll('*').forEach(node => {
+    const txt = (node.textContent || '').toLowerCase().trim();
+    if (!txt) return;
+    if (txt === 'loading contextual suggestions...' || txt === 'suggestion library (idp-style)') {
+      node.remove();
+    }
+  });
 }
 
 export function getCurrentPlanningContext(user) {
@@ -360,6 +381,7 @@ function renderPlanDetail() {
         .join('')}
     </div>
   `;
+  purgeLegacySuggestionNodes(host);
 
   document.getElementById('cp-save-version')?.addEventListener('click', () => {
     saveVersionSnapshot(plan, _context?.userId || 'local-user');
@@ -640,6 +662,7 @@ export async function initContingencyPage(user) {
       <div class="card" id="cp-plan-detail" style="padding:12px"></div>
     </div>
   `;
+  purgeLegacySuggestionNodes(page);
 
   try {
     await getAllPlanTypes();
