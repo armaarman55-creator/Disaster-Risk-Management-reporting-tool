@@ -277,7 +277,7 @@ function ensurePlanHasSections(planId, planType) {
 function renderPlanList() {
   const host = document.getElementById('cp-plan-list');
   if (!host) return;
-  const plans = listPlans();
+  const plans = listPlans().filter(p => !p?.deleted && p?.status !== 'deleted');
 
   if (!plans.length) {
     host.innerHTML = '<div class="cp-empty">No contingency plans yet. Use the wizard to create one.</div>';
@@ -451,7 +451,7 @@ function renderPlanDetail() {
   if (!host) return;
 
   const plan = _activePlanId ? stripLegacySuggestionArtifacts(getPlan(_activePlanId)) : null;
-  if (!plan) {
+  if (!plan || plan.deleted || plan.status === 'deleted') {
     host.innerHTML = '<div class="cp-empty">Select a plan from the list to view details.</div>';
     return;
   }
