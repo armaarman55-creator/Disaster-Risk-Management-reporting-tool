@@ -108,7 +108,7 @@ function downloadCSV(rows, filename) {
 }
 
 function downloadDoc(html, filename) {
-  // Word-compatible HTML payload with .docx extension for modern Office flows
+  // Word-compatible HTML payload
   const doc = `<html xmlns:o="urn:schemas-microsoft-com:office:office"
     xmlns:w="urn:schemas-microsoft-com:office:word"
     xmlns="http://www.w3.org/TR/REC-html40">
