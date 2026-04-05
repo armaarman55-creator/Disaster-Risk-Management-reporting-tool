@@ -4,6 +4,11 @@ import { supabase } from './supabase.js';
 let _muniId    = null;
 let _activeTab = 'shelters';
 let _muniLogos = { main: null, dm: null, mode: 'main' };
+const PNG_TEMPLATES = [
+  { key: 'official', label: 'Official notice' },
+  { key: 'compact', label: 'Compact bulletin' },
+  { key: 'social', label: 'Social square' }
+];
 
 export async function initCommunity(user) {
   _muniId = user?.municipality_id;
@@ -362,21 +367,26 @@ function renderShelterCard(s) {
     </div>`;
 }
 
-async function downloadShelterPNG(s) {
+async function downloadShelterPNG(s, template = 'official') {
   const muniName    = window._drmsaUser?.municipalities?.name || 'Municipality';
   const date        = new Date().toLocaleString('en-ZA');
   const pct         = s.capacity ? Math.round((s.current_occupancy||0) / s.capacity * 100) : 0;
   const accentColor = { open:'#1a6b3a', 'at-capacity':'#8b1a1a', partial:'#7a5200', closed:'#444444' }[s.status] || '#1a3a6b';
   const statusBg    = { open:'#1a6b3a', 'at-capacity':'#c0392b', partial:'#d4860a', closed:'#555555' }[s.status] || '#555';
   const statusLabel = (s.status || 'UNKNOWN').replace(/-/g, ' ').toUpperCase();
+  const cfg = {
+    official: { W: 900, H: 500, title: 'Shelter Notification', titleSize: 26, bodySize: 13, showOccupancy: true },
+    compact: { W: 900, H: 420, title: 'Shelter Update Bulletin', titleSize: 23, bodySize: 12, showOccupancy: false },
+    social: { W: 1080, H: 1080, title: 'Shelter Status Update', titleSize: 34, bodySize: 15, showOccupancy: true }
+  }[template] || { W: 900, H: 500, title: 'Shelter Notification', titleSize: 26, bodySize: 13, showOccupancy: true };
 
   const logoImgs = await loadLogoImages();
-  const W = 900, H = 500;
+  const { W, H } = cfg;
   const { ctx, canvas, SPLIT, bodyTop, FTR_H, RX } = buildNoticeCanvas(logoImgs, accentColor, muniName, date, W, H);
 
   // ── LEFT: Title
-  ctx.fillStyle = accentColor; ctx.font = 'bold 26px Arial, sans-serif';
-  ctx.fillText('Shelter Notification', 20, bodyTop + 38);
+  ctx.fillStyle = accentColor; ctx.font = `bold ${cfg.titleSize}px Arial, sans-serif`;
+  ctx.fillText(cfg.title, 20, bodyTop + (template === 'social' ? 48 : 38));
 
   // ── LEFT: Body paragraph
   const para = [
@@ -399,36 +409,39 @@ async function downloadShelterPNG(s) {
   ];
 
   let ty = bodyTop + 60;
-  wrapRichText(ctx, para, SPLIT - 40, 13).forEach(line => { drawRichLine(ctx, line, 20, ty, 13, '#1a1a1a'); ty += 20; });
+  wrapRichText(ctx, para, SPLIT - 40, cfg.bodySize).forEach(line => { drawRichLine(ctx, line, 20, ty, cfg.bodySize, '#1a1a1a'); ty += (cfg.bodySize + 7); });
   ty += 6;
-  wrapRichText(ctx, para2, SPLIT - 40, 13).forEach(line => { drawRichLine(ctx, line, 20, ty, 13, '#1a1a1a'); ty += 20; });
+  wrapRichText(ctx, para2, SPLIT - 40, cfg.bodySize).forEach(line => { drawRichLine(ctx, line, 20, ty, cfg.bodySize, '#1a1a1a'); ty += (cfg.bodySize + 7); });
 
   // ── LEFT: Occupancy bar
-  ty += 14;
-  ctx.fillStyle = '#888888'; ctx.font = 'bold 9px Arial, sans-serif';
-  ctx.fillText('OCCUPANCY', 20, ty); ty += 12;
-  const barW = SPLIT - 40, barH = 10;
-  ctx.fillStyle = '#d0ccc4'; roundRect(ctx, 20, ty, barW, barH, 4); ctx.fill();
-  const fillW = Math.min(pct / 100 * barW, barW);
-  ctx.fillStyle = accentColor; roundRect(ctx, 20, ty, Math.max(fillW, 4), barH, 4); ctx.fill();
-  ctx.fillStyle = '#555555'; ctx.font = '11px Arial, sans-serif';
-  ctx.fillText(`${s.current_occupancy || 0} / ${s.capacity || 0} persons`, 20, ty + 24);
+  if (cfg.showOccupancy) {
+    ty += 14;
+    ctx.fillStyle = '#888888'; ctx.font = 'bold 9px Arial, sans-serif';
+    ctx.fillText('OCCUPANCY', 20, ty); ty += 12;
+    const barW = SPLIT - 40, barH = 10;
+    ctx.fillStyle = '#d0ccc4'; roundRect(ctx, 20, ty, barW, barH, 4); ctx.fill();
+    const fillW = Math.min(pct / 100 * barW, barW);
+    ctx.fillStyle = accentColor; roundRect(ctx, 20, ty, Math.max(fillW, 4), barH, 4); ctx.fill();
+    ctx.fillStyle = '#555555'; ctx.font = '11px Arial, sans-serif';
+    ctx.fillText(`${s.current_occupancy || 0} / ${s.capacity || 0} persons`, 20, ty + 24);
+  }
 
   // ── RIGHT: Fields
-  drawRightFields(ctx, RX, bodyTop + 16, W, [
+  const shelterFields = [
     { label: 'Status',             badge: true, badgeText: statusLabel, badgeBg: statusBg },
     { label: 'Facility type',      value: s.facility_type || '—' },
     { label: 'Address',            value: s.address || '—' },
     { label: 'Ward',               value: String(s.ward_number || '—') },
     { label: 'Contact',            value: `${s.contact_name || '—'} · ${s.contact_number || '—'}` },
     { label: 'Wheelchair access',  value: s.wheelchair_accessible ? 'Yes' : 'No' }
-  ]);
+  ];
+  drawRightFields(ctx, RX, bodyTop + 16, W, template === 'compact' ? shelterFields.slice(0, 4) : shelterFields);
   drawIssuedBy(ctx, RX, W, H, FTR_H, muniName);
 
   canvas.toBlob(blob => {
     const url = URL.createObjectURL(blob);
     const a   = Object.assign(document.createElement('a'), {
-      href: url, download: `shelter-notice-${(s.name||'shelter').replace(/\s+/g,'-')}.png`
+      href: url, download: `shelter-notice-${template}-${(s.name||'shelter').replace(/\s+/g,'-')}.png`
     });
     a.click(); URL.revokeObjectURL(url);
   }, 'image/png');
@@ -480,7 +493,7 @@ function bindShelterEvents(shelters) {
       drop.style.cssText = `position:fixed;top:${rect.bottom + 4}px;left:${rect.left}px;z-index:9999;background:var(--bg2);border:1px solid var(--border);border-radius:6px;min-width:170px;overflow:hidden;box-shadow:0 6px 20px rgba(0,0,0,.35)`;
       drop.innerHTML = `
         <button data-sh-txt="${id}" style="display:block;width:100%;text-align:left;background:transparent;border:none;border-bottom:1px solid var(--border);padding:9px 14px;font-size:12px;color:var(--text);cursor:pointer;font-family:monospace">📄 Text file (.txt)</button>
-        <button data-sh-png="${id}" style="display:block;width:100%;text-align:left;background:transparent;border:none;padding:9px 14px;font-size:12px;color:var(--text);cursor:pointer;font-family:monospace">🖼 Image (.png)</button>`;
+        ${PNG_TEMPLATES.map((tpl, idx) => `<button data-sh-png="${id}" data-template="${tpl.key}" style="display:block;width:100%;text-align:left;background:transparent;border:none;${idx === PNG_TEMPLATES.length - 1 ? '' : 'border-bottom:1px solid var(--border);'}padding:9px 14px;font-size:12px;color:var(--text);cursor:pointer;font-family:monospace">🖼 Image (.png) · ${tpl.label}</button>`).join('')}`;
 
       drop.querySelector('[data-sh-txt]').addEventListener('click', () => {
         const s = shelters.find(x => x.id === id); drop.remove(); if (!s) return;
@@ -497,9 +510,11 @@ function bindShelterEvents(shelters) {
         URL.revokeObjectURL(url);
       });
 
-      drop.querySelector('[data-sh-png]').addEventListener('click', () => {
-        const s = shelters.find(x => x.id === id); drop.remove(); if (!s) return;
-        downloadShelterPNG(s);
+      drop.querySelectorAll('[data-sh-png]').forEach(pngBtn => {
+        pngBtn.addEventListener('click', () => {
+          const s = shelters.find(x => x.id === id); drop.remove(); if (!s) return;
+          downloadShelterPNG(s, pngBtn.dataset.template || 'official');
+        });
       });
 
       document.body.appendChild(drop);
@@ -637,20 +652,25 @@ function renderReliefCard(op) {
     </div>`;
 }
 
-async function downloadReliefPNG(op) {
+async function downloadReliefPNG(op, template = 'official') {
   const muniName    = window._drmsaUser?.municipalities?.name || 'Municipality';
   const date        = new Date().toLocaleString('en-ZA');
   const accentColor = { active:'#5a3a1a', upcoming:'#1a3a6b', ended:'#444444' }[op.status] || '#5a3a1a';
   const statusBg    = { active:'#5a3a1a', upcoming:'#1a3a6b', ended:'#555555' }[op.status] || '#5a3a1a';
   const statusLabel = (op.status || 'UNKNOWN').toUpperCase();
+  const cfg = {
+    official: { W: 900, H: 500, title: 'Relief Operation Notification', titleSize: 26, bodySize: 13 },
+    compact: { W: 900, H: 420, title: 'Relief Operation Bulletin', titleSize: 23, bodySize: 12 },
+    social: { W: 1080, H: 1080, title: 'Relief Operation Update', titleSize: 34, bodySize: 15 }
+  }[template] || { W: 900, H: 500, title: 'Relief Operation Notification', titleSize: 26, bodySize: 13 };
 
   const logoImgs = await loadLogoImages();
-  const W = 900, H = 500;
+  const { W, H } = cfg;
   const { ctx, canvas, SPLIT, bodyTop, FTR_H, RX } = buildNoticeCanvas(logoImgs, accentColor, muniName, date, W, H);
 
   // ── LEFT: Title
-  ctx.fillStyle = accentColor; ctx.font = 'bold 26px Arial, sans-serif';
-  ctx.fillText('Relief Operation Notification', 20, bodyTop + 38);
+  ctx.fillStyle = accentColor; ctx.font = `bold ${cfg.titleSize}px Arial, sans-serif`;
+  ctx.fillText(cfg.title, 20, bodyTop + (template === 'social' ? 48 : 38));
 
   // ── LEFT: Body paragraph
   const para = [
@@ -671,12 +691,12 @@ async function downloadReliefPNG(op) {
   ];
 
   let ty = bodyTop + 60;
-  wrapRichText(ctx, para, SPLIT - 40, 13).forEach(line => { drawRichLine(ctx, line, 20, ty, 13, '#1a1a1a'); ty += 20; });
+  wrapRichText(ctx, para, SPLIT - 40, cfg.bodySize).forEach(line => { drawRichLine(ctx, line, 20, ty, cfg.bodySize, '#1a1a1a'); ty += (cfg.bodySize + 7); });
   ty += 6;
-  wrapRichText(ctx, para2, SPLIT - 40, 13).forEach(line => { drawRichLine(ctx, line, 20, ty, 13, '#1a1a1a'); ty += 20; });
+  wrapRichText(ctx, para2, SPLIT - 40, cfg.bodySize).forEach(line => { drawRichLine(ctx, line, 20, ty, cfg.bodySize, '#1a1a1a'); ty += (cfg.bodySize + 7); });
 
   // ── RIGHT: Fields
-  drawRightFields(ctx, RX, bodyTop + 16, W, [
+  const reliefFields = [
     { label: 'Status',             badge: true, badgeText: statusLabel, badgeBg: statusBg },
     { label: 'Hazard',             value: op.hazard_name || '—' },
     { label: 'Ward',               value: String(op.ward_number || '—') },
@@ -684,13 +704,14 @@ async function downloadReliefPNG(op) {
     { label: 'Schedule',           value: op.schedule || '—' },
     { label: 'Public contact',     value: op.public_contact || '—' },
     { label: 'Ends',               value: op.end_date ? new Date(op.end_date).toLocaleDateString('en-ZA') : '—' }
-  ]);
+  ];
+  drawRightFields(ctx, RX, bodyTop + 16, W, template === 'compact' ? reliefFields.slice(0, 5) : reliefFields);
   drawIssuedBy(ctx, RX, W, H, FTR_H, muniName);
 
   canvas.toBlob(blob => {
     const url = URL.createObjectURL(blob);
     const a   = Object.assign(document.createElement('a'), {
-      href: url, download: `relief-op-notice-${(op.name||'op').replace(/\s+/g,'-')}.png`
+      href: url, download: `relief-op-notice-${template}-${(op.name||'op').replace(/\s+/g,'-')}.png`
     });
     a.click(); URL.revokeObjectURL(url);
   }, 'image/png');
@@ -729,7 +750,7 @@ function bindReliefEvents(ops) {
       drop.style.cssText = `position:fixed;top:${rect.bottom + 4}px;left:${rect.left}px;z-index:9999;background:var(--bg2);border:1px solid var(--border);border-radius:6px;min-width:170px;overflow:hidden;box-shadow:0 6px 20px rgba(0,0,0,.35)`;
       drop.innerHTML = `
         <button data-ro-txt="${id}" style="display:block;width:100%;text-align:left;background:transparent;border:none;border-bottom:1px solid var(--border);padding:9px 14px;font-size:12px;color:var(--text);cursor:pointer;font-family:monospace">📄 Text file (.txt)</button>
-        <button data-ro-png="${id}" style="display:block;width:100%;text-align:left;background:transparent;border:none;padding:9px 14px;font-size:12px;color:var(--text);cursor:pointer;font-family:monospace">🖼 Image (.png)</button>`;
+        ${PNG_TEMPLATES.map((tpl, idx) => `<button data-ro-png="${id}" data-template="${tpl.key}" style="display:block;width:100%;text-align:left;background:transparent;border:none;${idx === PNG_TEMPLATES.length - 1 ? '' : 'border-bottom:1px solid var(--border);'}padding:9px 14px;font-size:12px;color:var(--text);cursor:pointer;font-family:monospace">🖼 Image (.png) · ${tpl.label}</button>`).join('')}`;
 
       drop.querySelector('[data-ro-txt]').addEventListener('click', () => {
         const op = ops.find(o => o.id === id); drop.remove(); if (!op) return;
@@ -745,9 +766,11 @@ function bindReliefEvents(ops) {
         URL.revokeObjectURL(url);
       });
 
-      drop.querySelector('[data-ro-png]').addEventListener('click', () => {
-        const op = ops.find(o => o.id === id); drop.remove(); if (!op) return;
-        downloadReliefPNG(op);
+      drop.querySelectorAll('[data-ro-png]').forEach(pngBtn => {
+        pngBtn.addEventListener('click', () => {
+          const op = ops.find(o => o.id === id); drop.remove(); if (!op) return;
+          downloadReliefPNG(op, pngBtn.dataset.template || 'official');
+        });
       });
 
       document.body.appendChild(drop);
