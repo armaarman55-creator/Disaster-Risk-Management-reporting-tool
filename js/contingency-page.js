@@ -174,10 +174,12 @@ function applyLayoutState() {
   const layout = document.getElementById('cp-layout');
   const toggleMenu = document.getElementById('cp-toggle-menu');
   const toggleSplit = document.getElementById('cp-toggle-split');
+  const sidebar = document.getElementById('cp-sidebar');
   if (!layout) return;
-  layout.classList.toggle('menu-collapsed', !!_menuCollapsed);
+  layout.classList.toggle('generate-collapsed', !!_menuCollapsed);
   layout.classList.toggle('split-view', !!_splitView);
-  if (toggleMenu) toggleMenu.textContent = _menuCollapsed ? 'Expand menu' : 'Collapse menu';
+  if (sidebar) sidebar.classList.toggle('cp-generate-collapsed', !!_menuCollapsed);
+  if (toggleMenu) toggleMenu.textContent = _menuCollapsed ? 'Expand generate' : 'Collapse generate';
   if (toggleSplit) toggleSplit.textContent = _splitView ? 'Single view' : 'Split view';
 }
 
@@ -666,10 +668,11 @@ export async function initContingencyPage(user) {
     <div class="page-body cp-layout" id="cp-layout" style="padding:16px;display:grid;gap:12px;grid-template-columns:360px 1fr;align-items:start">
       <div class="card" id="cp-sidebar" style="padding:12px;display:grid;gap:10px">
         <div class="cp-actions" style="justify-content:space-between">
-          <button class="btn" id="cp-toggle-menu">Collapse menu</button>
+          <button class="btn" id="cp-toggle-menu">Collapse generate</button>
           <button class="btn" id="cp-toggle-split">Split view</button>
         </div>
         <div class="h3">New Contingency Plan</div>
+        <div id="cp-generate-panel">
         <div class="cp-context">
           <div><strong>Municipality:</strong> ${esc(_context.municipalityName)}</div>
           <div><strong>Organisation:</strong> ${esc(_context.organisationName || _context.organisationId || 'Disaster Management Unit')}</div>
@@ -703,6 +706,7 @@ export async function initContingencyPage(user) {
 
         <div id="cp-wizard-error" class="cp-error"></div>
         <button class="btn btn-primary" id="cp-generate">Generate plan</button>
+        </div>
 
         <hr style="border:none;border-top:1px solid var(--line);margin:2px 0"/>
         <div class="h3" style="font-size:13px">Plans</div>

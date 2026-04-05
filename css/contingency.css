@@ -24,8 +24,8 @@
 .cp-field{display:grid;gap:6px;font-size:11px;color:var(--text2);margin-bottom:8px}
 .cp-blocks{display:grid;gap:8px}
 
-.cp-layout.menu-collapsed{grid-template-columns:1fr !important}
-.cp-layout.menu-collapsed #cp-sidebar{display:none}
+.cp-layout.generate-collapsed{grid-template-columns:260px 1fr !important}
+#cp-sidebar.cp-generate-collapsed #cp-generate-panel{display:none}
 
 #cp-plan-detail .cp-detail-wrap{display:grid;grid-template-columns:1fr;gap:10px}
 #cp-plan-detail .cp-preview-pane{display:none;border:1px solid var(--line);border-radius:10px;padding:10px;background:var(--bg2);max-height:75vh;overflow:auto}
