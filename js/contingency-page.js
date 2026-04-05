@@ -403,6 +403,10 @@ function renderPlanDetail() {
         <button id="cp-export" class="btn btn-primary">Export Word</button>
       </div>
     </div>
+    <div id="cp-suggestion-panel" class="cp-section-card" style="margin-bottom:8px">
+      <div class="cp-section-head">Suggestion Library (IDP-style)</div>
+      <div class="cp-blocks"><div class="cp-empty">Loading contextual suggestions...</div></div>
+    </div>
     <div class="cp-sections">
       ${!plan.sections.length ? '<div class="cp-empty">No sections found for this plan. Starter sections will be added on generate.</div>' : ''}
       ${plan.sections
