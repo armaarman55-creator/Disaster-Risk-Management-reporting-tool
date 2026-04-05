@@ -598,7 +598,7 @@ function bindClosureEvents() {
       const drop = document.createElement('div');
       drop.id = 'shared-dl-drop';
       drop.dataset.forId = id;
-      drop.style.cssText = `position:fixed;top:${rect.bottom + 4}px;left:${rect.left}px;z-index:9999;background:var(--bg2);border:1px solid var(--border);border-radius:6px;min-width:170px;overflow:hidden;box-shadow:0 6px 20px rgba(0,0,0,.35)`;
+      drop.style.cssText = `position:fixed;left:${rect.left}px;z-index:9999;background:var(--bg2);border:1px solid var(--border);border-radius:6px;min-width:170px;overflow:hidden;box-shadow:0 6px 20px rgba(0,0,0,.35);visibility:hidden`;
       drop.addEventListener('click', e => e.stopPropagation());
       drop.innerHTML = `
         <button data-dl-text="${id}" style="display:block;width:100%;text-align:left;background:transparent;border:none;border-bottom:1px solid var(--border);padding:9px 14px;font-size:12px;color:var(--text);cursor:pointer;font-family:monospace">📄 Text file (.txt)</button>
@@ -628,6 +628,11 @@ function bindClosureEvents() {
       });
 
       document.body.appendChild(drop);
+
+      // Route downloads should open upward by default.
+      const menuTop = rect.top - drop.offsetHeight - 4;
+      drop.style.top = `${Math.max(8, menuTop)}px`;
+      drop.style.visibility = 'visible';
     });
   });
 
