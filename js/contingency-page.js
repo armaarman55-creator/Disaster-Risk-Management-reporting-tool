@@ -9,6 +9,7 @@ import {
   getPlanTypesByCategory
 } from './contingency-plan-type-registry.js';
 import { fetchPlansFromBackend, savePlanToBackend } from './contingency-repo.js';
+import { buildLibrarySections } from './contingency-section-library.js';
 
 let _activePlanId = null;
 let _activeCategory = '';
@@ -69,55 +70,21 @@ export function getCurrentPlanningContext(user) {
 }
 
 
-function buildStarterSections(planType) {
-  const title = planType?.name || 'Contingency Plan';
-  return [
-    {
-      key: 'situation_overview',
-      title: 'Situation Overview',
-      order: 1,
-      editable: true,
-      content_blocks: [{ id: 'ov_1', type: 'text', content: `${title}: describe context, hazards and planning assumptions.` }]
-    },
-    {
-      key: 'objectives_scope',
-      title: 'Objectives and Scope',
-      order: 2,
-      editable: true,
-      content_blocks: [{ id: 'obj_1', type: 'list', content: ['Protect life', 'Protect infrastructure', 'Coordinate response'] }]
-    },
-    {
-      key: 'activation_triggers',
-      title: 'Activation and Triggers',
-      order: 3,
-      editable: true,
-      content_blocks: [{ id: 'act_1', type: 'text', content: 'Define trigger levels and activation authority for this plan type.' }]
-    },
-    {
-      key: 'operational_actions',
-      title: 'Operational Actions by Phase',
-      order: 4,
-      editable: true,
-      content_blocks: [{ id: 'ops_1', type: 'table', content: { headers: ['Phase', 'Action', 'Lead'], rows: [] } }]
-    },
-    {
-      key: 'communications_reporting',
-      title: 'Communications and Reporting',
-      order: 5,
-      editable: true,
-      content_blocks: [{ id: 'com_1', type: 'text', content: 'Document public messaging, reporting channels and contact escalation.' }]
-    }
-  ];
-}
-
 function ensurePlanHasSections(planId, planType) {
   const fresh = getPlan(planId);
-  if (!fresh || (fresh.sections || []).length) return;
+  if (!fresh) return;
 
-  const starter = buildStarterSections(planType);
+  const librarySections = buildLibrarySections(planType?.category, planType?.code);
+  if (!librarySections.length) return;
+
+  const existing = new Set((fresh.sections || []).map(s => s.key));
   let working = fresh;
-  starter.forEach(section => {
-    working = addSection(working, section);
+  librarySections.forEach(section => {
+    if (existing.has(section.key)) return;
+    working = addSection(working, {
+      ...section,
+      order: (working.sections?.length || 0) + 1
+    });
   });
 }
 
