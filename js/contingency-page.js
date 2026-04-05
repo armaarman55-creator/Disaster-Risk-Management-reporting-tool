@@ -8,7 +8,7 @@ import {
   getPlanTypesByCategory
 } from './contingency-plan-type-registry.js';
 import { fetchPlansFromBackend, savePlanToBackend } from './contingency-repo.js';
-import { buildLibrarySections } from './contingency-section-library.js';
+import { buildLibrarySections, HVC_HAZARD_MAP, HVC_SECTION_TARGETS } from './contingency-section-library.js';
 import { showDownloadMenu, docHeader } from './download.js';
 import { supabase } from './supabase.js';
 
@@ -45,13 +45,6 @@ function textFromHtml(html) {
     .trim();
 }
 
-function hvcSectionsAsList(plan) {
-  return (plan.sections || [])
-    .filter(s => s.key === 'hvc_placeholders' || s.key === 'environmental_health_safety')
-    .map(s => `• ${s.title}`)
-    .join('\n');
-}
-
 function contingencyDocHtml(plan) {
   const meta = plan?.metadata || {};
   const secHtml = (plan.sections || [])
@@ -79,45 +72,135 @@ function contingencyDocHtml(plan) {
 
   return `${docHeader(`Contingency Plan — ${meta.title || 'Plan'}`, meta.municipality_name || 'Municipality')}
     <div class="meta">Category: ${esc(meta.plan_category || '—')} · Type: ${esc(meta.plan_type || '—')} · Status: ${esc(plan.status || 'draft')}</div>
-    ${hvcSectionsAsList(plan) ? `<p><strong>HVC/Environmental enrichments</strong><br/>${esc(hvcSectionsAsList(plan)).replace(/\n/g, '<br/>')}</p>` : ''}
     ${secHtml}`;
 }
 
-async function fetchHvcPlacementBlocks() {
-  if (!_context?.municipalityId) return [];
+// ---------------------------------------------------------------------------
+// HVC FETCH — plan-type-scoped
+// Fetches only the hazard scores relevant to the specific plan type being
+// generated, using the HVC_HAZARD_MAP filter. Plans with an empty filter
+// array (e.g. evacuation, logistics) receive the top-5 overall risk scores
+// as those plans are cross-cutting. Target sections listed in
+// HVC_SECTION_TARGETS receive the HVC table block injected directly into
+// the relevant section's content, not just a generic hvc_placeholders section.
+// ---------------------------------------------------------------------------
+async function fetchHvcBlocksForPlanType(planTypeCode) {
+  if (!_context?.municipalityId) return { blocks: [], sectionBlocks: {} };
+
+  // Get the most recent HVC assessment for this municipality
   const { data: assessment, error: assessmentErr } = await supabase
     .from('hvc_assessments')
-    .select('id,created_at')
+    .select('id, created_at, assessment_year, assessment_period')
     .eq('municipality_id', _context.municipalityId)
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle();
-  if (assessmentErr || !assessment?.id) return [];
 
-  const { data, error } = await supabase
+  if (assessmentErr || !assessment?.id) return { blocks: [], sectionBlocks: {} };
+
+  // Build the hazard name filter for this plan type
+  const hazardFilter = HVC_HAZARD_MAP[planTypeCode] || [];
+  const isUnfiltered = hazardFilter.length === 0;
+
+  let query = supabase
     .from('hvc_hazard_scores')
-    .select('hazard_name,risk_band,risk_rating,affected_wards')
+    .select('hazard_name, hazard_category, risk_band, risk_rating, likelihood_score, consequence_score, affected_wards, mitigation_measures, residual_risk')
     .eq('assessment_id', assessment.id)
-    .order('risk_rating', { ascending: false })
-    .limit(5);
-  if (error || !data?.length) return [];
+    .order('risk_rating', { ascending: false });
 
-  return [
-    {
-      id: 'hvc_summary_1',
+  // Apply hazard name filter only when the plan type has specific hazards defined.
+  // Use ilike with OR logic to match partial names (e.g. "flood" matches "flash flood").
+  if (!isUnfiltered && hazardFilter.length > 0) {
+    // Build an OR filter string for ilike matching against each hazard keyword
+    const filterStr = hazardFilter.map(h => `hazard_name.ilike.%${h}%`).join(',');
+    query = query.or(filterStr);
+  }
+
+  // Limit: specific plans get their relevant hazards (max 10); cross-cutting plans get top 5 overall
+  query = query.limit(isUnfiltered ? 5 : 10);
+
+  const { data, error } = await query;
+  if (error || !data?.length) return { blocks: [], sectionBlocks: {} };
+
+  const assessmentLabel = assessment.assessment_year
+    ? `${assessment.assessment_period || 'Annual'} ${assessment.assessment_year}`
+    : new Date(assessment.created_at).toLocaleDateString('en-ZA');
+
+  const hazardLabel = isUnfiltered
+    ? 'Top Municipal Hazards (All Categories)'
+    : `Relevant Hazards for ${planTypeCode.replace(/_/g, ' ')} Plan`;
+
+  // Build the main HVC summary table block for hvc_placeholders section
+  const summaryBlock = {
+    id: 'hvc_summary_1',
+    type: 'table',
+    content: {
+      headers: ['Assessment', 'Hazard', 'Category', 'Risk Band', 'Risk Rating', 'Likelihood', 'Consequence', 'Affected Wards'],
+      rows: data.map(h => [
+        assessmentLabel,
+        h.hazard_name || '—',
+        h.hazard_category || '—',
+        h.risk_band || '—',
+        h.risk_rating ?? '—',
+        h.likelihood_score ?? '—',
+        h.consequence_score ?? '—',
+        Array.isArray(h.affected_wards) && h.affected_wards.length
+          ? h.affected_wards.join(', ')
+          : '—'
+      ])
+    }
+  };
+
+  // Build a context note block
+  const contextBlock = {
+    id: 'hvc_context_1',
+    type: 'text',
+    content: `HVC Risk Data — ${hazardLabel} (Assessment: ${assessmentLabel}). ${
+      isUnfiltered
+        ? 'This plan type is cross-cutting; the top 5 municipal hazards are shown.'
+        : `Filtered to hazards relevant to the ${planTypeCode.replace(/_/g, ' ')} plan type. Review and update thresholds against current assessment data.`
+    } Source: Municipal HVC Assessment, municipality ID ${_context.municipalityId}.`
+  };
+
+  const blocks = [summaryBlock, contextBlock];
+
+  // Build per-section HVC blocks for injection into specific target sections
+  // (e.g. hazard_risk_profile, flood_risk_zones etc.)
+  const sectionBlocks = {};
+  const targetSections = HVC_SECTION_TARGETS[planTypeCode] || [];
+
+  if (targetSections.length > 0 && data.length > 0) {
+    // Compact table for inline section injection (fewer columns for readability)
+    const inlineBlock = {
+      id: 'hvc_inline_risk',
       type: 'table',
       content: {
-        headers: ['Assessment Date', 'Hazard', 'Risk Band', 'Risk Rating', 'Affected Wards'],
+        headers: ['Hazard', 'Risk Band', 'Risk Rating', 'Affected Wards', 'Mitigation Measures'],
         rows: data.map(h => [
-          new Date(assessment.created_at).toLocaleDateString('en-ZA'),
           h.hazard_name || '—',
           h.risk_band || '—',
           h.risk_rating ?? '—',
-          Array.isArray(h.affected_wards) && h.affected_wards.length ? h.affected_wards.join(', ') : '—'
+          Array.isArray(h.affected_wards) && h.affected_wards.length
+            ? h.affected_wards.join(', ')
+            : '—',
+          h.mitigation_measures || 'See municipal risk register'
         ])
       }
-    }
-  ];
+    };
+
+    const inlineNote = {
+      id: 'hvc_inline_note',
+      type: 'text',
+      content: `Risk data sourced from HVC Assessment (${assessmentLabel}). Update annually in line with the municipal Disaster Risk Assessment review cycle.`
+    };
+
+    // Inject the same inline block into each target section key
+    targetSections.forEach(sectionKey => {
+      sectionBlocks[sectionKey] = [inlineBlock, inlineNote];
+    });
+  }
+
+  return { blocks, sectionBlocks };
 }
 
 function scheduleAutoSave(planId) {
@@ -159,15 +242,43 @@ function stripLegacySuggestionArtifacts(plan) {
   return cleaned;
 }
 
-function purgeLegacySuggestionNodes(root) {
-  if (!root) return;
-  root.querySelectorAll('*').forEach(node => {
-    const txt = (node.textContent || '').toLowerCase().trim();
-    if (!txt) return;
-    if (txt === 'loading contextual suggestions...' || txt === 'suggestion library (idp-style)') {
-      node.remove();
-    }
+// ---------------------------------------------------------------------------
+// refreshLibraryContent — migration utility
+// Updates thin (< 10 word) text blocks in existing plans with the enriched
+// library content. Only replaces blocks that were generated by library:v1.
+// Safe to call on any plan — skips sections already on library:v2.
+// ---------------------------------------------------------------------------
+export function refreshLibraryContent(planId, planType) {
+  const fresh = getPlan(planId);
+  if (!fresh) return;
+
+  const librarySections = buildLibrarySections(planType?.category, planType?.code);
+  if (!librarySections.length) return;
+
+  const libraryMap = new Map(librarySections.map(s => [s.key, s]));
+  let working = fresh;
+
+  (fresh.sections || []).forEach(section => {
+    const libSection = libraryMap.get(section.key);
+    if (!libSection) return;
+    // Only migrate sections that were generated by library:v1 (the old thin content)
+    if (section.seed_source && section.seed_source !== 'library:v1') return;
+
+    updateSection(planId, section.key, libSection.content_blocks);
   });
+
+  // Mark the plan as migrated
+  const migrated = getPlan(planId);
+  if (migrated) {
+    setPlan({
+      ...migrated,
+      metadata: {
+        ...migrated.metadata,
+        library_version: 'v2',
+        library_migrated_at: new Date().toISOString()
+      }
+    });
+  }
 }
 
 function applyLayoutState() {
@@ -251,7 +362,6 @@ export function getCurrentPlanningContext(user) {
   };
 }
 
-
 function ensurePlanHasSections(planId, planType) {
   const fresh = getPlan(planId);
   if (!fresh) return;
@@ -297,7 +407,6 @@ function renderPlanList() {
     });
   });
 }
-
 
 function blockEditor(sectionKey, block, idx) {
   const base = `data-sec="${esc(sectionKey)}" data-idx="${idx}"`;
@@ -388,6 +497,15 @@ function renderPlanDetail() {
     return;
   }
 
+  // Detect if this plan was generated with the old library (v1) and show a migration prompt
+  const isLegacy = !plan.metadata?.library_version || plan.metadata.library_version === 'v1';
+  const legacyBanner = isLegacy
+    ? `<div class="cp-notice" style="background:#fff8e1;border:1px solid #f9a825;padding:10px;border-radius:6px;margin-bottom:8px;font-size:12px">
+        ⚠️ This plan was generated with an older library version. Section content may be placeholder-style.
+        <button class="btn btn-sm" id="cp-migrate-library" style="margin-left:10px">Update to rich content (library v2)</button>
+      </div>`
+    : '';
+
   host.innerHTML = `
     <div class="cp-detail-wrap">
       <div class="cp-editor-pane">
@@ -403,10 +521,7 @@ function renderPlanDetail() {
         <button id="cp-export" class="btn btn-primary">Export Word</button>
       </div>
     </div>
-    <div id="cp-suggestion-panel" class="cp-section-card" style="margin-bottom:8px">
-      <div class="cp-section-head">Suggestion Library (IDP-style)</div>
-      <div class="cp-blocks"><div class="cp-empty">Loading contextual suggestions...</div></div>
-    </div>
+    ${legacyBanner}
     <div class="cp-sections">
       ${!plan.sections.length ? '<div class="cp-empty">No sections found for this plan. Starter sections will be added on generate.</div>' : ''}
       ${plan.sections
@@ -428,7 +543,16 @@ function renderPlanDetail() {
       </div>
     </div>
   `;
-  purgeLegacySuggestionNodes(host);
+
+  // Migration button — refresh library content for legacy plans
+  document.getElementById('cp-migrate-library')?.addEventListener('click', async () => {
+    const planType = await getPlanTypeByCode(plan.metadata?.plan_type);
+    if (planType) {
+      refreshLibraryContent(plan.id, planType);
+      await persistPlan(plan.id);
+      renderPlanDetail();
+    }
+  });
 
   document.getElementById('cp-save-version')?.addEventListener('click', () => {
     saveVersionSnapshot(plan, _context?.userId || 'local-user');
@@ -438,7 +562,6 @@ function renderPlanDetail() {
 
   document.getElementById('cp-submit-review')?.addEventListener('click', () => {
     submitForReview(plan.id, _context?.userId || 'local-user', 'Submitted from contingency page');
-    persistPlan(plan.id);
     persistPlan(plan.id);
     renderPlanList();
     renderPlanDetail();
@@ -487,8 +610,6 @@ function renderPlanDetail() {
   host.querySelectorAll('textarea,input,[contenteditable="true"]').forEach(el => {
     el.addEventListener('input', () => scheduleAutoSave(plan.id));
   });
-
-
 }
 
 function renderTypeOptions() {
@@ -589,7 +710,8 @@ async function generatePlanFromWizard() {
         {
           municipality_id: _context.municipalityId,
           municipality_name: _context.municipalityName,
-          owner_user_id: _context.userId
+          owner_user_id: _context.userId,
+          library_version: 'v2'
         }
       );
     }
@@ -603,34 +725,56 @@ async function generatePlanFromWizard() {
       });
     }
 
+    // Ensure all library sections are present (adds missing ones, skips existing)
     ensurePlanHasSections(plan.id, planType);
 
     if (includeHvc) {
+      // ── HVC INTEGRATION ──
+      // 1. Fetch plan-type-scoped HVC blocks (filtered by hazard relevance)
+      const { blocks: hvcBlocks, sectionBlocks } = await fetchHvcBlocksForPlanType(planTypeCode);
+
+      // 2. Create the hvc_placeholders section for the full risk summary
       let fresh = getPlan(plan.id);
       if (fresh && !fresh.sections.some(s => s.key === 'hvc_placeholders')) {
         fresh = addSection(fresh, {
           key: 'hvc_placeholders',
-          title: 'HVC Placeholders',
+          title: 'HVC Risk Data — Plan-Specific',
           order: (fresh.sections?.length || 0) + 1,
           editable: true,
+          seed_source: 'hvc:live',
           content_blocks: []
         });
       }
-      if (fresh) {
-        const hvcBlocks = await fetchHvcPlacementBlocks();
-        updateSection(
-          plan.id,
-          'hvc_placeholders',
-          hvcBlocks.length
-            ? hvcBlocks
-            : [
-                {
-                  id: 'hvc_placeholder_1',
-                  type: 'text',
-                  content: 'No HVC records found for this municipality yet. Complete HVC assessment to auto-populate this section.'
-                }
-              ]
-        );
+
+      // 3. Populate the hvc_placeholders section
+      updateSection(
+        plan.id,
+        'hvc_placeholders',
+        hvcBlocks.length
+          ? hvcBlocks
+          : [
+              {
+                id: 'hvc_placeholder_1',
+                type: 'text',
+                content: `No HVC risk records found for this municipality and plan type (${planTypeCode}). Complete a HVC assessment and return to auto-populate this section. Relevant hazard categories for this plan type: ${(HVC_HAZARD_MAP[planTypeCode] || []).join(', ') || 'all hazards (cross-cutting plan)'}.`
+              }
+            ]
+      );
+
+      // 4. Inject inline HVC risk tables into target sections (e.g. hazard_risk_profile, flood_risk_zones)
+      // This puts relevant risk data directly in the section where the planner will use it,
+      // not just in a separate placeholder section.
+      if (Object.keys(sectionBlocks).length > 0) {
+        const currentPlan = getPlan(plan.id);
+        if (currentPlan) {
+          Object.entries(sectionBlocks).forEach(([sectionKey, inlineBlocks]) => {
+            const section = currentPlan.sections.find(s => s.key === sectionKey);
+            if (!section) return;
+            // Append HVC blocks to the existing section content (don't replace it)
+            const mergedBlocks = [...(section.content_blocks || []), ...inlineBlocks];
+            updateSection(plan.id, sectionKey, mergedBlocks);
+          });
+        }
       }
     }
 
@@ -701,7 +845,7 @@ export async function initContingencyPage(user) {
         <div class="cp-options">
           <label><input type="checkbox" id="cp-opt-seed" checked /> Include seed content</label>
           <label><input type="checkbox" id="cp-opt-annex" checked /> Include default annexures</label>
-          <label><input type="checkbox" id="cp-opt-hvc" /> Include HVC placeholders</label>
+          <label><input type="checkbox" id="cp-opt-hvc" /> Include HVC risk data (plan-specific)</label>
         </div>
 
         <div id="cp-wizard-error" class="cp-error"></div>
@@ -715,7 +859,7 @@ export async function initContingencyPage(user) {
       <div class="card" id="cp-plan-detail" style="padding:12px"></div>
     </div>
   `;
-  purgeLegacySuggestionNodes(page);
+
   applyLayoutState();
 
   try {
