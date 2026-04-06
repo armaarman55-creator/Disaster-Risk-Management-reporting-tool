@@ -274,6 +274,69 @@ function ensurePlanHasSections(planId, planType) {
   });
 }
 
+function normalizeSectionOrder(sections = []) {
+  return (sections || [])
+    .slice()
+    .sort((a, b) => (a.order || 0) - (b.order || 0))
+    .map((section, idx) => ({ ...section, order: idx + 1 }));
+}
+
+function getExcludedSectionStore(plan) {
+  return (plan?.metadata?.excluded_sections_data && typeof plan.metadata.excluded_sections_data === 'object')
+    ? { ...plan.metadata.excluded_sections_data }
+    : {};
+}
+
+function excludeSection(planId, sectionKey) {
+  const fresh = getPlan(planId);
+  if (!fresh) throw new Error('Plan not found');
+  const section = (fresh.sections || []).find(s => s.key === sectionKey);
+  if (!section) throw new Error('Section not found');
+
+  const excludedStore = getExcludedSectionStore(fresh);
+  excludedStore[sectionKey] = section;
+
+  fresh.sections = normalizeSectionOrder((fresh.sections || []).filter(s => s.key !== sectionKey));
+  fresh.metadata = {
+    ...(fresh.metadata || {}),
+    excluded_sections_data: excludedStore,
+    updated_at: new Date().toISOString()
+  };
+
+  setPlan(fresh);
+}
+
+function findLibrarySectionForPlan(plan, sectionKey) {
+  const category = plan?.metadata?.plan_category;
+  const planTypeCode = plan?.metadata?.plan_type;
+  if (!category || !planTypeCode) return null;
+  const librarySections = buildLibrarySections(category, planTypeCode);
+  return librarySections.find(s => s.key === sectionKey) || null;
+}
+
+function includeSection(planId, sectionKey) {
+  const fresh = getPlan(planId);
+  if (!fresh) throw new Error('Plan not found');
+  if ((fresh.sections || []).some(s => s.key === sectionKey)) return;
+
+  const excludedStore = getExcludedSectionStore(fresh);
+  const storedSection = excludedStore[sectionKey];
+  const librarySection = findLibrarySectionForPlan(fresh, sectionKey);
+  const sectionToRestore = storedSection || librarySection;
+  if (!sectionToRestore) throw new Error('Section source not found');
+
+  delete excludedStore[sectionKey];
+  const sections = (fresh.sections || []).concat({ ...sectionToRestore });
+  fresh.sections = normalizeSectionOrder(sections);
+  fresh.metadata = {
+    ...(fresh.metadata || {}),
+    excluded_sections_data: excludedStore,
+    updated_at: new Date().toISOString()
+  };
+
+  setPlan(fresh);
+}
+
 function renderPlanList() {
   const host = document.getElementById('cp-plan-list');
   if (!host) return;
@@ -456,6 +519,9 @@ function renderPlanDetail() {
     return;
   }
 
+  const excludedSectionStore = getExcludedSectionStore(plan);
+  const excludedSections = Object.values(excludedSectionStore).sort((a, b) => a.title.localeCompare(b.title));
+
   host.innerHTML = `
     <div class="cp-detail-wrap">
       <div class="cp-editor-pane">
@@ -475,12 +541,29 @@ function renderPlanDetail() {
       <div class="cp-section-head">Suggestion Library (IDP-style)</div>
       <div class="cp-blocks"><div class="cp-empty">Loading contextual suggestions...</div></div>
     </div>
+    <div class="cp-section-card" style="margin-bottom:8px">
+      <div class="cp-section-head">Excluded sections</div>
+      ${
+        excludedSections.length
+          ? `<div class="cp-excluded-list">
+              ${excludedSections
+                .map(
+                  s => `<button type="button" class="btn btn-sm cp-excluded-item" data-add-section="${esc(s.key)}" title="Add section back">${esc(s.title)}</button>`
+                )
+                .join('')}
+            </div>`
+          : '<div class="cp-empty">No excluded sections.</div>'
+      }
+    </div>
     <div class="cp-sections">
       ${!plan.sections.length ? '<div class="cp-empty">No sections found for this plan. Starter sections will be added on generate.</div>' : ''}
       ${plan.sections
         .map(
           s => `<div class="cp-section-card">
-              <div class="cp-section-head">${esc(s.title)}</div>
+              <div class="cp-section-head" style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+                <span>${esc(s.title)}</span>
+                <button type="button" class="btn btn-sm" data-remove-section="${esc(s.key)}" title="Exclude this section">Remove section</button>
+              </div>
               <div class="cp-blocks">${(s.content_blocks || []).map((b, idx) => blockEditor(s.key, b, idx)).join('')}</div>
               <div class="cp-row-end">
                 <button class="btn" data-save-section="${esc(s.key)}">Save section</button>
@@ -548,6 +631,34 @@ function renderPlanDetail() {
         renderPlanDetail();
       } catch (e) {
         alert(`Failed to save section (${key}): ${e.message}`);
+      }
+    });
+  });
+
+  host.querySelectorAll('[data-remove-section]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const key = btn.getAttribute('data-remove-section');
+      if (!key) return;
+      try {
+        excludeSection(plan.id, key);
+        persistPlan(plan.id);
+        renderPlanDetail();
+      } catch (e) {
+        alert(`Failed to remove section (${key}): ${e.message}`);
+      }
+    });
+  });
+
+  host.querySelectorAll('[data-add-section]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const key = btn.getAttribute('data-add-section');
+      if (!key) return;
+      try {
+        includeSection(plan.id, key);
+        persistPlan(plan.id);
+        renderPlanDetail();
+      } catch (e) {
+        alert(`Failed to add section (${key}): ${e.message}`);
       }
     });
   });
