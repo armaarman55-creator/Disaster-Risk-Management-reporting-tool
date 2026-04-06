@@ -1,5 +1,5 @@
 // js/download.js — Universal download helper
-// Provides PDF (print), Excel (.csv), and Word-compatible HTML (.docx) exports
+// Provides PDF (print), Excel (.csv), and native Word (.docx) exports
 
 /**
  * Show a download dropdown menu anchored to a button.
@@ -9,7 +9,7 @@
  *   getPDF       {fn}      - Calls window.print() on a generated HTML page
  *   getXLSXBlob  {fn}      - Returns Blob for native .xlsx download
  *   getCSVRows   {fn}      - Returns array of arrays for CSV
- *   getDocHTML   {fn}      - Returns HTML string for Word-compatible .docx
+ *   getDocHTML   {fn}      - Returns HTML string used to generate native .docx
  *   filename     {string}  - Base filename without extension
  */
 export function showDownloadMenu(btn, options) {
@@ -45,7 +45,7 @@ export function showDownloadMenu(btn, options) {
       fn: () => downloadCSV(options.getCSVRows(), options.filename)
     });
   }
-  if (options.getDocHTML) items.push({ label: '↓ Word (.docx)', icon: '#58a6ff', fn: () => downloadDoc(options.getDocHTML(), options.filename) });
+  if (options.getDocHTML) items.push({ label: '↓ Word (.docx)', icon: '#58a6ff', fn: () => downloadDocx(options.getDocHTML(), options.filename) });
 
   menu.innerHTML = `
     <div style="padding:8px 12px;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--text3);border-bottom:1px solid var(--border)">
@@ -107,36 +107,107 @@ function downloadCSV(rows, filename) {
   URL.revokeObjectURL(url);
 }
 
-function downloadDoc(html, filename) {
-  // Word-compatible HTML payload
-  const doc = `<html xmlns:o="urn:schemas-microsoft-com:office:office"
-    xmlns:w="urn:schemas-microsoft-com:office:word"
-    xmlns="http://www.w3.org/TR/REC-html40">
-  <head>
-    <meta charset="utf-8"/>
-    <title>${filename}</title>
-    <!--[if gte mso 9]><xml><w:WordDocument><w:View>Print</w:View></w:WordDocument></xml><![endif]-->
-    <style>
-      body{font-family:Arial,sans-serif;font-size:11pt;color:#111;margin:2cm}
-      h1{font-size:18pt;color:#1a3a6b;margin-bottom:4pt}
-      h2{font-size:13pt;color:#1a3a6b;border-bottom:1pt solid #ccc;padding-bottom:4pt;margin-top:16pt}
-      table{width:100%;border-collapse:collapse;margin-bottom:12pt}
-      th{background:#1a3a6b;color:#fff;padding:5pt 8pt;text-align:left;font-size:9pt}
-      td{padding:4pt 8pt;border-bottom:1pt solid #eee;font-size:10pt}
-      tr:nth-child(even) td{background:#f5f5f5}
-      .meta{font-size:9pt;color:#666}
-    </style>
-  </head>
-  <body>${html}</body>
-  </html>`;
+let _docxLibPromise = null;
 
-  const blob = new Blob([doc], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
-  const url  = URL.createObjectURL(blob);
-  Object.assign(document.createElement('a'), {
-    href: url,
-    download: `${filename}-${new Date().toISOString().slice(0,10)}.docx`
-  }).click();
-  URL.revokeObjectURL(url);
+function loadDocxLibrary() {
+  if (!_docxLibPromise) {
+    _docxLibPromise = import('https://cdn.jsdelivr.net/npm/docx@9.5.1/+esm');
+  }
+  return _docxLibPromise;
+}
+
+function nodeText(node) {
+  return String(node?.textContent || '').replace(/\s+/g, ' ').trim();
+}
+
+function tableFromHtml(tableEl, docx) {
+  const { Table, TableRow, TableCell, Paragraph, WidthType } = docx;
+  const rows = [...tableEl.querySelectorAll('tr')];
+  const tableRows = rows.map(tr => {
+    const cells = [...tr.querySelectorAll('th,td')];
+    const rowCells = cells.map(cell =>
+      new TableCell({
+        children: [new Paragraph({ text: nodeText(cell) || ' ' })]
+      })
+    );
+    return new TableRow({ children: rowCells });
+  });
+
+  return new Table({
+    rows: tableRows,
+    width: {
+      size: 100,
+      type: WidthType.PERCENTAGE
+    }
+  });
+}
+
+function htmlToDocxChildren(html, docx) {
+  const { Paragraph, HeadingLevel, TextRun } = docx;
+  const parser = new DOMParser();
+  const dom = parser.parseFromString(`<body>${html}</body>`, 'text/html');
+  const children = [];
+  const blocks = [...(dom.body?.children || [])];
+
+  blocks.forEach(el => {
+    const tag = el.tagName.toLowerCase();
+    const text = nodeText(el);
+    if (!text && tag !== 'table') return;
+
+    if (tag === 'h1') {
+      children.push(new Paragraph({ text, heading: HeadingLevel.HEADING_1 }));
+      return;
+    }
+    if (tag === 'h2') {
+      children.push(new Paragraph({ text, heading: HeadingLevel.HEADING_2 }));
+      return;
+    }
+    if (tag === 'h3') {
+      children.push(new Paragraph({ text, heading: HeadingLevel.HEADING_3 }));
+      return;
+    }
+    if (tag === 'ul' || tag === 'ol') {
+      [...el.querySelectorAll('li')].forEach(li => {
+        const itemText = nodeText(li);
+        if (itemText) {
+          children.push(new Paragraph({
+            children: [new TextRun(`• ${itemText}`)]
+          }));
+        }
+      });
+      return;
+    }
+    if (tag === 'table') {
+      children.push(tableFromHtml(el, docx));
+      return;
+    }
+
+    children.push(new Paragraph({ text }));
+  });
+
+  return children.length ? children : [new Paragraph({ text: nodeText(dom.body) || ' ' })];
+}
+
+async function downloadDocx(html, filename) {
+  try {
+    const docx = await loadDocxLibrary();
+    const { Document, Packer } = docx;
+    const doc = new Document({
+      sections: [{ children: htmlToDocxChildren(html, docx) }]
+    });
+
+    const blob = await Packer.toBlob(doc);
+    const url = URL.createObjectURL(blob);
+    Object.assign(document.createElement('a'), {
+      href: url,
+      download: `${filename}-${new Date().toISOString().slice(0,10)}.docx`
+    }).click();
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error('DOCX download failed', err);
+    alert('Failed to generate DOCX file. Please try PDF export.');
+  }
 }
 
 function downloadXLSX(blobOrPromise, filename) {
