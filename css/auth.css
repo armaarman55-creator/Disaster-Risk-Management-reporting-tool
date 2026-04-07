@@ -170,6 +170,12 @@
 [data-theme="light"] .auth-stat-num.green   { color: #136830; }
 [data-theme="light"] .auth-stat-num.blue    { color: #1a45a0; }
 
+
+.auth-stat-num-sm {
+  font-size: 24px;
+  letter-spacing: .01em;
+}
+
 .auth-stat-sub {
   font-size: 11px;
   margin-top: 5px;
