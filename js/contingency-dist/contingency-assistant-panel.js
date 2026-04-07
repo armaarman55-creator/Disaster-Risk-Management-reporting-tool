@@ -556,7 +556,6 @@ function fallbackCopy(text, btn) {
     }
     catch (e) {}
 }
-
 // ─── Tab: Legislation ─────────────────────────────────────────────────────────
 function renderLegislation(data) {
     const items = data.legislation || [];
