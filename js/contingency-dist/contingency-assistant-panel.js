@@ -5,85 +5,32 @@
 // Calls the Supabase Edge Function: contingency-assistant
 // The edge function URL is: https://<your-project>.supabase.co/functions/v1/contingency-assistant
 // Set SUPABASE_EDGE_URL in your environment or replace the constant below.
-
-import { supabase } from './supabase.js';
-
+import { supabase } from '../supabase.js';
 // ─── Config ───────────────────────────────────────────────────────────────────
 const EDGE_FUNCTION_URL = 'https://olibqhpguquktrznchjm.supabase.co/functions/v1/contingency-assistant';
-
 // ─── Module state ─────────────────────────────────────────────────────────────
 let _panelBuilt = false;
 let _currentTab = 'legislation';
 let _lastContextKey = '';
-let _lastData: AssistantResponse | null = null;
-let _debounceTimer: ReturnType<typeof setTimeout> | null = null;
-const _listeners: Array<{ el: Element; type: string; fn: EventListener }> = [];
-
-interface AssistantResponse {
-  sectionKey: string;
-  sectionDescription?: string;
-  legislation: LegislationItem[];
-  liveInfo: LiveItem[];
-  allUrls: UrlItem[];
-  preview: PreviewGuide | null;
-  suggestions: { text: string[]; list: string[] };
-}
-
-interface LegislationItem {
-  reference_title: string;
-  citation: string;
-  plain_summary: string;
-  key_clauses: string[];
-  reference_type: string;
-  priority: string;
-  source_url?: string;
-}
-
-interface LiveItem {
-  label: string;
-  url: string;
-  snippet: string;
-}
-
-interface UrlItem {
-  label: string;
-  url: string;
-}
-
-interface PreviewGuide {
-  description?: string;
-  tables?: TableGuide[];
-  lists?: ListGuide[];
-}
-
-interface TableGuide {
-  title: string;
-  columns: { name: string; hint: string; example: string }[];
-  example_row?: string[];
-  more_examples?: string[][];
-}
-
-interface ListGuide {
-  title: string;
-  items: string[];
-}
-
+let _lastData = null;
+let _debounceTimer = null;
+const _listeners = [];
 // ─── Escape helper ────────────────────────────────────────────────────────────
-function esc(v: unknown): string {
-  return String(v ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
+function esc(v) {
+    return String(v ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
 }
-
 // ─── Styles ───────────────────────────────────────────────────────────────────
-function injectStyles(): void {
-  if (document.getElementById('ca-styles')) return;
-  const style = document.createElement('style');
-  style.id = 'ca-styles';
-  style.textContent = `
+function injectStyles() {
+    if (document.getElementById('ca-styles'))
+        return;
+    const style = document.createElement('style');
+    style.id = 'ca-styles';
+    style.textContent = `
     #ca-panel {
       position: fixed;
       top: 0; right: 0;
@@ -386,23 +333,21 @@ function injectStyles(): void {
       }
     }
   `;
-  document.head.appendChild(style);
+    document.head.appendChild(style);
 }
-
 // ─── Build panel DOM (once) ───────────────────────────────────────────────────
-function buildPanel(): void {
-  if (_panelBuilt) return;
-  _panelBuilt = true;
-
-  const toggle = document.createElement('button');
-  toggle.id = 'ca-toggle';
-  toggle.textContent = '✦ Assistant';
-  toggle.title = 'Open Plan Assistant';
-  document.body.appendChild(toggle);
-
-  const panel = document.createElement('div');
-  panel.id = 'ca-panel';
-  panel.innerHTML = `
+function buildPanel() {
+    if (_panelBuilt)
+        return;
+    _panelBuilt = true;
+    const toggle = document.createElement('button');
+    toggle.id = 'ca-toggle';
+    toggle.textContent = '✦ Assistant';
+    toggle.title = 'Open Plan Assistant';
+    document.body.appendChild(toggle);
+    const panel = document.createElement('div');
+    panel.id = 'ca-panel';
+    panel.innerHTML = `
     <div id="ca-header">
       <div class="ca-header-top">
         <div class="ca-title">
@@ -427,197 +372,175 @@ function buildPanel(): void {
       </div>
     </div>
   `;
-  document.body.appendChild(panel);
-
-  const openClose = (open: boolean) => {
-    panel.classList.toggle('ca-open', open);
-    document.body.classList.toggle('ca-open', open);
-    toggle.textContent = open ? '✕ Close' : '✦ Assistant';
-  };
-
-  toggle.addEventListener('click', () => openClose(!panel.classList.contains('ca-open')));
-  document.getElementById('ca-close')!.addEventListener('click', () => openClose(false));
-
-  panel.querySelectorAll('.ca-tab').forEach(tab => {
-    tab.addEventListener('click', () => {
-      panel.querySelectorAll('.ca-tab').forEach(t => t.classList.remove('ca-tab-active'));
-      tab.classList.add('ca-tab-active');
-      _currentTab = tab.getAttribute('data-ca-tab') || 'legislation';
-      if (_lastData) renderTabContent(_lastData);
+    document.body.appendChild(panel);
+    const openClose = (open) => {
+        panel.classList.toggle('ca-open', open);
+        document.body.classList.toggle('ca-open', open);
+        toggle.textContent = open ? '✕ Close' : '✦ Assistant';
+    };
+    toggle.addEventListener('click', () => openClose(!panel.classList.contains('ca-open')));
+    document.getElementById('ca-close').addEventListener('click', () => openClose(false));
+    panel.querySelectorAll('.ca-tab').forEach(tab => {
+        tab.addEventListener('click', () => {
+            panel.querySelectorAll('.ca-tab').forEach(t => t.classList.remove('ca-tab-active'));
+            tab.classList.add('ca-tab-active');
+            _currentTab = tab.getAttribute('data-ca-tab') || 'legislation';
+            if (_lastData)
+                renderTabContent(_lastData);
+        });
     });
-  });
 }
-
 // ─── Public: init — call at end of renderPlanDetail() ────────────────────────
-export function initAssistantPanel(): void {
-  injectStyles();
-  buildPanel();
-  attachBlockListeners();
+export function initAssistantPanel() {
+    injectStyles();
+    buildPanel();
+    attachBlockListeners();
 }
-
 // ─── Public: destroy — call at TOP of renderPlanDetail() before re-render ────
-export function destroyAssistantPanel(): void {
-  // Remove all tracked event listeners so stale DOM nodes don't fire.
-  _listeners.forEach(({ el, type, fn }) => el.removeEventListener(type, fn));
-  _listeners.length = 0;
+export function destroyAssistantPanel() {
+    // Remove all tracked event listeners so stale DOM nodes don't fire.
+    _listeners.forEach(({ el, type, fn }) => el.removeEventListener(type, fn));
+    _listeners.length = 0;
 }
-
 // ─── Attach focus/click listeners to every data-assistant-trigger element ────
-function attachBlockListeners(): void {
-  document.querySelectorAll<HTMLElement>('[data-assistant-trigger]').forEach(el => {
-    const fn = (e: Event) => onBlockActivated(e.currentTarget as HTMLElement);
-    el.addEventListener('focus', fn, { capture: true });
-    el.addEventListener('click', fn, { capture: true });
-    _listeners.push({ el, type: 'focus', fn: fn as EventListener });
-    _listeners.push({ el, type: 'click', fn: fn as EventListener });
-  });
-}
-
-function onBlockActivated(el: HTMLElement): void {
-  const sectionKey  = el.getAttribute('data-sec-key')    || '';
-  const planType    = el.getAttribute('data-plan-type')   || '';
-  const planCat     = el.getAttribute('data-plan-cat')    || '';
-  const blockType   = el.getAttribute('data-block-type')  || 'text';
-  const blockContent = (el as HTMLTextAreaElement).value || el.textContent || '';
-
-  if (!sectionKey) return;
-
-  const ctxKey = `${sectionKey}|${planType}|${planCat}|${blockType}`;
-  if (ctxKey === _lastContextKey) return; // same block, skip
-
-  if (_debounceTimer) clearTimeout(_debounceTimer);
-  _debounceTimer = setTimeout(
-    () => fetchSuggestions(sectionKey, planType, planCat, blockType, blockContent, ctxKey),
-    280
-  );
-}
-
-// ─── Fetch from edge function ─────────────────────────────────────────────────
-async function fetchSuggestions(
-  sectionKey: string,
-  planType: string,
-  planCat: string,
-  blockType: string,
-  blockContent: string,
-  ctxKey: string
-): Promise<void> {
-  const panel = document.getElementById('ca-panel');
-  if (!panel) return;
-
-  // Auto-open the panel when a block is focused.
-  panel.classList.add('ca-open');
-  document.body.classList.add('ca-open');
-  const toggleBtn = document.getElementById('ca-toggle');
-  if (toggleBtn) toggleBtn.textContent = '✕ Close';
-
-  updateContextBadge(sectionKey, planType, planCat);
-  showLoading();
-
-  try {
-    const { data: { session } } = await supabase.auth.getSession();
-
-    const res = await fetch(EDGE_FUNCTION_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
-      },
-      body: JSON.stringify({
-        sectionKey,
-        planTypeCode: planType,
-        planCategory: planCat,
-        blockType,
-        blockContent: blockContent.substring(0, 500),
-      }),
+function attachBlockListeners() {
+    document.querySelectorAll < HTMLElement > ('[data-assistant-trigger]').forEach(el => {
+        const fn = (e) => onBlockActivated(e.currentTarget);
+        el.addEventListener('focus', fn, { capture: true });
+        el.addEventListener('click', fn, { capture: true });
+        _listeners.push({ el, type: 'focus', fn: fn });
+        _listeners.push({ el, type: 'click', fn: fn });
     });
-
-    if (!res.ok) throw new Error(`Edge function returned ${res.status}`);
-    const data: AssistantResponse = await res.json();
-
-    _lastContextKey = ctxKey;
-    _lastData = data;
-    renderTabContent(data);
-
-  } catch (err: any) {
-    const body = document.getElementById('ca-body');
-    if (body) {
-      body.innerHTML = `<div class="ca-empty" style="color:#c44">
+}
+function onBlockActivated(el) {
+    const sectionKey = el.getAttribute('data-sec-key') || '';
+    const planType = el.getAttribute('data-plan-type') || '';
+    const planCat = el.getAttribute('data-plan-cat') || '';
+    const blockType = el.getAttribute('data-block-type') || 'text';
+    const blockContent = el.value || el.textContent || '';
+    if (!sectionKey)
+        return;
+    const ctxKey = `${sectionKey}|${planType}|${planCat}|${blockType}`;
+    if (ctxKey === _lastContextKey)
+        return; // same block, skip
+    if (_debounceTimer)
+        clearTimeout(_debounceTimer);
+    _debounceTimer = setTimeout(() => fetchSuggestions(sectionKey, planType, planCat, blockType, blockContent, ctxKey), 280);
+}
+// ─── Fetch from edge function ─────────────────────────────────────────────────
+async function fetchSuggestions(sectionKey, planType, planCat, blockType, blockContent, ctxKey) {
+    const panel = document.getElementById('ca-panel');
+    if (!panel)
+        return;
+    // Auto-open the panel when a block is focused.
+    panel.classList.add('ca-open');
+    document.body.classList.add('ca-open');
+    const toggleBtn = document.getElementById('ca-toggle');
+    if (toggleBtn)
+        toggleBtn.textContent = '✕ Close';
+    updateContextBadge(sectionKey, planType, planCat);
+    showLoading();
+    try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const res = await fetch(EDGE_FUNCTION_URL, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+            },
+            body: JSON.stringify({
+                sectionKey,
+                planTypeCode: planType,
+                planCategory: planCat,
+                blockType,
+                blockContent: blockContent.substring(0, 500),
+            }),
+        });
+        if (!res.ok)
+            throw new Error(`Edge function returned ${res.status}`);
+        const data = await res.json();
+        _lastContextKey = ctxKey;
+        _lastData = data;
+        renderTabContent(data);
+    }
+    catch (err) {
+        const body = document.getElementById('ca-body');
+        if (body) {
+            body.innerHTML = `<div class="ca-empty" style="color:#c44">
         ⚠ Could not load suggestions.<br/>
         <small style="font-size:10px;margin-top:4px;display:block">${esc(err?.message || String(err))}</small>
       </div>`;
+        }
     }
-  }
 }
-
 // ─── Context badge ────────────────────────────────────────────────────────────
-function updateContextBadge(sectionKey: string, planType: string, planCat: string): void {
-  const badge = document.getElementById('ca-context-badge');
-  if (!badge) return;
-  const label = sectionKey.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-  badge.innerHTML = `
+function updateContextBadge(sectionKey, planType, planCat) {
+    const badge = document.getElementById('ca-context-badge');
+    if (!badge)
+        return;
+    const label = sectionKey.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+    badge.innerHTML = `
     <span class="ca-badge">${esc(label)}</span>
     ${planType ? `<span class="ca-badge">${esc(planType.replace(/_/g, ' '))}</span>` : ''}
-    ${planCat  ? `<span class="ca-badge">${esc(planCat.replace(/_/g,  ' '))}</span>` : ''}
+    ${planCat ? `<span class="ca-badge">${esc(planCat.replace(/_/g, ' '))}</span>` : ''}
   `;
 }
-
 // ─── Loading ──────────────────────────────────────────────────────────────────
-function showLoading(): void {
-  const body = document.getElementById('ca-body');
-  if (body) body.innerHTML = `<div class="ca-loading"><div class="ca-spinner"></div><span>Loading references…</span></div>`;
+function showLoading() {
+    const body = document.getElementById('ca-body');
+    if (body)
+        body.innerHTML = `<div class="ca-loading"><div class="ca-spinner"></div><span>Loading references…</span></div>`;
 }
-
 // ─── Tab router ───────────────────────────────────────────────────────────────
-function renderTabContent(data: AssistantResponse): void {
-  const body = document.getElementById('ca-body');
-  if (!body) return;
-
-  if      (_currentTab === 'legislation')  body.innerHTML = renderLegislation(data);
-  else if (_currentTab === 'preview')      body.innerHTML = renderGuide(data);
-  else if (_currentTab === 'suggestions')  body.innerHTML = renderSuggestions(data);
-  else if (_currentTab === 'live')         body.innerHTML = renderLive(data);
-
-  // Attach copy-button handlers after innerHTML is set.
-  body.querySelectorAll<HTMLButtonElement>('.ca-copy-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const text = btn.getAttribute('data-copy') || '';
-      navigator.clipboard.writeText(text).then(() => {
-        const orig = btn.textContent || '';
-        btn.textContent = '✓ Copied';
-        btn.classList.add('ca-copied');
-        setTimeout(() => { btn.textContent = orig; btn.classList.remove('ca-copied'); }, 1800);
-      });
+function renderTabContent(data) {
+    const body = document.getElementById('ca-body');
+    if (!body)
+        return;
+    if (_currentTab === 'legislation')
+        body.innerHTML = renderLegislation(data);
+    else if (_currentTab === 'preview')
+        body.innerHTML = renderGuide(data);
+    else if (_currentTab === 'suggestions')
+        body.innerHTML = renderSuggestions(data);
+    else if (_currentTab === 'live')
+        body.innerHTML = renderLive(data);
+    // Attach copy-button handlers after innerHTML is set.
+    body.querySelectorAll < HTMLButtonElement > ('.ca-copy-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const text = btn.getAttribute('data-copy') || '';
+            navigator.clipboard.writeText(text).then(() => {
+                const orig = btn.textContent || '';
+                btn.textContent = '✓ Copied';
+                btn.classList.add('ca-copied');
+                setTimeout(() => { btn.textContent = orig; btn.classList.remove('ca-copied'); }, 1800);
+            });
+        });
     });
-  });
 }
-
 // ─── Tab: Legislation ─────────────────────────────────────────────────────────
-function renderLegislation(data: AssistantResponse): string {
-  const items = data.legislation || [];
-  let html = data.sectionDescription
-    ? `<div class="ca-section-desc">${esc(data.sectionDescription)}</div>`
-    : '';
-
-  if (!items.length) return html + '<div class="ca-empty">No legislation references found for this section.</div>';
-
-  const primary   = items.filter(i => i.priority === 'primary');
-  const secondary = items.filter(i => i.priority !== 'primary');
-
-  if (primary.length) {
-    html += `<div class="ca-guide-label">Primary — Must Cite</div>`;
-    primary.forEach(i => { html += legCard(i); });
-  }
-  if (secondary.length) {
-    html += `<div class="ca-divider"></div><div class="ca-guide-label">Supplementary</div>`;
-    secondary.forEach(i => { html += legCard(i); });
-  }
-  return html;
+function renderLegislation(data) {
+    const items = data.legislation || [];
+    let html = data.sectionDescription
+        ? `<div class="ca-section-desc">${esc(data.sectionDescription)}</div>`
+        : '';
+    if (!items.length)
+        return html + '<div class="ca-empty">No legislation references found for this section.</div>';
+    const primary = items.filter(i => i.priority === 'primary');
+    const secondary = items.filter(i => i.priority !== 'primary');
+    if (primary.length) {
+        html += `<div class="ca-guide-label">Primary — Must Cite</div>`;
+        primary.forEach(i => { html += legCard(i); });
+    }
+    if (secondary.length) {
+        html += `<div class="ca-divider"></div><div class="ca-guide-label">Supplementary</div>`;
+        secondary.forEach(i => { html += legCard(i); });
+    }
+    return html;
 }
-
-function legCard(item: LegislationItem): string {
-  const clauses = Array.isArray(item.key_clauses) ? item.key_clauses : [];
-  const copyText = `${item.citation}\n\n${item.plain_summary}${clauses.length ? '\n\nKey clauses:\n' + clauses.join('\n') : ''}`;
-  return `
+function legCard(item) {
+    const clauses = Array.isArray(item.key_clauses) ? item.key_clauses : [];
+    const copyText = `${item.citation}\n\n${item.plain_summary}${clauses.length ? '\n\nKey clauses:\n' + clauses.join('\n') : ''}`;
+    return `
     <div class="ca-card">
       <div class="ca-card-head">
         <div class="ca-card-title">
@@ -637,30 +560,27 @@ function legCard(item: LegislationItem): string {
       </div>
     </div>`;
 }
-
 // ─── Tab: Guide ───────────────────────────────────────────────────────────────
-function renderGuide(data: AssistantResponse): string {
-  const guide = data.preview;
-  if (!guide) return `<div class="ca-idle"><div class="ca-idle-icon">📐</div>No fill guide for this section yet.<br/><small style="margin-top:6px;display:block">Check the Legislation tab.</small></div>`;
-
-  let html = guide.description ? `<div class="ca-guide-desc">${esc(guide.description)}</div>` : '';
-
-  (guide.tables || []).forEach(tbl => {
-    html += `<div class="ca-guide-label">${esc(tbl.title)}</div>`;
-    html += `<div class="ca-table-preview"><div class="ca-table-preview-head">Column guidance</div>`;
-    tbl.columns.forEach(col => {
-      html += `<div class="ca-col-guide">
+function renderGuide(data) {
+    const guide = data.preview;
+    if (!guide)
+        return `<div class="ca-idle"><div class="ca-idle-icon">📐</div>No fill guide for this section yet.<br/><small style="margin-top:6px;display:block">Check the Legislation tab.</small></div>`;
+    let html = guide.description ? `<div class="ca-guide-desc">${esc(guide.description)}</div>` : '';
+    (guide.tables || []).forEach(tbl => {
+        html += `<div class="ca-guide-label">${esc(tbl.title)}</div>`;
+        html += `<div class="ca-table-preview"><div class="ca-table-preview-head">Column guidance</div>`;
+        tbl.columns.forEach(col => {
+            html += `<div class="ca-col-guide">
         <div class="ca-col-name">${esc(col.name)}</div>
         <div class="ca-col-hint">${esc(col.hint)}</div>
         <span class="ca-col-example">${esc(col.example)}</span>
       </div>`;
-    });
-    html += '</div>';
-
-    const allRows = [...(tbl.example_row ? [tbl.example_row] : []), ...(tbl.more_examples || [])];
-    if (allRows.length) {
-      const headers = tbl.columns.map(c => c.name);
-      html += `<div class="ca-example-row-wrap">
+        });
+        html += '</div>';
+        const allRows = [...(tbl.example_row ? [tbl.example_row] : []), ...(tbl.more_examples || [])];
+        if (allRows.length) {
+            const headers = tbl.columns.map(c => c.name);
+            html += `<div class="ca-example-row-wrap">
         <div class="ca-example-row-label">
           <span>Example rows</span>
           <button class="ca-copy-btn" data-copy="${esc(headers.join('\t') + '\n' + allRows.map(r => r.join('\t')).join('\n'))}">⎘ Copy all</button>
@@ -677,73 +597,70 @@ function renderGuide(data: AssistantResponse): string {
           </table>
         </div>
       </div>`;
-    }
-  });
-
-  (guide.lists || []).forEach(lst => {
-    html += `<div class="ca-guide-label">${esc(lst.title)}</div>
+        }
+    });
+    (guide.lists || []).forEach(lst => {
+        html += `<div class="ca-guide-label">${esc(lst.title)}</div>
       <div class="ca-suggestion">
         ${lst.items.map(item => `<div class="ca-suggestion-item">• ${esc(item)}</div>`).join('')}
         <div style="margin-top:8px">
           <button class="ca-copy-btn" data-copy="${esc(lst.items.join('\n'))}">⎘ Copy all items</button>
         </div>
       </div>`;
-  });
-
-  return html || '<div class="ca-empty">No guide content for this section.</div>';
-}
-
-// ─── Tab: Suggestions ────────────────────────────────────────────────────────
-function renderSuggestions(data: AssistantResponse): string {
-  const textS = data.suggestions?.text || [];
-  const listS = data.suggestions?.list || [];
-  if (!textS.length && !listS.length) {
-    return `<div class="ca-idle"><div class="ca-idle-icon">✍️</div>No draft suggestions for this block type.<br/><small style="margin-top:6px;display:block">Try the Guide tab for table examples.</small></div>`;
-  }
-  let html = '';
-  if (textS.length) {
-    html += `<div class="ca-guide-label">Draft text — click to copy</div>`;
-    textS.forEach(txt => {
-      html += `<div class="ca-suggestion"><div class="ca-suggestion-text">${esc(txt)}</div><button class="ca-copy-btn" data-copy="${esc(txt)}">⎘ Copy text</button></div>`;
     });
-  }
-  if (listS.length) {
-    html += `<div class="ca-divider"></div><div class="ca-guide-label">Suggested list items</div>
+    return html || '<div class="ca-empty">No guide content for this section.</div>';
+}
+// ─── Tab: Suggestions ────────────────────────────────────────────────────────
+function renderSuggestions(data) {
+    const textS = data.suggestions?.text || [];
+    const listS = data.suggestions?.list || [];
+    if (!textS.length && !listS.length) {
+        return `<div class="ca-idle"><div class="ca-idle-icon">✍️</div>No draft suggestions for this block type.<br/><small style="margin-top:6px;display:block">Try the Guide tab for table examples.</small></div>`;
+    }
+    let html = '';
+    if (textS.length) {
+        html += `<div class="ca-guide-label">Draft text — click to copy</div>`;
+        textS.forEach(txt => {
+            html += `<div class="ca-suggestion"><div class="ca-suggestion-text">${esc(txt)}</div><button class="ca-copy-btn" data-copy="${esc(txt)}">⎘ Copy text</button></div>`;
+        });
+    }
+    if (listS.length) {
+        html += `<div class="ca-divider"></div><div class="ca-guide-label">Suggested list items</div>
       <div class="ca-suggestion">
         ${listS.map(item => `<div class="ca-suggestion-item">• ${esc(item)}</div>`).join('')}
         <div style="margin-top:8px"><button class="ca-copy-btn" data-copy="${esc(listS.join('\n'))}">⎘ Copy all items</button></div>
       </div>`;
-  }
-  return html;
+    }
+    return html;
 }
-
 // ─── Tab: Live Info ───────────────────────────────────────────────────────────
-function renderLive(data: AssistantResponse): string {
-  const live = data.liveInfo || [];
-  const urls = data.allUrls  || [];
-  if (!live.length && !urls.length) {
-    return `<div class="ca-idle"><div class="ca-idle-icon">🌐</div>No live sources available for this section.</div>`;
-  }
-  let html = '';
-  if (live.length) {
-    html += `<div class="ca-guide-label">Live fetched content</div>`;
-    live.forEach(item => {
-      html += `<div class="ca-live-card">
+function renderLive(data) {
+    const live = data.liveInfo || [];
+    const urls = data.allUrls || [];
+    if (!live.length && !urls.length) {
+        return `<div class="ca-idle"><div class="ca-idle-icon">🌐</div>No live sources available for this section.</div>`;
+    }
+    let html = '';
+    if (live.length) {
+        html += `<div class="ca-guide-label">Live fetched content</div>`;
+        live.forEach(item => {
+            html += `<div class="ca-live-card">
         <div class="ca-live-head"><div class="ca-live-dot"></div><div class="ca-live-label">${esc(item.label)}</div></div>
         <div class="ca-live-snippet">${esc(item.snippet)}</div>
         <a class="ca-live-link" href="${esc(item.url)}" target="_blank" rel="noopener">↗ Open full source</a>
       </div>`;
-    });
-    if (urls.length) html += `<div class="ca-divider"></div>`;
-  }
-  if (urls.length) {
-    html += `<div class="ca-guide-label">Reference sources</div><div class="ca-url-list">`;
-    urls.forEach(u => {
-      html += `<a class="ca-url-item" href="${esc(u.url)}" target="_blank" rel="noopener">
+        });
+        if (urls.length)
+            html += `<div class="ca-divider"></div>`;
+    }
+    if (urls.length) {
+        html += `<div class="ca-guide-label">Reference sources</div><div class="ca-url-list">`;
+        urls.forEach(u => {
+            html += `<a class="ca-url-item" href="${esc(u.url)}" target="_blank" rel="noopener">
         <span class="ca-url-label">${esc(u.label)}</span><span class="ca-url-arrow">↗</span>
       </a>`;
-    });
-    html += '</div>';
-  }
-  return html;
+        });
+        html += '</div>';
+    }
+    return html;
 }

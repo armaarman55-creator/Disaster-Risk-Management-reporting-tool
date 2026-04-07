@@ -176,7 +176,13 @@ async function loadPageModule(pageId) {
         break;
       }
       case 'contingency': {
-        const m = await import('./contingency-page.js');
+        let m;
+        try {
+          m = await import('./contingency-page.js');
+        } catch (primaryErr) {
+          console.warn('Primary contingency module failed, trying legacy path:', primaryErr);
+          m = await import('./contingency.js');
+        }
         m.initContingencyPage(_user);
         break;
       }
