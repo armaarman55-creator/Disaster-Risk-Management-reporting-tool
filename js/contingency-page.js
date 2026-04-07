@@ -11,7 +11,7 @@ import { fetchPlansFromBackend, savePlanToBackend } from './contingency-repo.js'
 import { buildLibrarySections } from './contingency-section-library.js';
 import { showDownloadMenu, docHeader } from './download.js';
 import { supabase } from './supabase.js';
-import { initAssistantPanel, destroyAssistantPanel } from './contingency-assistant-panel.js';
+import { initAssistantPanel, destroyAssistantPanel } from './contingency-dist/contingency-assistant-panel.js';
 
 let _activePlanId = null;
 let _activeCategory = '';
