@@ -11,6 +11,7 @@ import { fetchPlansFromBackend, savePlanToBackend } from './contingency-repo.js'
 import { buildLibrarySections } from './contingency-section-library.js';
 import { showDownloadMenu, docHeader } from './download.js';
 import { supabase } from './supabase.js';
+import { initAssistantPanel, destroyAssistantPanel } from './contingency-assistant-panel.js';
 
 let _activePlanId = null;
 let _activeCategory = '';
@@ -54,7 +55,6 @@ function hvcSectionsAsList(plan) {
 
 function contingencyDocHtml(plan) {
   const meta = plan?.metadata || {};
-  // Strip any HTML tags a value may contain before escaping for Word output
   const docEsc = v => esc(String(v ?? '').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim());
   const secHtml = (plan.sections || [])
     .sort((a, b) => a.order - b.order)
@@ -386,9 +386,21 @@ function renderPlanList() {
   });
 }
 
-
-function blockEditor(sectionKey, block, idx) {
+// ─── blockEditor ─────────────────────────────────────────────────────────────
+// planTypeCode and planCategory are threaded in from renderPlanDetail so the
+// assistant panel knows which plan type is active when a block is focused.
+function blockEditor(sectionKey: string, block: any, idx: number, planTypeCode = '', planCategory = '') {
   const base = `data-sec="${esc(sectionKey)}" data-idx="${idx}"`;
+
+  // Attributes added to every editable element so the assistant panel can
+  // detect focus and load the right references without any extra logic.
+  const assistantAttrs = [
+    'data-assistant-trigger',
+    `data-sec-key="${esc(sectionKey)}"`,
+    `data-plan-type="${esc(planTypeCode)}"`,
+    `data-plan-cat="${esc(planCategory)}"`,
+  ].join(' ');
+
   if (block.type === 'text') {
     const editorId = `cp_rich_${esc(sectionKey)}_${idx}`;
     return `<div class="cp-field"><div style="font-size:12px;margin-bottom:6px">Text block</div>
@@ -397,22 +409,27 @@ function blockEditor(sectionKey, block, idx) {
         <button type="button" class="btn btn-sm" data-rich-cmd="italic" data-rich-target="${editorId}"><i>I</i></button>
         <button type="button" class="btn btn-sm" data-rich-cmd="insertUnorderedList" data-rich-target="${editorId}">• List</button>
       </div>
-      <div class="cp-textarea" ${base} data-kind="rich-text" id="${editorId}" contenteditable="true" style="min-height:96px">${richBlockHtml(block.content)}</div>
+      <div class="cp-textarea" ${base} data-kind="rich-text" id="${editorId}"
+           contenteditable="true" style="min-height:96px"
+           ${assistantAttrs} data-block-type="text">${richBlockHtml(block.content)}</div>
     </div>`;
   }
+
   if (block.type === 'list') {
     const value = Array.isArray(block.content) ? block.content.join('\n') : '';
     return `<label class="cp-field">List block (one item per line)
-      <textarea class="cp-textarea" ${base} data-kind="list">${esc(value)}</textarea>
+      <textarea class="cp-textarea" ${base} data-kind="list"
+        ${assistantAttrs} data-block-type="list">${esc(value)}</textarea>
     </label>`;
   }
+
   if (block.type === 'table') {
     const headers = Array.isArray(block.content?.headers) ? block.content.headers : [];
     const rows = Array.isArray(block.content?.rows) ? block.content.rows : [];
     const gridId = `cp_tbl_${esc(sectionKey)}_${idx}`;
     const colCount = headers.length;
 
-    const buildRowHtml = (cells, rowIdx) => {
+    const buildRowHtml = (cells: string[], rowIdx: number) => {
       const tds = headers.map((_, ci) => `<td style="padding:2px 4px">
           <input class="cp-table-cell" data-grid="${gridId}" data-row="${rowIdx}" data-col="${ci}"
             value="${esc(cells[ci] ?? '')}" placeholder="—"
@@ -429,8 +446,17 @@ function blockEditor(sectionKey, block, idx) {
       ? rows.map((r, ri) => buildRowHtml(Array.isArray(r) ? r : [], ri)).join('')
       : buildRowHtml(Array(colCount).fill(''), 0);
 
-    return `<div class="cp-field" ${base} data-kind="table-grid">
-      <div style="font-size:11px;font-weight:600;margin-bottom:6px;color:var(--text3,#888)">Table</div>
+    // The outer div carries the assistant trigger so clicking anywhere in the
+    // table (including headers) opens the fill guide for that section.
+    return `<div class="cp-field" ${base} data-kind="table-grid"
+        ${assistantAttrs} data-block-type="table"
+        tabindex="0" style="outline:none">
+      <div style="font-size:11px;font-weight:600;margin-bottom:6px;color:var(--text3,#888);display:flex;align-items:center;justify-content:space-between">
+        <span>Table</span>
+        <span style="font-size:10px;color:var(--accent,#2563eb);font-weight:500;cursor:default">
+          ✦ Click to open fill guide
+        </span>
+      </div>
       <div style="overflow-x:auto">
         <table id="${gridId}" style="width:100%;border-collapse:collapse;font-size:12px">
           <thead><tr style="background:var(--bg3,#f0f4fa)">
@@ -444,8 +470,10 @@ function blockEditor(sectionKey, block, idx) {
         style="margin-top:6px;font-size:11px">+ Add row</button>
     </div>`;
   }
+
   return `<label class="cp-field">Block (${esc(block.type)})
-    <textarea class="cp-textarea" ${base} data-kind="text">${esc(String(block.content ?? ''))}</textarea>
+    <textarea class="cp-textarea" ${base} data-kind="text"
+      ${assistantAttrs} data-block-type="text">${esc(String(block.content ?? ''))}</textarea>
   </label>`;
 }
 
@@ -513,6 +541,10 @@ function renderPlanDetail() {
   const host = document.getElementById('cp-plan-detail');
   if (!host) return;
 
+  // Tear down assistant listeners before re-rendering so we don't accumulate
+  // duplicate focus handlers on stale DOM nodes.
+  destroyAssistantPanel();
+
   const plan = _activePlanId ? stripLegacySuggestionArtifacts(getPlan(_activePlanId)) : null;
   if (!plan || plan.deleted || plan.status === 'deleted') {
     host.innerHTML = '<div class="cp-empty">Select a plan from the list to view details.</div>';
@@ -521,6 +553,10 @@ function renderPlanDetail() {
 
   const excludedSectionStore = getExcludedSectionStore(plan);
   const excludedSections = Object.values(excludedSectionStore).sort((a, b) => a.title.localeCompare(b.title));
+
+  // Pull plan type + category once so every blockEditor call gets them.
+  const planTypeCode  = plan.metadata?.plan_type     || '';
+  const planCategory  = plan.metadata?.plan_category || '';
 
   host.innerHTML = `
     <div class="cp-detail-wrap">
@@ -536,10 +572,6 @@ function renderPlanDetail() {
         <button id="cp-approve" class="btn">Approve</button>
         <button id="cp-export" class="btn btn-primary">Export Word</button>
       </div>
-    </div>
-    <div id="cp-suggestion-panel" class="cp-section-card" style="margin-bottom:8px">
-      <div class="cp-section-head">Suggestion Library (IDP-style)</div>
-      <div class="cp-blocks"><div class="cp-empty">Loading contextual suggestions...</div></div>
     </div>
     <div class="cp-section-card" style="margin-bottom:8px">
       <div class="cp-section-head">Excluded sections</div>
@@ -564,7 +596,7 @@ function renderPlanDetail() {
                 <span>${esc(s.title)}</span>
                 <button type="button" class="btn btn-sm" data-remove-section="${esc(s.key)}" title="Exclude this section">Remove section</button>
               </div>
-              <div class="cp-blocks">${(s.content_blocks || []).map((b, idx) => blockEditor(s.key, b, idx)).join('')}</div>
+              <div class="cp-blocks">${(s.content_blocks || []).map((b, idx) => blockEditor(s.key, b, idx, planTypeCode, planCategory)).join('')}</div>
               <div class="cp-row-end">
                 <button class="btn" data-save-section="${esc(s.key)}">Save section</button>
               </div>
@@ -676,7 +708,7 @@ function renderPlanDetail() {
       if (!tbody) return;
       const nextRow = tbody.querySelectorAll('tr[data-row]').length;
       const tr = document.createElement('tr');
-      tr.setAttribute('data-row', nextRow);
+      tr.setAttribute('data-row', String(nextRow));
       let tds = '';
       for (let ci = 0; ci < colCount; ci++) {
         tds += `<td style="padding:2px 4px"><input class="cp-table-cell" data-grid="${gridId}" data-row="${nextRow}" data-col="${ci}" value="" placeholder="—"
@@ -698,6 +730,12 @@ function renderPlanDetail() {
   host.querySelectorAll('.cp-tbl-del-row[data-grid]').forEach(btn => {
     btn.addEventListener('click', function () { this.closest('tr')?.remove(); scheduleAutoSave(plan.id); });
   });
+
+  // ── Wire up the assistant panel after all DOM is ready ──────────────────
+  // initAssistantPanel attaches focus/click listeners to every element that
+  // has data-assistant-trigger. It is safe to call on every render because
+  // destroyAssistantPanel() was called at the top of this function.
+  initAssistantPanel();
 }
 
 function renderTypeOptions() {
