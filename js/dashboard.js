@@ -376,7 +376,12 @@ async function fetchMdbWards() {
 }
 
 async function ensureMapInitialized() {
-  if (_map) return;
+  if (_map) {
+    if (!_map.loaded?.()) {
+      await new Promise(resolve => _map.once('idle', resolve));
+    }
+    return;
+  }
   if (!window.maplibregl) {
     throw new Error('MapLibre GL not loaded on page');
   }
