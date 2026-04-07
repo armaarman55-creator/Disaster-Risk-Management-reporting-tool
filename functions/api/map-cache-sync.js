@@ -11,6 +11,12 @@ function json(data, status = 200) {
   });
 }
 
+function readEnvValue(v) {
+  return String(v || '')
+    .trim()
+    .replace(/^["']|["']$/g, '');
+}
+
 function cleanMuniName(raw = '') {
   return String(raw || '')
     .replace(' LM', '')
@@ -63,16 +69,39 @@ function boundsFromFeatures(features = []) {
 }
 
 async function supabaseFetch(env, path, options = {}) {
-  const { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY } = env;
-  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-    throw new Error('Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY');
+  const rawUrl =
+    readEnvValue(env.SUPABASE_URL) ||
+    readEnvValue(env.PUBLIC_SUPABASE_URL) ||
+    readEnvValue(env.VITE_SUPABASE_URL) ||
+    '';
+
+  const serviceKey =
+    readEnvValue(env.SUPABASE_SERVICE_ROLE_KEY) ||
+    readEnvValue(env.SUPABASE_SERVICE_KEY) ||
+    readEnvValue(env.SUPABASE_KEY) ||
+    '';
+
+  const supabaseUrl = rawUrl.replace(/\/+$/, '');
+
+  if (!supabaseUrl || !serviceKey) {
+    const envPresence = {
+      SUPABASE_URL: Boolean(readEnvValue(env.SUPABASE_URL)),
+      PUBLIC_SUPABASE_URL: Boolean(readEnvValue(env.PUBLIC_SUPABASE_URL)),
+      VITE_SUPABASE_URL: Boolean(readEnvValue(env.VITE_SUPABASE_URL)),
+      SUPABASE_SERVICE_ROLE_KEY: Boolean(readEnvValue(env.SUPABASE_SERVICE_ROLE_KEY)),
+      SUPABASE_SERVICE_KEY: Boolean(readEnvValue(env.SUPABASE_SERVICE_KEY)),
+      SUPABASE_KEY: Boolean(readEnvValue(env.SUPABASE_KEY))
+    };
+    throw new Error(
+      `Missing Supabase env vars. Set SUPABASE_URL (or PUBLIC_SUPABASE_URL/VITE_SUPABASE_URL) and SUPABASE_SERVICE_ROLE_KEY (or SUPABASE_SERVICE_KEY/SUPABASE_KEY). Presence: ${JSON.stringify(envPresence)}`
+    );
   }
 
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+  const res = await fetch(`${supabaseUrl}/rest/v1/${path}`, {
     ...options,
     headers: {
-      apikey: SUPABASE_SERVICE_ROLE_KEY,
-      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+      apikey: serviceKey,
+      Authorization: `Bearer ${serviceKey}`,
       'Content-Type': 'application/json',
       ...(options.headers || {})
     }
