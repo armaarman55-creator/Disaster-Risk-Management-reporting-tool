@@ -402,6 +402,15 @@ export function destroyAssistantPanel() {
     _listeners.forEach(({ el, type, fn }) => el.removeEventListener(type, fn));
     _listeners.length = 0;
 }
+export function teardownAssistantPanel() {
+    destroyAssistantPanel();
+    document.getElementById('ca-panel')?.remove();
+    document.getElementById('ca-toggle')?.remove();
+    document.body.classList.remove('ca-open');
+    _panelBuilt = false;
+    _lastContextKey = '';
+    _lastData = null;
+}
 // ─── Attach focus/click listeners to every data-assistant-trigger element ────
 function attachBlockListeners() {
     document.querySelectorAll('[data-assistant-trigger]').forEach(el => {

@@ -129,7 +129,19 @@ export function navigateTo(pageId, navItem) {
   };
   setEl('tb-crumb', crumbs[pageId] || pageId);
 
+  enforceContingencyAssistantScope(pageId);
   loadPageModule(pageId);
+}
+
+
+async function enforceContingencyAssistantScope(pageId) {
+  if (pageId === 'contingency') return;
+  try {
+    const m = await import('./contingency-dist/contingency-assistant-panel.js');
+    m.teardownAssistantPanel?.();
+  } catch (e) {
+    console.warn('Contingency assistant cleanup skipped:', e);
+  }
 }
 
 async function loadPageModule(pageId) {
