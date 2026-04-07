@@ -404,7 +404,7 @@ export function destroyAssistantPanel() {
 }
 // ─── Attach focus/click listeners to every data-assistant-trigger element ────
 function attachBlockListeners() {
-    document.querySelectorAll < HTMLElement > ('[data-assistant-trigger]').forEach(el => {
+    document.querySelectorAll('[data-assistant-trigger]').forEach(el => {
         const fn = (e) => onBlockActivated(e.currentTarget);
         el.addEventListener('focus', fn, { capture: true });
         el.addEventListener('click', fn, { capture: true });
