@@ -505,17 +505,47 @@ function renderTabContent(data) {
     else if (_currentTab === 'live')
         body.innerHTML = renderLive(data);
     // Attach copy-button handlers after innerHTML is set.
-    body.querySelectorAll < HTMLButtonElement > ('.ca-copy-btn').forEach(btn => {
+    Array.from(body.querySelectorAll('.ca-copy-btn')).forEach(btn => {
         btn.addEventListener('click', () => {
             const text = btn.getAttribute('data-copy') || '';
-            navigator.clipboard.writeText(text).then(() => {
+            if (!text)
+                return;
+            const flash = () => {
                 const orig = btn.textContent || '';
                 btn.textContent = '✓ Copied';
                 btn.classList.add('ca-copied');
-                setTimeout(() => { btn.textContent = orig; btn.classList.remove('ca-copied'); }, 1800);
-            });
+                setTimeout(() => {
+                    btn.textContent = orig;
+                    btn.classList.remove('ca-copied');
+                }, 1800);
+            };
+            if (navigator.clipboard?.writeText) {
+                navigator.clipboard.writeText(text).then(flash).catch(() => fallbackCopy(text, btn));
+                return;
+            }
+            fallbackCopy(text, btn);
         });
     });
+}
+function fallbackCopy(text, btn) {
+    try {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.cssText = 'position:fixed;top:-9999px;left:-9999px;opacity:0';
+        document.body.appendChild(ta);
+        ta.focus();
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+        const orig = btn.textContent || '';
+        btn.textContent = '✓ Copied';
+        btn.classList.add('ca-copied');
+        setTimeout(() => {
+            btn.textContent = orig;
+            btn.classList.remove('ca-copied');
+        }, 1800);
+    }
+    catch (e) {}
 }
 // ─── Tab: Legislation ─────────────────────────────────────────────────────────
 function renderLegislation(data) {
