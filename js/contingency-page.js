@@ -11,7 +11,7 @@ import { fetchPlansFromBackend, savePlanToBackend } from './contingency-repo.js'
 import { buildLibrarySections } from './contingency-section-library.js';
 import { showDownloadMenu, docHeader } from './download.js';
 import { supabase } from './supabase.js';
-import { initAssistantPanel, destroyAssistantPanel } from './contingency-assistant-panel.js';
+import { initAssistantPanel, destroyAssistantPanel } from './contingency-dist/contingency-assistant-panel.js';
 
 let _activePlanId = null;
 let _activeCategory = '';
@@ -389,7 +389,7 @@ function renderPlanList() {
 // ─── blockEditor ─────────────────────────────────────────────────────────────
 // planTypeCode and planCategory are threaded in from renderPlanDetail so the
 // assistant panel knows which plan type is active when a block is focused.
-function blockEditor(sectionKey: string, block: any, idx: number, planTypeCode = '', planCategory = '') {
+function blockEditor(sectionKey, block, idx, planTypeCode = '', planCategory = '') {
   const base = `data-sec="${esc(sectionKey)}" data-idx="${idx}"`;
 
   // Attributes added to every editable element so the assistant panel can
@@ -429,7 +429,7 @@ function blockEditor(sectionKey: string, block: any, idx: number, planTypeCode =
     const gridId = `cp_tbl_${esc(sectionKey)}_${idx}`;
     const colCount = headers.length;
 
-    const buildRowHtml = (cells: string[], rowIdx: number) => {
+    const buildRowHtml = (cells, rowIdx) => {
       const tds = headers.map((_, ci) => `<td style="padding:2px 4px">
           <input class="cp-table-cell" data-grid="${gridId}" data-row="${rowIdx}" data-col="${ci}"
             value="${esc(cells[ci] ?? '')}" placeholder="—"
