@@ -21,6 +21,16 @@ let _autoSaveTimer = null;
 let _menuCollapsed = false;
 let _splitView = false;
 
+function showToast(msg, isError = false) {
+  document.querySelectorAll('.drmsa-toast').forEach(t => t.remove());
+  const t = document.createElement('div');
+  t.className = 'drmsa-toast';
+  t.style.cssText = `position:fixed;bottom:80px;right:24px;background:var(--bg2);border:1px solid ${isError ? 'var(--red)' : 'var(--green)'};color:${isError ? 'var(--red)' : 'var(--green)'};padding:12px 20px;border-radius:8px;font-size:13px;font-weight:600;z-index:9999;box-shadow:0 4px 24px rgba(0,0,0,.35);display:flex;align-items:center;gap:10px;max-width:340px;transition:opacity .3s;font-family:Inter,system-ui,sans-serif`;
+  t.innerHTML = `<span style="font-size:16px">${isError ? '✕' : '✓'}</span><span>${msg}</span>`;
+  document.body.appendChild(t);
+  setTimeout(() => { t.style.opacity = '0'; setTimeout(() => t.remove(), 300); }, 3000);
+}
+
 function esc(v) {
   return String(v ?? '')
     .replace(/&/g, '&amp;')
@@ -124,9 +134,11 @@ async function fetchHvcPlacementBlocks() {
   ];
 }
 
-function scheduleAutoSave(planId) {
+function scheduleAutoSave(planId, host = null) {
   clearTimeout(_autoSaveTimer);
   _autoSaveTimer = setTimeout(() => {
+    const current = getPlan(planId);
+    if (host && current) syncPlanFromForm(host, current);
     persistPlan(planId);
   }, 900);
 }
@@ -520,9 +532,19 @@ async function persistPlan(planId) {
   if (!plan) return;
   try {
     await savePlanToBackend(plan, _context);
+    return true;
   } catch (e) {
     console.warn('[Contingency] backend save failed:', e.message || e);
+    return false;
   }
+}
+
+function syncPlanFromForm(host, plan) {
+  if (!host || !plan?.sections?.length) return;
+  plan.sections.forEach(section => {
+    const blocks = collectBlocksFromForm(host, section);
+    updateSection(plan.id, section.key, blocks);
+  });
 }
 
 async function hydratePlansFromBackend() {
@@ -614,12 +636,18 @@ function renderPlanDetail() {
   purgeLegacySuggestionNodes(host);
 
   document.getElementById('cp-save-version')?.addEventListener('click', () => {
-    saveVersionSnapshot(plan, _context?.userId || 'local-user');
-    persistPlan(plan.id);
+    syncPlanFromForm(host, plan);
+    const latest = getPlan(plan.id);
+    if (!latest) return;
+    saveVersionSnapshot(latest, _context?.userId || 'local-user');
+    persistPlan(latest.id).then(ok => {
+      if (ok) showToast('Plan saved successfully.');
+    });
     renderPlanDetail();
   });
 
   document.getElementById('cp-submit-review')?.addEventListener('click', () => {
+    syncPlanFromForm(host, plan);
     submitForReview(plan.id, _context?.userId || 'local-user', 'Submitted from contingency page');
     persistPlan(plan.id);
     persistPlan(plan.id);
@@ -628,7 +656,9 @@ function renderPlanDetail() {
   });
 
   document.getElementById('cp-approve')?.addEventListener('click', () => {
+    syncPlanFromForm(host, plan);
     approvePlan(plan.id, _context?.userId || 'local-user', 'Approved from contingency page');
+    persistPlan(plan.id);
     renderPlanList();
     renderPlanDetail();
   });
@@ -655,11 +685,15 @@ function renderPlanDetail() {
       const key = btn.getAttribute('data-save-section');
       if (!key) return;
       try {
-        const section = plan.sections.find(s => s.key === key);
+        const latest = getPlan(plan.id);
+        if (!latest) return;
+        const section = latest.sections.find(s => s.key === key);
         if (!section) return;
         const blocks = collectBlocksFromForm(host, section);
-        updateSection(plan.id, key, blocks);
-        persistPlan(plan.id);
+        updateSection(latest.id, key, blocks);
+        persistPlan(latest.id).then(ok => {
+          if (ok) showToast('Plan saved successfully.');
+        });
         renderPlanDetail();
       } catch (e) {
         alert(`Failed to save section (${key}): ${e.message}`);
@@ -696,7 +730,7 @@ function renderPlanDetail() {
   });
 
   host.querySelectorAll('textarea,input,[contenteditable="true"]').forEach(el => {
-    el.addEventListener('input', () => scheduleAutoSave(plan.id));
+    el.addEventListener('input', () => scheduleAutoSave(plan.id, host));
   });
 
   // Table grid: Add row
@@ -720,15 +754,15 @@ function renderPlanDetail() {
       </td>`;
       tr.innerHTML = tds;
       tbody.appendChild(tr);
-      tr.querySelector('.cp-tbl-del-row')?.addEventListener('click', function () { this.closest('tr')?.remove(); scheduleAutoSave(plan.id); });
-      tr.querySelectorAll('input').forEach(inp => inp.addEventListener('input', () => scheduleAutoSave(plan.id)));
-      scheduleAutoSave(plan.id);
+      tr.querySelector('.cp-tbl-del-row')?.addEventListener('click', function () { this.closest('tr')?.remove(); scheduleAutoSave(plan.id, host); });
+      tr.querySelectorAll('input').forEach(inp => inp.addEventListener('input', () => scheduleAutoSave(plan.id, host)));
+      scheduleAutoSave(plan.id, host);
     });
   });
 
   // Table grid: Delete row (initial rows)
   host.querySelectorAll('.cp-tbl-del-row[data-grid]').forEach(btn => {
-    btn.addEventListener('click', function () { this.closest('tr')?.remove(); scheduleAutoSave(plan.id); });
+    btn.addEventListener('click', function () { this.closest('tr')?.remove(); scheduleAutoSave(plan.id, host); });
   });
 
   // ── Wire up the assistant panel after all DOM is ready ──────────────────
