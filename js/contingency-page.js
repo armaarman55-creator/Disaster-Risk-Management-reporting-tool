@@ -146,9 +146,86 @@ function scheduleAutoSave(planId, host = null) {
 function showContingencyExportMenu(anchorBtn, plan) {
   showDownloadMenu(anchorBtn, {
     filename: `contingency-plan-${plan.id}`,
+    getPDF: () => exportContingencyPDF(plan),
     getDocHTML: () => contingencyDocHtml(plan),
     dropup: true
   });
+}
+
+function exportContingencyPDF(plan) {
+  const w = window.open('', '_blank');
+  if (!w) {
+    alert('Unable to open report window. Please allow popups.');
+    return;
+  }
+  const body = contingencyDocHtml(plan);
+  const html = `<!doctype html>
+  <html>
+    <head>
+      <meta charset="utf-8"/>
+      <title>Contingency Report</title>
+      <style>
+        @page { size: A4 portrait; margin: 14mm 12mm; }
+        * { box-sizing: border-box; }
+        body {
+          font-family: Inter, Segoe UI, Arial, sans-serif;
+          color: #101828;
+          margin: 0;
+          line-height: 1.45;
+          font-size: 11pt;
+        }
+        h1 {
+          margin: 0 0 6mm;
+          font-size: 19pt;
+          color: #0f172a;
+          border-bottom: 2px solid #1d4ed8;
+          padding-bottom: 3mm;
+        }
+        h2 {
+          margin: 7mm 0 2.5mm;
+          font-size: 13.5pt;
+          color: #1d4ed8;
+          page-break-after: avoid;
+        }
+        p, div, li { margin: 0 0 2.5mm; }
+        .meta {
+          color: #475467;
+          margin-bottom: 6mm;
+          font-size: 10pt;
+        }
+        table {
+          width: 100%;
+          border-collapse: collapse;
+          margin: 3mm 0 5mm;
+          page-break-inside: auto;
+        }
+        thead { display: table-header-group; }
+        tr { page-break-inside: avoid; page-break-after: auto; }
+        th, td {
+          border: 1px solid #cbd5e1;
+          padding: 6px 8px;
+          vertical-align: top;
+          text-align: left;
+          font-size: 9.5pt;
+        }
+        th {
+          background: #eaf2ff;
+          color: #0f172a;
+          font-weight: 700;
+        }
+        tbody tr:nth-child(even) td { background: #f8fafc; }
+        ul { margin: 2mm 0 4mm 5mm; padding-left: 4mm; }
+        li { margin: 0 0 1.2mm; }
+        hr { border: none; border-top: 2px solid #1a3a6b; margin: 4mm 0 6mm; }
+      </style>
+    </head>
+    <body>${body}</body>
+  </html>`;
+  w.document.open();
+  w.document.write(html);
+  w.document.close();
+  w.focus();
+  setTimeout(() => w.print(), 150);
 }
 
 function stripLegacySuggestionArtifacts(plan) {
@@ -592,7 +669,7 @@ function renderPlanDetail() {
         <button id="cp-save-version" class="btn">Save version</button>
         <button id="cp-submit-review" class="btn">Submit review</button>
         <button id="cp-approve" class="btn">Approve</button>
-        <button id="cp-export" class="btn btn-primary">Export Word</button>
+        <button id="cp-export" class="btn btn-primary">Download report</button>
       </div>
     </div>
     <div class="cp-section-card" style="margin-bottom:8px">
