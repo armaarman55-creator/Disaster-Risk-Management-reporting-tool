@@ -637,8 +637,10 @@ function renderPlanDetail() {
 
   document.getElementById('cp-save-version')?.addEventListener('click', () => {
     syncPlanFromForm(host, plan);
-    saveVersionSnapshot(plan, _context?.userId || 'local-user');
-    persistPlan(plan.id).then(ok => {
+    const latest = getPlan(plan.id);
+    if (!latest) return;
+    saveVersionSnapshot(latest, _context?.userId || 'local-user');
+    persistPlan(latest.id).then(ok => {
       if (ok) showToast('Plan saved successfully.');
     });
     renderPlanDetail();
