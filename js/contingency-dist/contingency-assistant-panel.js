@@ -5,7 +5,7 @@
 // Calls the Supabase Edge Function: contingency-assistant
 // The edge function URL is: https://<your-project>.supabase.co/functions/v1/contingency-assistant
 // Set SUPABASE_EDGE_URL in your environment or replace the constant below.
-import { supabase } from './supabase.js';
+import { supabase } from '../supabase.js';
 // ─── Config ───────────────────────────────────────────────────────────────────
 const EDGE_FUNCTION_URL = 'https://olibqhpguquktrznchjm.supabase.co/functions/v1/contingency-assistant';
 // ─── Module state ─────────────────────────────────────────────────────────────
