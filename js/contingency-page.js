@@ -21,6 +21,16 @@ let _autoSaveTimer = null;
 let _menuCollapsed = false;
 let _splitView = false;
 
+function showToast(msg, isError = false) {
+  document.querySelectorAll('.drmsa-toast').forEach(t => t.remove());
+  const t = document.createElement('div');
+  t.className = 'drmsa-toast';
+  t.style.cssText = `position:fixed;bottom:80px;right:24px;background:var(--bg2);border:1px solid ${isError ? 'var(--red)' : 'var(--green)'};color:${isError ? 'var(--red)' : 'var(--green)'};padding:12px 20px;border-radius:8px;font-size:13px;font-weight:600;z-index:9999;box-shadow:0 4px 24px rgba(0,0,0,.35);display:flex;align-items:center;gap:10px;max-width:340px;transition:opacity .3s;font-family:Inter,system-ui,sans-serif`;
+  t.innerHTML = `<span style="font-size:16px">${isError ? '✕' : '✓'}</span><span>${msg}</span>`;
+  document.body.appendChild(t);
+  setTimeout(() => { t.style.opacity = '0'; setTimeout(() => t.remove(), 300); }, 3000);
+}
+
 function esc(v) {
   return String(v ?? '')
     .replace(/&/g, '&amp;')
@@ -53,7 +63,8 @@ function hvcSectionsAsList(plan) {
     .join('\n');
 }
 
-function contingencyDocHtml(plan) {
+function contingencyDocHtml(plan, opts = {}) {
+  const { includeEnrichments = true } = opts;
   const meta = plan?.metadata || {};
   const docEsc = v => esc(String(v ?? '').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim());
   const secHtml = (plan.sections || [])
@@ -83,7 +94,7 @@ function contingencyDocHtml(plan) {
 
   return `${docHeader(`Contingency Plan — ${meta.title || 'Plan'}`, meta.municipality_name || 'Municipality')}
     <div class="meta">Category: ${docEsc(meta.plan_category || '—')} · Type: ${docEsc(meta.plan_type || '—')} · Status: ${docEsc(plan.status || 'draft')}</div>
-    ${hvcSectionsAsList(plan) ? `<p><strong>HVC/Environmental enrichments</strong><br/>${esc(hvcSectionsAsList(plan)).replace(/\n/g, '<br/>')}</p>` : ''}
+    ${includeEnrichments && hvcSectionsAsList(plan) ? `<p><strong>HVC/Environmental enrichments</strong><br/>${esc(hvcSectionsAsList(plan)).replace(/\n/g, '<br/>')}</p>` : ''}
     ${secHtml}`;
 }
 
@@ -124,9 +135,11 @@ async function fetchHvcPlacementBlocks() {
   ];
 }
 
-function scheduleAutoSave(planId) {
+function scheduleAutoSave(planId, host = null) {
   clearTimeout(_autoSaveTimer);
   _autoSaveTimer = setTimeout(() => {
+    const current = getPlan(planId);
+    if (host && current) syncPlanFromForm(host, current);
     persistPlan(planId);
   }, 900);
 }
@@ -134,9 +147,85 @@ function scheduleAutoSave(planId) {
 function showContingencyExportMenu(anchorBtn, plan) {
   showDownloadMenu(anchorBtn, {
     filename: `contingency-plan-${plan.id}`,
-    getDocHTML: () => contingencyDocHtml(plan),
-    dropup: true
+    getPDF: () => exportContingencyPDF(plan),
+    getDocHTML: () => contingencyDocHtml(plan)
   });
+}
+
+function exportContingencyPDF(plan) {
+  const w = window.open('', '_blank');
+  if (!w) {
+    alert('Unable to open report window. Please allow popups.');
+    return;
+  }
+  const body = contingencyDocHtml(plan, { includeEnrichments: false });
+  const html = `<!doctype html>
+  <html>
+    <head>
+      <meta charset="utf-8"/>
+      <title>Contingency Report</title>
+      <style>
+        @page { size: A4 portrait; margin: 14mm 12mm; }
+        * { box-sizing: border-box; }
+        body {
+          font-family: Inter, Segoe UI, Arial, sans-serif;
+          color: #101828;
+          margin: 0;
+          line-height: 1.45;
+          font-size: 11pt;
+        }
+        h1 {
+          margin: 0 0 6mm;
+          font-size: 19pt;
+          color: #0f172a;
+          border-bottom: 2px solid #1d4ed8;
+          padding-bottom: 3mm;
+        }
+        h2 {
+          margin: 7mm 0 2.5mm;
+          font-size: 13.5pt;
+          color: #1d4ed8;
+          page-break-after: avoid;
+        }
+        p, div, li { margin: 0 0 2.5mm; }
+        .meta {
+          color: #475467;
+          margin-bottom: 6mm;
+          font-size: 10pt;
+        }
+        table {
+          width: 100%;
+          border-collapse: collapse;
+          margin: 3mm 0 5mm;
+          page-break-inside: auto;
+        }
+        thead { display: table-header-group; }
+        tr { page-break-inside: avoid; page-break-after: auto; }
+        th, td {
+          border: 1px solid #cbd5e1;
+          padding: 6px 8px;
+          vertical-align: top;
+          text-align: left;
+          font-size: 9.5pt;
+        }
+        th {
+          background: #eaf2ff;
+          color: #0f172a;
+          font-weight: 700;
+        }
+        tbody tr:nth-child(even) td { background: #f8fafc; }
+        ul { margin: 2mm 0 4mm 5mm; padding-left: 4mm; }
+        li { margin: 0 0 1.2mm; }
+        hr { border: none; border-top: 2px solid #1a3a6b; margin: 4mm 0 6mm; }
+      </style>
+    </head>
+    <body>${body}</body>
+  </html>`;
+  w.document.open();
+  w.document.write(html);
+  w.document.close();
+  w.focus();
+  setTimeout(() => w.print(), 150);
 }
 
 function stripLegacySuggestionArtifacts(plan) {
@@ -520,9 +609,19 @@ async function persistPlan(planId) {
   if (!plan) return;
   try {
     await savePlanToBackend(plan, _context);
+    return true;
   } catch (e) {
     console.warn('[Contingency] backend save failed:', e.message || e);
+    return false;
   }
+}
+
+function syncPlanFromForm(host, plan) {
+  if (!host || !plan?.sections?.length) return;
+  plan.sections.forEach(section => {
+    const blocks = collectBlocksFromForm(host, section);
+    updateSection(plan.id, section.key, blocks);
+  });
 }
 
 async function hydratePlansFromBackend() {
@@ -570,7 +669,7 @@ function renderPlanDetail() {
         <button id="cp-save-version" class="btn">Save version</button>
         <button id="cp-submit-review" class="btn">Submit review</button>
         <button id="cp-approve" class="btn">Approve</button>
-        <button id="cp-export" class="btn btn-primary">Export Word</button>
+        <button id="cp-export" class="btn btn-primary">Download report</button>
       </div>
     </div>
     <div class="cp-section-card" style="margin-bottom:8px">
@@ -614,12 +713,18 @@ function renderPlanDetail() {
   purgeLegacySuggestionNodes(host);
 
   document.getElementById('cp-save-version')?.addEventListener('click', () => {
-    saveVersionSnapshot(plan, _context?.userId || 'local-user');
-    persistPlan(plan.id);
+    syncPlanFromForm(host, plan);
+    const latest = getPlan(plan.id);
+    if (!latest) return;
+    saveVersionSnapshot(latest, _context?.userId || 'local-user');
+    persistPlan(latest.id).then(ok => {
+      if (ok) showToast('Plan saved successfully.');
+    });
     renderPlanDetail();
   });
 
   document.getElementById('cp-submit-review')?.addEventListener('click', () => {
+    syncPlanFromForm(host, plan);
     submitForReview(plan.id, _context?.userId || 'local-user', 'Submitted from contingency page');
     persistPlan(plan.id);
     persistPlan(plan.id);
@@ -628,7 +733,9 @@ function renderPlanDetail() {
   });
 
   document.getElementById('cp-approve')?.addEventListener('click', () => {
+    syncPlanFromForm(host, plan);
     approvePlan(plan.id, _context?.userId || 'local-user', 'Approved from contingency page');
+    persistPlan(plan.id);
     renderPlanList();
     renderPlanDetail();
   });
@@ -655,11 +762,15 @@ function renderPlanDetail() {
       const key = btn.getAttribute('data-save-section');
       if (!key) return;
       try {
-        const section = plan.sections.find(s => s.key === key);
+        const latest = getPlan(plan.id);
+        if (!latest) return;
+        const section = latest.sections.find(s => s.key === key);
         if (!section) return;
         const blocks = collectBlocksFromForm(host, section);
-        updateSection(plan.id, key, blocks);
-        persistPlan(plan.id);
+        updateSection(latest.id, key, blocks);
+        persistPlan(latest.id).then(ok => {
+          if (ok) showToast('Plan saved successfully.');
+        });
         renderPlanDetail();
       } catch (e) {
         alert(`Failed to save section (${key}): ${e.message}`);
@@ -696,7 +807,7 @@ function renderPlanDetail() {
   });
 
   host.querySelectorAll('textarea,input,[contenteditable="true"]').forEach(el => {
-    el.addEventListener('input', () => scheduleAutoSave(plan.id));
+    el.addEventListener('input', () => scheduleAutoSave(plan.id, host));
   });
 
   // Table grid: Add row
@@ -720,15 +831,15 @@ function renderPlanDetail() {
       </td>`;
       tr.innerHTML = tds;
       tbody.appendChild(tr);
-      tr.querySelector('.cp-tbl-del-row')?.addEventListener('click', function () { this.closest('tr')?.remove(); scheduleAutoSave(plan.id); });
-      tr.querySelectorAll('input').forEach(inp => inp.addEventListener('input', () => scheduleAutoSave(plan.id)));
-      scheduleAutoSave(plan.id);
+      tr.querySelector('.cp-tbl-del-row')?.addEventListener('click', function () { this.closest('tr')?.remove(); scheduleAutoSave(plan.id, host); });
+      tr.querySelectorAll('input').forEach(inp => inp.addEventListener('input', () => scheduleAutoSave(plan.id, host)));
+      scheduleAutoSave(plan.id, host);
     });
   });
 
   // Table grid: Delete row (initial rows)
   host.querySelectorAll('.cp-tbl-del-row[data-grid]').forEach(btn => {
-    btn.addEventListener('click', function () { this.closest('tr')?.remove(); scheduleAutoSave(plan.id); });
+    btn.addEventListener('click', function () { this.closest('tr')?.remove(); scheduleAutoSave(plan.id, host); });
   });
 
   // ── Wire up the assistant panel after all DOM is ready ──────────────────
