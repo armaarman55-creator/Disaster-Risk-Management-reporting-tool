@@ -63,7 +63,8 @@ function hvcSectionsAsList(plan) {
     .join('\n');
 }
 
-function contingencyDocHtml(plan) {
+function contingencyDocHtml(plan, opts = {}) {
+  const { includeEnrichments = true } = opts;
   const meta = plan?.metadata || {};
   const docEsc = v => esc(String(v ?? '').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim());
   const secHtml = (plan.sections || [])
@@ -93,7 +94,7 @@ function contingencyDocHtml(plan) {
 
   return `${docHeader(`Contingency Plan — ${meta.title || 'Plan'}`, meta.municipality_name || 'Municipality')}
     <div class="meta">Category: ${docEsc(meta.plan_category || '—')} · Type: ${docEsc(meta.plan_type || '—')} · Status: ${docEsc(plan.status || 'draft')}</div>
-    ${hvcSectionsAsList(plan) ? `<p><strong>HVC/Environmental enrichments</strong><br/>${esc(hvcSectionsAsList(plan)).replace(/\n/g, '<br/>')}</p>` : ''}
+    ${includeEnrichments && hvcSectionsAsList(plan) ? `<p><strong>HVC/Environmental enrichments</strong><br/>${esc(hvcSectionsAsList(plan)).replace(/\n/g, '<br/>')}</p>` : ''}
     ${secHtml}`;
 }
 
@@ -157,7 +158,7 @@ function exportContingencyPDF(plan) {
     alert('Unable to open report window. Please allow popups.');
     return;
   }
-  const body = contingencyDocHtml(plan);
+  const body = contingencyDocHtml(plan, { includeEnrichments: false });
   const html = `<!doctype html>
   <html>
     <head>
