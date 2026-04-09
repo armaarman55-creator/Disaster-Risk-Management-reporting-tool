@@ -10,6 +10,81 @@ const ROUTE_PNG_TEMPLATES = [
   { key: 'social', label: 'Social square' }
 ];
 
+function titleToneWord(tone) {
+  return tone === 'advisory' ? 'Advisory' : tone === 'update' ? 'Update' : 'Notification';
+}
+
+function applyTitleTone(title, tone) {
+  return String(title || '').replace(/\b(Notification|Notice|Bulletin|Update)\b/i, titleToneWord(tone));
+}
+
+function openRouteTemplatePicker({ templates, onDownload }) {
+  document.getElementById('route-template-picker')?.remove();
+  const modal = document.createElement('div');
+  modal.id = 'route-template-picker';
+  modal.style.cssText = 'position:fixed;inset:0;z-index:10050;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:16px';
+  modal.innerHTML = `
+    <div style="width:min(760px,96vw);max-height:88vh;overflow:auto;background:var(--bg2);border:1px solid var(--border2);border-radius:12px;box-shadow:0 10px 36px rgba(0,0,0,.45);padding:16px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <h3 style="margin:0;font-size:16px">Route notice image template</h3>
+        <button type="button" data-close style="border:1px solid var(--border);background:var(--bg3);color:var(--text);border-radius:6px;padding:4px 8px;cursor:pointer">✕</button>
+      </div>
+      <div style="font-size:12px;color:var(--text3);margin-bottom:10px">Select template and content before downloading.</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px;margin-bottom:12px">
+        ${templates.map((tpl, idx) => `
+          <label style="display:block;border:1px solid var(--border);border-radius:8px;padding:9px;background:var(--bg3);cursor:pointer">
+            <input type="radio" name="tpl" value="${tpl.key}" ${idx === 0 ? 'checked' : ''} />
+            <div style="font-weight:700;font-size:12px;margin-top:4px">${tpl.label}</div>
+            <div style="font-size:11px;color:var(--text3)">${tpl.key}</div>
+          </label>
+        `).join('')}
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <label style="font-size:12px">Notice wording
+          <select id="route-tone" style="width:100%;margin-top:4px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:7px;color:var(--text)">
+            <option value="notification">Notification</option>
+            <option value="advisory">Advisory</option>
+            <option value="update">Update</option>
+          </select>
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;font-size:12px;margin-top:19px">
+          <input id="route-readable" type="checkbox" checked />
+          Readable text (recommended)
+        </label>
+      </div>
+      <div style="margin-top:12px;border-top:1px solid var(--border);padding-top:10px">
+        <div style="font-size:12px;font-weight:700;margin-bottom:6px">Include sections</div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:6px">
+          <label style="font-size:12px;display:flex;align-items:center;gap:6px"><input type="checkbox" data-sec="authority" checked/> Authority</label>
+          <label style="font-size:12px;display:flex;align-items:center;gap:6px"><input type="checkbox" data-sec="closed_since" checked/> Closed since</label>
+          <label style="font-size:12px;display:flex;align-items:center;gap:6px"><input type="checkbox" data-sec="reopen" checked/> Expected reopening</label>
+          <label style="font-size:12px;display:flex;align-items:center;gap:6px"><input type="checkbox" data-sec="alt_route" checked/> Alternative route box</label>
+        </div>
+      </div>
+      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px">
+        <button type="button" data-close style="border:1px solid var(--border);background:var(--bg3);color:var(--text);border-radius:6px;padding:7px 10px;cursor:pointer">Cancel</button>
+        <button type="button" id="route-download-now" style="border:1px solid var(--accent);background:var(--accent);color:#fff;border-radius:6px;padding:7px 12px;cursor:pointer">Download PNG</button>
+      </div>
+    </div>
+  `;
+  modal.querySelectorAll('[data-close]').forEach(btn => btn.addEventListener('click', () => modal.remove()));
+  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+  modal.querySelector('#route-download-now')?.addEventListener('click', async () => {
+    const template = modal.querySelector('input[name="tpl"]:checked')?.value || templates[0]?.key || 'official';
+    const tone = modal.querySelector('#route-tone')?.value || 'notification';
+    const readable = !!modal.querySelector('#route-readable')?.checked;
+    const sections = {
+      authority: !!modal.querySelector('[data-sec="authority"]')?.checked,
+      closed_since: !!modal.querySelector('[data-sec="closed_since"]')?.checked,
+      reopen: !!modal.querySelector('[data-sec="reopen"]')?.checked,
+      alt_route: !!modal.querySelector('[data-sec="alt_route"]')?.checked
+    };
+    modal.remove();
+    await onDownload({ template, tone, readable, sections });
+  });
+  document.body.appendChild(modal);
+}
+
 export async function initRoutes(user) {
   _muniId = user?.municipality_id;
   await fetchMuniLogos();
@@ -263,18 +338,27 @@ function showEditClosureForm(closure) {
 }
 
 // ── PNG IMAGE DOWNLOAD ────────────────────────────────────
-async function downloadClosurePNG(c, template = 'official') {
+async function downloadClosurePNG(c, template = 'official', opts = {}) {
+  const tone = opts.tone || 'notification';
+  const readable = opts.readable !== false;
+  const sections = { authority: true, closed_since: true, reopen: true, alt_route: true, ...(opts.sections || {}) };
   const alt         = c.alternative_routes?.[0];
   const muniName    = window._drmsaUser?.municipalities?.name || 'Municipality';
   const date        = new Date().toLocaleString('en-ZA');
   const statusLabel = { closed:'FULLY CLOSED', partial:'PARTIAL CLOSURE', open:'REOPENED' }[c.status] || (c.status||'').toUpperCase();
   const accentColor = { closed:'#1a3a6b', partial:'#7a5200', open:'#1a6b3a' }[c.status] || '#1a3a6b';
   const statusBg    = { closed:'#c0392b', partial:'#d4860a', open:'#1a6b3a' }[c.status] || '#555';
-  const cfg = {
+  const cfgBase = {
     official: { W: 900, baseH: 480, altH: 580, title: 'Road Closure Notice', titleSize: 26, bodySize: 13 },
     compact: { W: 900, baseH: 420, altH: 500, title: 'Road Closure Bulletin', titleSize: 23, bodySize: 12 },
     social: { W: 1080, baseH: 860, altH: 980, title: 'Road Closure Update', titleSize: 34, bodySize: 15 }
   }[template] || { W: 900, baseH: 480, altH: 580, title: 'Road Closure Notice', titleSize: 26, bodySize: 13 };
+  const cfg = {
+    ...cfgBase,
+    title: applyTitleTone(cfgBase.title, tone),
+    titleSize: cfgBase.titleSize + (readable ? 1 : 0),
+    bodySize: cfgBase.bodySize + (readable ? 2 : 0)
+  };
 
   const logoImgs = await loadLogoImages();
 
@@ -374,7 +458,7 @@ async function downloadClosurePNG(c, template = 'official') {
   para2Lines.forEach(line => { drawRichLine(ctx, line, 20, ty, cfg.bodySize, '#1a1a1a'); ty += (cfg.bodySize + 7); });
 
   // ── LEFT: Alternative route box
-  if (alt) {
+  if (alt && sections.alt_route) {
     const altY = ty + 14;
     const altH = 72 + (alt.extra_distance ? 20 : 0);
     ctx.fillStyle = '#e8f0e4';
@@ -403,12 +487,10 @@ async function downloadClosurePNG(c, template = 'official') {
 
   // ── RIGHT: Detail fields
   const RX = SPLIT + 16;
-  const fieldDefs = [
-    { label: 'Status',            value: null, badge: true, badgeText: statusLabel, badgeBg: statusBg },
-    { label: 'Authority',         value: c.authority || '—' },
-    { label: 'Closed since',      value: c.closed_since ? new Date(c.closed_since).toLocaleString('en-ZA') : '—' },
-    { label: 'Expected reopening',value: c.expected_reopen || 'Unknown' }
-  ];
+  const fieldDefs = [{ label: 'Status', value: null, badge: true, badgeText: statusLabel, badgeBg: statusBg }];
+  if (sections.authority) fieldDefs.push({ label: 'Authority', value: c.authority || '—' });
+  if (sections.closed_since) fieldDefs.push({ label: 'Closed since', value: c.closed_since ? new Date(c.closed_since).toLocaleString('en-ZA') : '—' });
+  if (sections.reopen) fieldDefs.push({ label: 'Expected reopening', value: c.expected_reopen || 'Unknown' });
   const routeFields = template === 'compact' ? fieldDefs.slice(0, 3) : fieldDefs;
 
   let ry = bodyTop + 18;
@@ -602,7 +684,7 @@ function bindClosureEvents() {
       drop.addEventListener('click', e => e.stopPropagation());
       drop.innerHTML = `
         <button data-dl-text="${id}" style="display:block;width:100%;text-align:left;background:transparent;border:none;border-bottom:1px solid var(--border);padding:9px 14px;font-size:12px;color:var(--text);cursor:pointer;font-family:monospace">📄 Text file (.txt)</button>
-        ${ROUTE_PNG_TEMPLATES.map((tpl, idx) => `<button data-dl-png="${id}" data-template="${tpl.key}" style="display:block;width:100%;text-align:left;background:transparent;border:none;${idx === ROUTE_PNG_TEMPLATES.length - 1 ? '' : 'border-bottom:1px solid var(--border);'}padding:9px 14px;font-size:12px;color:var(--text);cursor:pointer;font-family:monospace">🖼 Image (.png) · ${tpl.label}</button>`).join('')}`;
+        <button data-dl-png="${id}" style="display:block;width:100%;text-align:left;background:transparent;border:none;padding:9px 14px;font-size:12px;color:var(--text);cursor:pointer;font-family:monospace">🖼 Image (.png) · Choose template…</button>`;
 
       drop.querySelector('[data-dl-text]').addEventListener('click', () => {
         const c = _closures.find(x => x.id === id); drop.remove(); if (!c) return;
@@ -620,10 +702,11 @@ function bindClosureEvents() {
         a.click(); URL.revokeObjectURL(url);
       });
 
-      drop.querySelectorAll('[data-dl-png]').forEach(pngBtn => {
-        pngBtn.addEventListener('click', () => {
-          const c = _closures.find(x => x.id === id); drop.remove(); if (!c) return;
-          downloadClosurePNG(c, pngBtn.dataset.template || 'official');
+      drop.querySelector('[data-dl-png]')?.addEventListener('click', () => {
+        const c = _closures.find(x => x.id === id); drop.remove(); if (!c) return;
+        openRouteTemplatePicker({
+          templates: ROUTE_PNG_TEMPLATES,
+          onDownload: ({ template, tone, readable, sections }) => downloadClosurePNG(c, template, { tone, readable, sections })
         });
       });
 
