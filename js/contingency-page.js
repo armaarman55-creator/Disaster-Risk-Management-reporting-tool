@@ -147,8 +147,7 @@ function showContingencyExportMenu(anchorBtn, plan) {
   showDownloadMenu(anchorBtn, {
     filename: `contingency-plan-${plan.id}`,
     getPDF: () => exportContingencyPDF(plan),
-    getDocHTML: () => contingencyDocHtml(plan),
-    dropup: true
+    getDocHTML: () => contingencyDocHtml(plan)
   });
 }
 
