@@ -3,6 +3,7 @@ import { supabase } from './supabase.js';
 
 let _user = null;
 let _theme = localStorage.getItem('drmsa-theme') || 'dark';
+let _pageLoadToken = 0;
 
 export async function initApp(user) {
   _user = user;
@@ -145,6 +146,8 @@ async function enforceContingencyAssistantScope(pageId) {
 }
 
 async function loadPageModule(pageId) {
+  const token = ++_pageLoadToken;
+  showPageLoading(pageId, token);
   try {
     switch (pageId) {
       case 'dashboard': {
@@ -225,7 +228,47 @@ async function loadPageModule(pageId) {
     }
   } catch(e) {
     console.warn('Page module load failed:', pageId, e);
+  } finally {
+    hidePageLoading(token);
   }
+}
+
+function ensureLoadingStyles() {
+  if (document.getElementById('drmsa-page-loader-style')) return;
+  const style = document.createElement('style');
+  style.id = 'drmsa-page-loader-style';
+  style.textContent = `
+    @keyframes drmsa-spin { to { transform: rotate(360deg); } }
+    .drmsa-page-loader {
+      position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center;
+      gap:10px; background:rgba(8,12,20,.55); backdrop-filter: blur(1px); z-index:40;
+      color:var(--text,#fff); font-size:12px; font-weight:600; letter-spacing:.03em;
+    }
+    .drmsa-page-loader .spinner {
+      width:22px; height:22px; border-radius:50%;
+      border:2px solid rgba(255,255,255,.35); border-top-color:#fff;
+      animation:drmsa-spin .8s linear infinite;
+    }
+  `;
+  document.head.appendChild(style);
+}
+
+function showPageLoading(pageId, token) {
+  const page = document.getElementById(`page-${pageId}`);
+  if (!page) return;
+  ensureLoadingStyles();
+  page.querySelector('.drmsa-page-loader')?.remove();
+  if (getComputedStyle(page).position === 'static') page.style.position = 'relative';
+  const overlay = document.createElement('div');
+  overlay.className = 'drmsa-page-loader';
+  overlay.dataset.token = String(token);
+  overlay.innerHTML = `<div class="spinner"></div><div>Loading ${pageId.replace('-', ' ')}…</div>`;
+  page.appendChild(overlay);
+}
+
+function hidePageLoading(token) {
+  const active = document.querySelector(`.drmsa-page-loader[data-token="${token}"]`);
+  if (active) active.remove();
 }
 
 function initFooter() {
