@@ -5,9 +5,11 @@ let _muniId   = null;
 let _closures = [];
 let _muniLogos = { main: null, dm: null, mode: 'main' };
 const ROUTE_PNG_TEMPLATES = [
-  { key: 'official', label: 'Official notice' },
-  { key: 'compact', label: 'Compact bulletin' },
-  { key: 'social', label: 'Social square' }
+  { key: 'official', label: 'Official notice', desc: 'Formal municipal document', preview: 'linear-gradient(135deg,#f8fafc,#e2e8f0)' },
+  { key: 'compact', label: 'Compact bulletin', desc: 'Dense compact card', preview: 'linear-gradient(135deg,#f5f3ff,#ddd6fe)' },
+  { key: 'social', label: 'Social square', desc: 'Social media poster', preview: 'linear-gradient(135deg,#0f172a,#1d4ed8)' },
+  { key: 'alert-card', label: 'Alert card', desc: 'High-contrast emergency card', preview: 'linear-gradient(135deg,#7f1d1d,#dc2626)' },
+  { key: 'clean-light', label: 'Clean light', desc: 'Minimal clean handout', preview: 'linear-gradient(135deg,#ffffff,#d1fae5)' }
 ];
 
 function titleToneWord(tone) {
@@ -34,8 +36,13 @@ function openRouteTemplatePicker({ templates, onDownload }) {
         ${templates.map((tpl, idx) => `
           <label style="display:block;border:1px solid var(--border);border-radius:8px;padding:9px;background:var(--bg3);cursor:pointer">
             <input type="radio" name="tpl" value="${tpl.key}" ${idx === 0 ? 'checked' : ''} />
+            <div style="height:64px;border-radius:6px;margin:6px 0;background:${tpl.preview || 'linear-gradient(135deg,#1e293b,#64748b)'};position:relative;overflow:hidden;border:1px solid rgba(255,255,255,.22)">
+              <div style="position:absolute;left:8px;top:8px;right:8px;height:8px;border-radius:4px;background:rgba(255,255,255,.6)"></div>
+              <div style="position:absolute;left:8px;top:24px;width:56%;height:28px;border-radius:5px;background:rgba(255,255,255,.25)"></div>
+              <div style="position:absolute;right:8px;top:24px;width:28%;height:28px;border-radius:5px;background:rgba(255,255,255,.45)"></div>
+            </div>
             <div style="font-weight:700;font-size:12px;margin-top:4px">${tpl.label}</div>
-            <div style="font-size:11px;color:var(--text3)">${tpl.key}</div>
+            <div style="font-size:11px;color:var(--text3)">${tpl.desc || tpl.key}</div>
           </label>
         `).join('')}
       </div>
@@ -349,9 +356,11 @@ async function downloadClosurePNG(c, template = 'official', opts = {}) {
   const accentColor = { closed:'#1a3a6b', partial:'#7a5200', open:'#1a6b3a' }[c.status] || '#1a3a6b';
   const statusBg    = { closed:'#c0392b', partial:'#d4860a', open:'#1a6b3a' }[c.status] || '#555';
   const cfgBase = {
-    official: { W: 900, baseH: 480, altH: 580, title: 'Road Closure Notice', titleSize: 26, bodySize: 13 },
-    compact: { W: 900, baseH: 420, altH: 500, title: 'Road Closure Bulletin', titleSize: 23, bodySize: 12 },
-    social: { W: 1080, baseH: 860, altH: 980, title: 'Road Closure Update', titleSize: 34, bodySize: 15 }
+    official: { W: 900, baseH: 480, altH: 580, title: 'Road Closure Notice', titleSize: 26, bodySize: 13, splitRatio: 0.63, baseBg: '#f0eeea', leftBg: '#fafaf8', headerBg: '#ffffff' },
+    compact: { W: 900, baseH: 420, altH: 500, title: 'Road Closure Bulletin', titleSize: 23, bodySize: 12, splitRatio: 0.58, baseBg: '#f7f5ff', leftBg: '#fcfbff', headerBg: '#ffffff' },
+    social: { W: 1080, baseH: 860, altH: 980, title: 'Road Closure Update', titleSize: 34, bodySize: 15, splitRatio: 0.56, baseBg: '#e6eefc', leftBg: '#f8fbff', headerBg: '#f8fbff' },
+    'alert-card': { W: 1000, baseH: 560, altH: 650, title: 'Road Closure Alert', titleSize: 30, bodySize: 14, splitRatio: 0.60, baseBg: '#fff1f2', leftBg: '#fff7f7', headerBg: '#fff5f5' },
+    'clean-light': { W: 980, baseH: 540, altH: 630, title: 'Road Closure Advisory', titleSize: 28, bodySize: 14, splitRatio: 0.65, baseBg: '#ecfdf5', leftBg: '#f7fffb', headerBg: '#ffffff' }
   }[template] || { W: 900, baseH: 480, altH: 580, title: 'Road Closure Notice', titleSize: 26, bodySize: 13 };
   const cfg = {
     ...cfgBase,
@@ -366,7 +375,7 @@ async function downloadClosurePNG(c, template = 'official', opts = {}) {
   const W = cfg.W;
   const HAS_ALT = !!alt;
   const H = HAS_ALT ? cfg.altH : cfg.baseH;
-  const SPLIT = Math.round(W * 0.63); // left column width
+  const SPLIT = Math.round(W * (cfg.splitRatio || 0.63)); // left column width
   const HDR_H = 76;  // header row height
   const FTR_H = 32;  // footer bar height
 
@@ -375,7 +384,7 @@ async function downloadClosurePNG(c, template = 'official', opts = {}) {
   const ctx = canvas.getContext('2d');
 
   // ── Background
-  ctx.fillStyle = '#f0eeea';
+  ctx.fillStyle = cfg.baseBg || '#f0eeea';
   ctx.fillRect(0, 0, W, H);
 
   // ── Top accent bar
@@ -383,7 +392,7 @@ async function downloadClosurePNG(c, template = 'official', opts = {}) {
   ctx.fillRect(0, 0, W, 6);
 
   // ── Header row (white)
-  ctx.fillStyle = '#ffffff';
+  ctx.fillStyle = cfg.headerBg || '#ffffff';
   ctx.fillRect(0, 6, W, HDR_H);
   ctx.strokeStyle = '#d0ccc4';
   ctx.lineWidth = 1;
@@ -421,7 +430,7 @@ async function downloadClosurePNG(c, template = 'official', opts = {}) {
   const bodyH   = H - bodyTop - FTR_H;
 
   // ── Left column background
-  ctx.fillStyle = '#fafaf8';
+  ctx.fillStyle = cfg.leftBg || '#fafaf8';
   ctx.fillRect(0, bodyTop, SPLIT, bodyH);
 
   // ── Right column background (already #f0eeea from base)

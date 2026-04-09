@@ -5,9 +5,11 @@ let _muniId    = null;
 let _activeTab = 'shelters';
 let _muniLogos = { main: null, dm: null, mode: 'main' };
 const PNG_TEMPLATES = [
-  { key: 'official', label: 'Official notice' },
-  { key: 'compact', label: 'Compact bulletin' },
-  { key: 'social', label: 'Social square' }
+  { key: 'official', label: 'Official notice', desc: 'Formal municipal document', preview: 'linear-gradient(135deg,#f8fafc,#e2e8f0)' },
+  { key: 'compact', label: 'Compact bulletin', desc: 'Dense bulletin style', preview: 'linear-gradient(135deg,#f5f3ff,#ddd6fe)' },
+  { key: 'social', label: 'Social square', desc: 'Social media poster', preview: 'linear-gradient(135deg,#0f172a,#1d4ed8)' },
+  { key: 'alert-card', label: 'Alert card', desc: 'High-contrast emergency card', preview: 'linear-gradient(135deg,#7f1d1d,#dc2626)' },
+  { key: 'clean-light', label: 'Clean light', desc: 'Minimal clean handout', preview: 'linear-gradient(135deg,#ffffff,#d1fae5)' }
 ];
 
 export async function initCommunity(user) {
@@ -130,8 +132,8 @@ async function loadLogoImages() {
 
 // Shared document-style canvas layout
 // Returns { ctx, W, H, SPLIT, bodyTop, bodyH, FTR_H, RX, accentColor }
-function buildNoticeCanvas(logoImgs, accentColor, muniName, date, W, H) {
-  const SPLIT  = Math.round(W * 0.63);
+function buildNoticeCanvas(logoImgs, accentColor, muniName, date, W, H, layout = {}) {
+  const SPLIT  = Math.round(W * (layout.splitRatio || 0.63));
   const HDR_H  = 76;
   const FTR_H  = 32;
   const canvas = document.createElement('canvas');
@@ -139,13 +141,13 @@ function buildNoticeCanvas(logoImgs, accentColor, muniName, date, W, H) {
   const ctx = canvas.getContext('2d');
 
   // Background (light grey)
-  ctx.fillStyle = '#f0eeea'; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = layout.baseBg || '#f0eeea'; ctx.fillRect(0, 0, W, H);
 
   // Top accent bar
   ctx.fillStyle = accentColor; ctx.fillRect(0, 0, W, 6);
 
   // Header row (white)
-  ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 6, W, HDR_H);
+  ctx.fillStyle = layout.headerBg || '#ffffff'; ctx.fillRect(0, 6, W, HDR_H);
   ctx.strokeStyle = '#d0ccc4'; ctx.lineWidth = 1;
   ctx.beginPath(); ctx.moveTo(0, 6 + HDR_H); ctx.lineTo(W, 6 + HDR_H); ctx.stroke();
 
@@ -178,7 +180,7 @@ function buildNoticeCanvas(logoImgs, accentColor, muniName, date, W, H) {
   const RX      = SPLIT + 16;
 
   // Left column background
-  ctx.fillStyle = '#fafaf8'; ctx.fillRect(0, bodyTop, SPLIT, bodyH);
+  ctx.fillStyle = layout.leftBg || '#fafaf8'; ctx.fillRect(0, bodyTop, SPLIT, bodyH);
 
   // Column divider
   ctx.strokeStyle = '#d0ccc4'; ctx.lineWidth = 1;
@@ -186,7 +188,7 @@ function buildNoticeCanvas(logoImgs, accentColor, muniName, date, W, H) {
 
   // Footer bar
   ctx.fillStyle = accentColor; ctx.fillRect(0, H - FTR_H, W, FTR_H);
-  ctx.fillStyle = '#ddeeff'; ctx.font = '10px Arial, sans-serif';
+  ctx.fillStyle = layout.footerText || '#ddeeff'; ctx.font = '10px Arial, sans-serif';
   ctx.fillText(muniName + ' Disaster Management Centre', 16, H - FTR_H + 20);
   ctx.textAlign = 'right';
   ctx.fillText('Generated: ' + date, W - 16, H - FTR_H + 20);
@@ -255,8 +257,13 @@ function openPngTemplatePicker({ heading, templates, sectionDefs = [], onDownloa
         ${templates.map((tpl, idx) => `
           <label style="display:block;border:1px solid var(--border);border-radius:8px;padding:9px;background:var(--bg3);cursor:pointer">
             <input type="radio" name="tpl" value="${tpl.key}" ${idx === 0 ? 'checked' : ''} />
+            <div style="height:64px;border-radius:6px;margin:6px 0;background:${tpl.preview || 'linear-gradient(135deg,#1e293b,#64748b)'};position:relative;overflow:hidden;border:1px solid rgba(255,255,255,.22)">
+              <div style="position:absolute;left:8px;top:8px;right:8px;height:8px;border-radius:4px;background:rgba(255,255,255,.6)"></div>
+              <div style="position:absolute;left:8px;top:24px;width:56%;height:28px;border-radius:5px;background:rgba(255,255,255,.25)"></div>
+              <div style="position:absolute;right:8px;top:24px;width:28%;height:28px;border-radius:5px;background:rgba(255,255,255,.45)"></div>
+            </div>
             <div style="font-weight:700;font-size:12px;margin-top:4px">${tpl.label}</div>
-            <div style="font-size:11px;color:var(--text3)">${tpl.key}</div>
+            <div style="font-size:11px;color:var(--text3)">${tpl.desc || tpl.key}</div>
           </label>
         `).join('')}
       </div>
@@ -449,9 +456,11 @@ async function downloadShelterPNG(s, template = 'official', opts = {}) {
   const statusBg    = { open:'#1a6b3a', 'at-capacity':'#c0392b', partial:'#d4860a', closed:'#555555' }[s.status] || '#555';
   const statusLabel = (s.status || 'UNKNOWN').replace(/-/g, ' ').toUpperCase();
   const cfgBase = {
-    official: { W: 900, H: 500, title: 'Shelter Notification', titleSize: 26, bodySize: 13, showOccupancy: true },
-    compact: { W: 900, H: 420, title: 'Shelter Update Bulletin', titleSize: 23, bodySize: 12, showOccupancy: false },
-    social: { W: 1080, H: 1080, title: 'Shelter Status Update', titleSize: 34, bodySize: 15, showOccupancy: true }
+    official: { W: 900, H: 500, title: 'Shelter Notification', titleSize: 26, bodySize: 13, showOccupancy: true, layout: { splitRatio: 0.63, baseBg: '#f0eeea', leftBg: '#fafaf8' } },
+    compact: { W: 900, H: 420, title: 'Shelter Update Bulletin', titleSize: 23, bodySize: 12, showOccupancy: false, layout: { splitRatio: 0.58, baseBg: '#f6f5ff', leftBg: '#fbfaff' } },
+    social: { W: 1080, H: 1080, title: 'Shelter Status Update', titleSize: 34, bodySize: 15, showOccupancy: true, layout: { splitRatio: 0.56, baseBg: '#e6eefc', leftBg: '#f8fbff' } },
+    'alert-card': { W: 1000, H: 560, title: 'Shelter Alert Notice', titleSize: 29, bodySize: 14, showOccupancy: true, layout: { splitRatio: 0.60, baseBg: '#fff1f2', leftBg: '#fff7f7', headerBg: '#fff5f5', footerText: '#fee2e2' } },
+    'clean-light': { W: 980, H: 540, title: 'Shelter Advisory', titleSize: 27, bodySize: 14, showOccupancy: true, layout: { splitRatio: 0.65, baseBg: '#ecfdf5', leftBg: '#f7fffb', headerBg: '#ffffff', footerText: '#d1fae5' } }
   }[template] || { W: 900, H: 500, title: 'Shelter Notification', titleSize: 26, bodySize: 13, showOccupancy: true };
   const cfg = {
     ...cfgBase,
@@ -462,7 +471,7 @@ async function downloadShelterPNG(s, template = 'official', opts = {}) {
 
   const logoImgs = await loadLogoImages();
   const { W, H } = cfg;
-  const { ctx, canvas, SPLIT, bodyTop, FTR_H, RX } = buildNoticeCanvas(logoImgs, accentColor, muniName, date, W, H);
+  const { ctx, canvas, SPLIT, bodyTop, FTR_H, RX } = buildNoticeCanvas(logoImgs, accentColor, muniName, date, W, H, cfg.layout);
 
   // ── LEFT: Title
   ctx.fillStyle = accentColor; ctx.font = `bold ${cfg.titleSize}px Arial, sans-serif`;
@@ -753,9 +762,11 @@ async function downloadReliefPNG(op, template = 'official', opts = {}) {
   const statusBg    = { active:'#5a3a1a', upcoming:'#1a3a6b', ended:'#555555' }[op.status] || '#5a3a1a';
   const statusLabel = (op.status || 'UNKNOWN').toUpperCase();
   const cfgBase = {
-    official: { W: 900, H: 500, title: 'Relief Operation Notification', titleSize: 26, bodySize: 13 },
-    compact: { W: 900, H: 420, title: 'Relief Operation Bulletin', titleSize: 23, bodySize: 12 },
-    social: { W: 1080, H: 1080, title: 'Relief Operation Update', titleSize: 34, bodySize: 15 }
+    official: { W: 900, H: 500, title: 'Relief Operation Notification', titleSize: 26, bodySize: 13, layout: { splitRatio: 0.63, baseBg: '#f0eeea', leftBg: '#fafaf8' } },
+    compact: { W: 900, H: 420, title: 'Relief Operation Bulletin', titleSize: 23, bodySize: 12, layout: { splitRatio: 0.58, baseBg: '#f7f5ff', leftBg: '#fcfbff' } },
+    social: { W: 1080, H: 1080, title: 'Relief Operation Update', titleSize: 34, bodySize: 15, layout: { splitRatio: 0.56, baseBg: '#e6eefc', leftBg: '#f7fbff' } },
+    'alert-card': { W: 1000, H: 560, title: 'Relief Operation Alert', titleSize: 29, bodySize: 14, layout: { splitRatio: 0.60, baseBg: '#fff7ed', leftBg: '#fffaf5', headerBg: '#fff3e6', footerText: '#fed7aa' } },
+    'clean-light': { W: 980, H: 540, title: 'Relief Operation Advisory', titleSize: 27, bodySize: 14, layout: { splitRatio: 0.65, baseBg: '#ecfeff', leftBg: '#f4fdff', headerBg: '#ffffff', footerText: '#a5f3fc' } }
   }[template] || { W: 900, H: 500, title: 'Relief Operation Notification', titleSize: 26, bodySize: 13 };
   const cfg = {
     ...cfgBase,
@@ -766,7 +777,7 @@ async function downloadReliefPNG(op, template = 'official', opts = {}) {
 
   const logoImgs = await loadLogoImages();
   const { W, H } = cfg;
-  const { ctx, canvas, SPLIT, bodyTop, FTR_H, RX } = buildNoticeCanvas(logoImgs, accentColor, muniName, date, W, H);
+  const { ctx, canvas, SPLIT, bodyTop, FTR_H, RX } = buildNoticeCanvas(logoImgs, accentColor, muniName, date, W, H, cfg.layout);
 
   // ── LEFT: Title
   ctx.fillStyle = accentColor; ctx.font = `bold ${cfg.titleSize}px Arial, sans-serif`;
