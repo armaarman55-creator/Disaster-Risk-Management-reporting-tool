@@ -241,6 +241,64 @@ function applyTitleTone(title, tone) {
   return String(title || '').replace(/\b(Notification|Notice|Bulletin|Update)\b/i, titleToneWord(tone));
 }
 
+function templatePreviewDataUri(templateKey) {
+  const c = document.createElement('canvas');
+  c.width = 180; c.height = 96;
+  const x = c.getContext('2d');
+  const drawBlocks = (left = '#ffffff66', right = '#ffffff99') => {
+    x.fillStyle = left; x.fillRect(10, 30, 96, 48);
+    x.fillStyle = right; x.fillRect(112, 30, 58, 48);
+  };
+  if (templateKey === 'alert-card') {
+    x.fillStyle = '#7f1d1d'; x.fillRect(0, 0, 180, 96);
+    x.fillStyle = '#ef4444'; x.fillRect(0, 0, 180, 12);
+    drawBlocks('#fff1', '#fff3');
+  } else if (templateKey === 'clean-light') {
+    x.fillStyle = '#ecfdf5'; x.fillRect(0, 0, 180, 96);
+    x.fillStyle = '#ffffff'; x.fillRect(8, 8, 164, 80);
+    x.strokeStyle = '#a7f3d0'; x.strokeRect(8, 8, 164, 80);
+    drawBlocks('#10b98122', '#10b98133');
+  } else if (templateKey === 'social') {
+    const g = x.createLinearGradient(0, 0, 180, 96);
+    g.addColorStop(0, '#0f172a'); g.addColorStop(1, '#1d4ed8');
+    x.fillStyle = g; x.fillRect(0, 0, 180, 96);
+    x.fillStyle = '#fff'; x.fillRect(12, 16, 156, 8);
+    drawBlocks('#ffffff1a', '#ffffff44');
+  } else if (templateKey === 'compact') {
+    x.fillStyle = '#f5f3ff'; x.fillRect(0, 0, 180, 96);
+    x.fillStyle = '#8b5cf6'; x.fillRect(0, 0, 180, 8);
+    drawBlocks('#7c3aed22', '#7c3aed33');
+  } else {
+    x.fillStyle = '#f8fafc'; x.fillRect(0, 0, 180, 96);
+    x.fillStyle = '#1d4ed8'; x.fillRect(0, 0, 180, 8);
+    drawBlocks('#1d4ed822', '#1d4ed833');
+  }
+  x.fillStyle = '#ffffffcc'; x.fillRect(10, 12, 120, 6);
+  return c.toDataURL('image/png');
+}
+
+function applyTemplateDecor(ctx, template, accentColor, SPLIT, bodyTop, H, FTR_H) {
+  if (template === 'alert-card') {
+    ctx.fillStyle = '#7f1d1d';
+    ctx.fillRect(0, bodyTop, SPLIT, 28);
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 12px Arial, sans-serif';
+    ctx.fillText('EMERGENCY ALERT', 20, bodyTop + 18);
+  } else if (template === 'clean-light') {
+    ctx.strokeStyle = '#a7f3d0';
+    ctx.lineWidth = 1;
+    roundRect(ctx, 14, bodyTop + 10, SPLIT - 28, H - bodyTop - FTR_H - 20, 10);
+    ctx.stroke();
+  } else if (template === 'social') {
+    const grad = ctx.createLinearGradient(0, bodyTop, SPLIT, H - FTR_H);
+    grad.addColorStop(0, 'rgba(15,23,42,0.08)');
+    grad.addColorStop(1, 'rgba(37,99,235,0.18)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, bodyTop, SPLIT, H - bodyTop - FTR_H);
+  }
+  ctx.fillStyle = accentColor;
+}
+
 function openPngTemplatePicker({ heading, templates, sectionDefs = [], onDownload }) {
   document.getElementById('png-template-picker')?.remove();
   const modal = document.createElement('div');
@@ -257,11 +315,7 @@ function openPngTemplatePicker({ heading, templates, sectionDefs = [], onDownloa
         ${templates.map((tpl, idx) => `
           <label style="display:block;border:1px solid var(--border);border-radius:8px;padding:9px;background:var(--bg3);cursor:pointer">
             <input type="radio" name="tpl" value="${tpl.key}" ${idx === 0 ? 'checked' : ''} />
-            <div style="height:64px;border-radius:6px;margin:6px 0;background:${tpl.preview || 'linear-gradient(135deg,#1e293b,#64748b)'};position:relative;overflow:hidden;border:1px solid rgba(255,255,255,.22)">
-              <div style="position:absolute;left:8px;top:8px;right:8px;height:8px;border-radius:4px;background:rgba(255,255,255,.6)"></div>
-              <div style="position:absolute;left:8px;top:24px;width:56%;height:28px;border-radius:5px;background:rgba(255,255,255,.25)"></div>
-              <div style="position:absolute;right:8px;top:24px;width:28%;height:28px;border-radius:5px;background:rgba(255,255,255,.45)"></div>
-            </div>
+            <img alt="${tpl.label} preview" src="${templatePreviewDataUri(tpl.key)}" style="display:block;width:100%;height:64px;object-fit:cover;border-radius:6px;margin:6px 0;border:1px solid rgba(255,255,255,.22)" />
             <div style="font-weight:700;font-size:12px;margin-top:4px">${tpl.label}</div>
             <div style="font-size:11px;color:var(--text3)">${tpl.desc || tpl.key}</div>
           </label>
@@ -472,6 +526,7 @@ async function downloadShelterPNG(s, template = 'official', opts = {}) {
   const logoImgs = await loadLogoImages();
   const { W, H } = cfg;
   const { ctx, canvas, SPLIT, bodyTop, FTR_H, RX } = buildNoticeCanvas(logoImgs, accentColor, muniName, date, W, H, cfg.layout);
+  applyTemplateDecor(ctx, template, accentColor, SPLIT, bodyTop, H, FTR_H);
 
   // ── LEFT: Title
   ctx.fillStyle = accentColor; ctx.font = `bold ${cfg.titleSize}px Arial, sans-serif`;
@@ -778,6 +833,7 @@ async function downloadReliefPNG(op, template = 'official', opts = {}) {
   const logoImgs = await loadLogoImages();
   const { W, H } = cfg;
   const { ctx, canvas, SPLIT, bodyTop, FTR_H, RX } = buildNoticeCanvas(logoImgs, accentColor, muniName, date, W, H, cfg.layout);
+  applyTemplateDecor(ctx, template, accentColor, SPLIT, bodyTop, H, FTR_H);
 
   // ── LEFT: Title
   ctx.fillStyle = accentColor; ctx.font = `bold ${cfg.titleSize}px Arial, sans-serif`;
