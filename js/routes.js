@@ -494,9 +494,10 @@ async function downloadClosurePNG(c, template = 'official', opts = {}) {
   applyRouteTemplateDecor(ctx, template, SPLIT, bodyTop, H, FTR_H);
 
   // ── LEFT: Title
+  const titleY = bodyTop + (template === 'social' ? 56 : template === 'alert-card' ? 50 : 40);
   ctx.fillStyle = accentColor;
   ctx.font = `bold ${cfg.titleSize}px Arial, sans-serif`;
-  ctx.fillText(cfg.title, 20, bodyTop + (template === 'social' ? 48 : 38));
+  ctx.fillText(cfg.title, 20, titleY);
 
   // ── LEFT: Body paragraph
   const bodyLines = wrapRichText(ctx, [
@@ -513,7 +514,7 @@ async function downloadClosurePNG(c, template = 'official', opts = {}) {
     ...(c.reason ? [{ text: c.reason, bold: true }, { text: '.', bold: false }] : [])
   ];
 
-  let ty = bodyTop + 62;
+  let ty = titleY + Math.max(26, cfg.bodySize + 10);
   bodyLines.forEach(line => { drawRichLine(ctx, line, 20, ty, cfg.bodySize, '#1a1a1a'); ty += (cfg.bodySize + 7); });
   ty += 4;
   const para2Lines = wrapRichText(ctx, para2, SPLIT - 40, cfg.bodySize);
@@ -557,14 +558,14 @@ async function downloadClosurePNG(c, template = 'official', opts = {}) {
 
   let ry = bodyTop + 18;
   routeFields.forEach(f => {
-    ctx.fillStyle = '#888888';
-    ctx.font = 'bold 9px Arial, sans-serif';
+    ctx.fillStyle = template === 'alert-card' ? '#7f1d1d' : '#888888';
+    ctx.font = template === 'clean-light' ? 'bold 10px Arial, sans-serif' : 'bold 9px Arial, sans-serif';
     ctx.fillText(f.label.toUpperCase(), RX, ry);
     ry += 14;
     if (f.badge) {
       ctx.fillStyle = f.badgeBg;
       const bw = ctx.measureText(f.badgeText).width + 16;
-      roundRect(ctx, RX, ry - 11, bw, 18, 3);
+      roundRect(ctx, RX, ry - 11, bw, 18, template === 'clean-light' ? 8 : 3);
       ctx.fill();
       ctx.fillStyle = '#ffffff';
       ctx.font = 'bold 10px Arial, sans-serif';
@@ -572,7 +573,7 @@ async function downloadClosurePNG(c, template = 'official', opts = {}) {
       ry += 22;
     } else {
       ctx.fillStyle = '#1a1a1a';
-      ctx.font = '12px Arial, sans-serif';
+      ctx.font = template === 'clean-light' ? '13px Arial, sans-serif' : '12px Arial, sans-serif';
       const valLines = wrapText(ctx, String(f.value), W - SPLIT - 32);
       valLines.slice(0, 2).forEach(line => { ctx.fillText(line, RX, ry); ry += 16; });
       ry += 4;

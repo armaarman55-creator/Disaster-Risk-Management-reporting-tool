@@ -198,19 +198,22 @@ function buildNoticeCanvas(logoImgs, accentColor, muniName, date, W, H, layout =
 }
 
 // Draw right-column detail fields
-function drawRightFields(ctx, RX, startY, W, fieldDefs) {
+function drawRightFields(ctx, RX, startY, W, fieldDefs, variant = 'default') {
   let ry = startY;
   fieldDefs.forEach(f => {
-    ctx.fillStyle = '#888888'; ctx.font = 'bold 9px Arial, sans-serif';
+    const labelColor = variant === 'alert-card' ? '#7f1d1d' : '#888888';
+    const valueFont = variant === 'clean-light' ? '13px Arial, sans-serif' : '12px Arial, sans-serif';
+    const labelFont = variant === 'clean-light' ? 'bold 10px Arial, sans-serif' : 'bold 9px Arial, sans-serif';
+    ctx.fillStyle = labelColor; ctx.font = labelFont;
     ctx.fillText(f.label.toUpperCase(), RX, ry); ry += 14;
     if (f.badge) {
       ctx.fillStyle = f.badgeBg;
       const bw = ctx.measureText(f.badgeText).width + 16;
-      roundRect(ctx, RX, ry - 11, bw, 18, 3); ctx.fill();
+      roundRect(ctx, RX, ry - 11, bw, 18, variant === 'clean-light' ? 8 : 3); ctx.fill();
       ctx.fillStyle = '#ffffff'; ctx.font = 'bold 10px Arial, sans-serif';
       ctx.fillText(f.badgeText, RX + 8, ry + 3); ry += 22;
     } else {
-      ctx.fillStyle = '#1a1a1a'; ctx.font = '12px Arial, sans-serif';
+      ctx.fillStyle = '#1a1a1a'; ctx.font = valueFont;
       const lines = wrapText(ctx, String(f.value), W - RX - 16);
       lines.slice(0, 2).forEach(line => { ctx.fillText(line, RX, ry); ry += 16; });
       ry += 4;
@@ -529,8 +532,9 @@ async function downloadShelterPNG(s, template = 'official', opts = {}) {
   applyTemplateDecor(ctx, template, accentColor, SPLIT, bodyTop, H, FTR_H);
 
   // ── LEFT: Title
+  const titleY = bodyTop + (template === 'social' ? 56 : template === 'alert-card' ? 50 : 40);
   ctx.fillStyle = accentColor; ctx.font = `bold ${cfg.titleSize}px Arial, sans-serif`;
-  ctx.fillText(cfg.title, 20, bodyTop + (template === 'social' ? 48 : 38));
+  ctx.fillText(cfg.title, 20, titleY);
 
   // ── LEFT: Body paragraph
   const para = [
@@ -552,7 +556,7 @@ async function downloadShelterPNG(s, template = 'official', opts = {}) {
     { text: '.', bold: false }
   ];
 
-  let ty = bodyTop + 60;
+  let ty = titleY + Math.max(26, cfg.bodySize + 10);
   wrapRichText(ctx, para, SPLIT - 40, cfg.bodySize).forEach(line => { drawRichLine(ctx, line, 20, ty, cfg.bodySize, '#1a1a1a'); ty += (cfg.bodySize + 7); });
   ty += 6;
   wrapRichText(ctx, para2, SPLIT - 40, cfg.bodySize).forEach(line => { drawRichLine(ctx, line, 20, ty, cfg.bodySize, '#1a1a1a'); ty += (cfg.bodySize + 7); });
@@ -577,7 +581,7 @@ async function downloadShelterPNG(s, template = 'official', opts = {}) {
   if (sections.ward) shelterFields.push({ label: 'Ward', value: String(s.ward_number || '—') });
   if (sections.contact) shelterFields.push({ label: 'Contact', value: `${s.contact_name || '—'} · ${s.contact_number || '—'}` });
   if (sections.accessibility) shelterFields.push({ label: 'Wheelchair access', value: s.wheelchair_accessible ? 'Yes' : 'No' });
-  drawRightFields(ctx, RX, bodyTop + 16, W, template === 'compact' ? shelterFields.slice(0, 4) : shelterFields);
+  drawRightFields(ctx, RX, bodyTop + 16, W, template === 'compact' ? shelterFields.slice(0, 4) : shelterFields, template);
   drawIssuedBy(ctx, RX, W, H, FTR_H, muniName);
 
   canvas.toBlob(blob => {
@@ -836,8 +840,9 @@ async function downloadReliefPNG(op, template = 'official', opts = {}) {
   applyTemplateDecor(ctx, template, accentColor, SPLIT, bodyTop, H, FTR_H);
 
   // ── LEFT: Title
+  const titleY = bodyTop + (template === 'social' ? 56 : template === 'alert-card' ? 50 : 40);
   ctx.fillStyle = accentColor; ctx.font = `bold ${cfg.titleSize}px Arial, sans-serif`;
-  ctx.fillText(cfg.title, 20, bodyTop + (template === 'social' ? 48 : 38));
+  ctx.fillText(cfg.title, 20, titleY);
 
   // ── LEFT: Body paragraph
   const para = [
@@ -857,7 +862,7 @@ async function downloadReliefPNG(op, template = 'official', opts = {}) {
     ...(op.schedule ? [{ text: ' Distribution schedule: ', bold: false }, { text: op.schedule, bold: true }, { text: '.', bold: false }] : [])
   ];
 
-  let ty = bodyTop + 60;
+  let ty = titleY + Math.max(26, cfg.bodySize + 10);
   wrapRichText(ctx, para, SPLIT - 40, cfg.bodySize).forEach(line => { drawRichLine(ctx, line, 20, ty, cfg.bodySize, '#1a1a1a'); ty += (cfg.bodySize + 7); });
   ty += 6;
   wrapRichText(ctx, para2, SPLIT - 40, cfg.bodySize).forEach(line => { drawRichLine(ctx, line, 20, ty, cfg.bodySize, '#1a1a1a'); ty += (cfg.bodySize + 7); });
@@ -870,7 +875,7 @@ async function downloadReliefPNG(op, template = 'official', opts = {}) {
   if (sections.schedule) reliefFields.push({ label: 'Schedule', value: op.schedule || '—' });
   if (sections.contact) reliefFields.push({ label: 'Public contact', value: op.public_contact || '—' });
   if (sections.ends) reliefFields.push({ label: 'Ends', value: op.end_date ? new Date(op.end_date).toLocaleDateString('en-ZA') : '—' });
-  drawRightFields(ctx, RX, bodyTop + 16, W, template === 'compact' ? reliefFields.slice(0, 5) : reliefFields);
+  drawRightFields(ctx, RX, bodyTop + 16, W, template === 'compact' ? reliefFields.slice(0, 5) : reliefFields, template);
   drawIssuedBy(ctx, RX, W, H, FTR_H, muniName);
 
   canvas.toBlob(blob => {
