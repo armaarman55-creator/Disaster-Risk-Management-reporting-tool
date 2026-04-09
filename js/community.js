@@ -5,9 +5,11 @@ let _muniId    = null;
 let _activeTab = 'shelters';
 let _muniLogos = { main: null, dm: null, mode: 'main' };
 const PNG_TEMPLATES = [
-  { key: 'official', label: 'Official notice' },
-  { key: 'compact', label: 'Compact bulletin' },
-  { key: 'social', label: 'Social square' }
+  { key: 'official', label: 'Official notice', desc: 'Formal municipal document', preview: 'linear-gradient(135deg,#f8fafc,#e2e8f0)' },
+  { key: 'compact', label: 'Compact bulletin', desc: 'Dense bulletin style', preview: 'linear-gradient(135deg,#f5f3ff,#ddd6fe)' },
+  { key: 'social', label: 'Social square', desc: 'Social media poster', preview: 'linear-gradient(135deg,#0f172a,#1d4ed8)' },
+  { key: 'alert-card', label: 'Alert card', desc: 'High-contrast emergency card', preview: 'linear-gradient(135deg,#7f1d1d,#dc2626)' },
+  { key: 'clean-light', label: 'Clean light', desc: 'Minimal clean handout', preview: 'linear-gradient(135deg,#ffffff,#d1fae5)' }
 ];
 
 export async function initCommunity(user) {
@@ -130,8 +132,8 @@ async function loadLogoImages() {
 
 // Shared document-style canvas layout
 // Returns { ctx, W, H, SPLIT, bodyTop, bodyH, FTR_H, RX, accentColor }
-function buildNoticeCanvas(logoImgs, accentColor, muniName, date, W, H) {
-  const SPLIT  = Math.round(W * 0.63);
+function buildNoticeCanvas(logoImgs, accentColor, muniName, date, W, H, layout = {}) {
+  const SPLIT  = Math.round(W * (layout.splitRatio || 0.63));
   const HDR_H  = 76;
   const FTR_H  = 32;
   const canvas = document.createElement('canvas');
@@ -139,13 +141,13 @@ function buildNoticeCanvas(logoImgs, accentColor, muniName, date, W, H) {
   const ctx = canvas.getContext('2d');
 
   // Background (light grey)
-  ctx.fillStyle = '#f0eeea'; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = layout.baseBg || '#f0eeea'; ctx.fillRect(0, 0, W, H);
 
   // Top accent bar
   ctx.fillStyle = accentColor; ctx.fillRect(0, 0, W, 6);
 
   // Header row (white)
-  ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 6, W, HDR_H);
+  ctx.fillStyle = layout.headerBg || '#ffffff'; ctx.fillRect(0, 6, W, HDR_H);
   ctx.strokeStyle = '#d0ccc4'; ctx.lineWidth = 1;
   ctx.beginPath(); ctx.moveTo(0, 6 + HDR_H); ctx.lineTo(W, 6 + HDR_H); ctx.stroke();
 
@@ -178,7 +180,7 @@ function buildNoticeCanvas(logoImgs, accentColor, muniName, date, W, H) {
   const RX      = SPLIT + 16;
 
   // Left column background
-  ctx.fillStyle = '#fafaf8'; ctx.fillRect(0, bodyTop, SPLIT, bodyH);
+  ctx.fillStyle = layout.leftBg || '#fafaf8'; ctx.fillRect(0, bodyTop, SPLIT, bodyH);
 
   // Column divider
   ctx.strokeStyle = '#d0ccc4'; ctx.lineWidth = 1;
@@ -186,7 +188,7 @@ function buildNoticeCanvas(logoImgs, accentColor, muniName, date, W, H) {
 
   // Footer bar
   ctx.fillStyle = accentColor; ctx.fillRect(0, H - FTR_H, W, FTR_H);
-  ctx.fillStyle = '#ddeeff'; ctx.font = '10px Arial, sans-serif';
+  ctx.fillStyle = layout.footerText || '#ddeeff'; ctx.font = '10px Arial, sans-serif';
   ctx.fillText(muniName + ' Disaster Management Centre', 16, H - FTR_H + 20);
   ctx.textAlign = 'right';
   ctx.fillText('Generated: ' + date, W - 16, H - FTR_H + 20);
@@ -229,6 +231,79 @@ function drawIssuedBy(ctx, RX, W, H, FTR_H, muniName) {
   ctx.fillText(muniName, RX, issuedY + 28);
   ctx.fillStyle = '#666666'; ctx.font = '10px Arial, sans-serif';
   ctx.fillText('Disaster Management', RX, issuedY + 42);
+}
+
+function titleToneWord(tone) {
+  return tone === 'advisory' ? 'Advisory' : tone === 'update' ? 'Update' : 'Notification';
+}
+
+function applyTitleTone(title, tone) {
+  return String(title || '').replace(/\b(Notification|Notice|Bulletin|Update)\b/i, titleToneWord(tone));
+}
+
+function openPngTemplatePicker({ heading, templates, sectionDefs = [], onDownload }) {
+  document.getElementById('png-template-picker')?.remove();
+  const modal = document.createElement('div');
+  modal.id = 'png-template-picker';
+  modal.style.cssText = 'position:fixed;inset:0;z-index:10050;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:16px';
+  modal.innerHTML = `
+    <div style="width:min(760px,96vw);max-height:88vh;overflow:auto;background:var(--bg2);border:1px solid var(--border2);border-radius:12px;box-shadow:0 10px 36px rgba(0,0,0,.45);padding:16px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <h3 style="margin:0;font-size:16px">${heading}</h3>
+        <button type="button" data-close style="border:1px solid var(--border);background:var(--bg3);color:var(--text);border-radius:6px;padding:4px 8px;cursor:pointer">✕</button>
+      </div>
+      <div style="font-size:12px;color:var(--text3);margin-bottom:10px">Select template and content before downloading.</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px;margin-bottom:12px">
+        ${templates.map((tpl, idx) => `
+          <label style="display:block;border:1px solid var(--border);border-radius:8px;padding:9px;background:var(--bg3);cursor:pointer">
+            <input type="radio" name="tpl" value="${tpl.key}" ${idx === 0 ? 'checked' : ''} />
+            <div style="height:64px;border-radius:6px;margin:6px 0;background:${tpl.preview || 'linear-gradient(135deg,#1e293b,#64748b)'};position:relative;overflow:hidden;border:1px solid rgba(255,255,255,.22)">
+              <div style="position:absolute;left:8px;top:8px;right:8px;height:8px;border-radius:4px;background:rgba(255,255,255,.6)"></div>
+              <div style="position:absolute;left:8px;top:24px;width:56%;height:28px;border-radius:5px;background:rgba(255,255,255,.25)"></div>
+              <div style="position:absolute;right:8px;top:24px;width:28%;height:28px;border-radius:5px;background:rgba(255,255,255,.45)"></div>
+            </div>
+            <div style="font-weight:700;font-size:12px;margin-top:4px">${tpl.label}</div>
+            <div style="font-size:11px;color:var(--text3)">${tpl.desc || tpl.key}</div>
+          </label>
+        `).join('')}
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <label style="font-size:12px">Notice wording
+          <select id="png-tone" style="width:100%;margin-top:4px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:7px;color:var(--text)">
+            <option value="notification">Notification</option>
+            <option value="advisory">Advisory</option>
+            <option value="update">Update</option>
+          </select>
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;font-size:12px;margin-top:19px">
+          <input id="png-readable" type="checkbox" checked />
+          Readable text (recommended)
+        </label>
+      </div>
+      <div style="margin-top:12px;border-top:1px solid var(--border);padding-top:10px">
+        <div style="font-size:12px;font-weight:700;margin-bottom:6px">Include sections</div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:6px">
+          ${sectionDefs.map(sec => `<label style="font-size:12px;display:flex;align-items:center;gap:6px"><input type="checkbox" data-sec="${sec.key}" ${sec.default ? 'checked' : ''}/> ${sec.label}</label>`).join('')}
+        </div>
+      </div>
+      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px">
+        <button type="button" data-close style="border:1px solid var(--border);background:var(--bg3);color:var(--text);border-radius:6px;padding:7px 10px;cursor:pointer">Cancel</button>
+        <button type="button" id="png-download-now" style="border:1px solid var(--accent);background:var(--accent);color:#fff;border-radius:6px;padding:7px 12px;cursor:pointer">Download PNG</button>
+      </div>
+    </div>
+  `;
+  modal.querySelectorAll('[data-close]').forEach(btn => btn.addEventListener('click', () => modal.remove()));
+  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+  modal.querySelector('#png-download-now')?.addEventListener('click', async () => {
+    const template = modal.querySelector('input[name="tpl"]:checked')?.value || templates[0]?.key || 'official';
+    const tone = modal.querySelector('#png-tone')?.value || 'notification';
+    const readable = !!modal.querySelector('#png-readable')?.checked;
+    const sections = {};
+    sectionDefs.forEach(sec => { sections[sec.key] = !!modal.querySelector(`[data-sec="${sec.key}"]`)?.checked; });
+    modal.remove();
+    await onDownload({ template, tone, readable, sections });
+  });
+  document.body.appendChild(modal);
 }
 
 // ── SHELTERS ─────────────────────────────────────────────
@@ -367,22 +442,36 @@ function renderShelterCard(s) {
     </div>`;
 }
 
-async function downloadShelterPNG(s, template = 'official') {
+async function downloadShelterPNG(s, template = 'official', opts = {}) {
+  const tone = opts.tone || 'notification';
+  const readable = opts.readable !== false;
+  const sections = {
+    occupancy: true, facility: true, address: true, ward: true, contact: true, accessibility: true,
+    ...(opts.sections || {})
+  };
   const muniName    = window._drmsaUser?.municipalities?.name || 'Municipality';
   const date        = new Date().toLocaleString('en-ZA');
   const pct         = s.capacity ? Math.round((s.current_occupancy||0) / s.capacity * 100) : 0;
   const accentColor = { open:'#1a6b3a', 'at-capacity':'#8b1a1a', partial:'#7a5200', closed:'#444444' }[s.status] || '#1a3a6b';
   const statusBg    = { open:'#1a6b3a', 'at-capacity':'#c0392b', partial:'#d4860a', closed:'#555555' }[s.status] || '#555';
   const statusLabel = (s.status || 'UNKNOWN').replace(/-/g, ' ').toUpperCase();
-  const cfg = {
-    official: { W: 900, H: 500, title: 'Shelter Notification', titleSize: 26, bodySize: 13, showOccupancy: true },
-    compact: { W: 900, H: 420, title: 'Shelter Update Bulletin', titleSize: 23, bodySize: 12, showOccupancy: false },
-    social: { W: 1080, H: 1080, title: 'Shelter Status Update', titleSize: 34, bodySize: 15, showOccupancy: true }
+  const cfgBase = {
+    official: { W: 900, H: 500, title: 'Shelter Notification', titleSize: 26, bodySize: 13, showOccupancy: true, layout: { splitRatio: 0.63, baseBg: '#f0eeea', leftBg: '#fafaf8' } },
+    compact: { W: 900, H: 420, title: 'Shelter Update Bulletin', titleSize: 23, bodySize: 12, showOccupancy: false, layout: { splitRatio: 0.58, baseBg: '#f6f5ff', leftBg: '#fbfaff' } },
+    social: { W: 1080, H: 1080, title: 'Shelter Status Update', titleSize: 34, bodySize: 15, showOccupancy: true, layout: { splitRatio: 0.56, baseBg: '#e6eefc', leftBg: '#f8fbff' } },
+    'alert-card': { W: 1000, H: 560, title: 'Shelter Alert Notice', titleSize: 29, bodySize: 14, showOccupancy: true, layout: { splitRatio: 0.60, baseBg: '#fff1f2', leftBg: '#fff7f7', headerBg: '#fff5f5', footerText: '#fee2e2' } },
+    'clean-light': { W: 980, H: 540, title: 'Shelter Advisory', titleSize: 27, bodySize: 14, showOccupancy: true, layout: { splitRatio: 0.65, baseBg: '#ecfdf5', leftBg: '#f7fffb', headerBg: '#ffffff', footerText: '#d1fae5' } }
   }[template] || { W: 900, H: 500, title: 'Shelter Notification', titleSize: 26, bodySize: 13, showOccupancy: true };
+  const cfg = {
+    ...cfgBase,
+    title: applyTitleTone(cfgBase.title, tone),
+    titleSize: cfgBase.titleSize + (readable ? 1 : 0),
+    bodySize: cfgBase.bodySize + (readable ? 2 : 0)
+  };
 
   const logoImgs = await loadLogoImages();
   const { W, H } = cfg;
-  const { ctx, canvas, SPLIT, bodyTop, FTR_H, RX } = buildNoticeCanvas(logoImgs, accentColor, muniName, date, W, H);
+  const { ctx, canvas, SPLIT, bodyTop, FTR_H, RX } = buildNoticeCanvas(logoImgs, accentColor, muniName, date, W, H, cfg.layout);
 
   // ── LEFT: Title
   ctx.fillStyle = accentColor; ctx.font = `bold ${cfg.titleSize}px Arial, sans-serif`;
@@ -414,7 +503,7 @@ async function downloadShelterPNG(s, template = 'official') {
   wrapRichText(ctx, para2, SPLIT - 40, cfg.bodySize).forEach(line => { drawRichLine(ctx, line, 20, ty, cfg.bodySize, '#1a1a1a'); ty += (cfg.bodySize + 7); });
 
   // ── LEFT: Occupancy bar
-  if (cfg.showOccupancy) {
+  if (cfg.showOccupancy && sections.occupancy) {
     ty += 14;
     ctx.fillStyle = '#888888'; ctx.font = 'bold 9px Arial, sans-serif';
     ctx.fillText('OCCUPANCY', 20, ty); ty += 12;
@@ -427,14 +516,12 @@ async function downloadShelterPNG(s, template = 'official') {
   }
 
   // ── RIGHT: Fields
-  const shelterFields = [
-    { label: 'Status',             badge: true, badgeText: statusLabel, badgeBg: statusBg },
-    { label: 'Facility type',      value: s.facility_type || '—' },
-    { label: 'Address',            value: s.address || '—' },
-    { label: 'Ward',               value: String(s.ward_number || '—') },
-    { label: 'Contact',            value: `${s.contact_name || '—'} · ${s.contact_number || '—'}` },
-    { label: 'Wheelchair access',  value: s.wheelchair_accessible ? 'Yes' : 'No' }
-  ];
+  const shelterFields = [{ label: 'Status', badge: true, badgeText: statusLabel, badgeBg: statusBg }];
+  if (sections.facility) shelterFields.push({ label: 'Facility type', value: s.facility_type || '—' });
+  if (sections.address) shelterFields.push({ label: 'Address', value: s.address || '—' });
+  if (sections.ward) shelterFields.push({ label: 'Ward', value: String(s.ward_number || '—') });
+  if (sections.contact) shelterFields.push({ label: 'Contact', value: `${s.contact_name || '—'} · ${s.contact_number || '—'}` });
+  if (sections.accessibility) shelterFields.push({ label: 'Wheelchair access', value: s.wheelchair_accessible ? 'Yes' : 'No' });
   drawRightFields(ctx, RX, bodyTop + 16, W, template === 'compact' ? shelterFields.slice(0, 4) : shelterFields);
   drawIssuedBy(ctx, RX, W, H, FTR_H, muniName);
 
@@ -493,7 +580,7 @@ function bindShelterEvents(shelters) {
       drop.style.cssText = `position:fixed;top:${rect.bottom + 4}px;left:${rect.left}px;z-index:9999;background:var(--bg2);border:1px solid var(--border);border-radius:6px;min-width:170px;overflow:hidden;box-shadow:0 6px 20px rgba(0,0,0,.35)`;
       drop.innerHTML = `
         <button data-sh-txt="${id}" style="display:block;width:100%;text-align:left;background:transparent;border:none;border-bottom:1px solid var(--border);padding:9px 14px;font-size:12px;color:var(--text);cursor:pointer;font-family:monospace">📄 Text file (.txt)</button>
-        ${PNG_TEMPLATES.map((tpl, idx) => `<button data-sh-png="${id}" data-template="${tpl.key}" style="display:block;width:100%;text-align:left;background:transparent;border:none;${idx === PNG_TEMPLATES.length - 1 ? '' : 'border-bottom:1px solid var(--border);'}padding:9px 14px;font-size:12px;color:var(--text);cursor:pointer;font-family:monospace">🖼 Image (.png) · ${tpl.label}</button>`).join('')}`;
+        <button data-sh-png="${id}" style="display:block;width:100%;text-align:left;background:transparent;border:none;padding:9px 14px;font-size:12px;color:var(--text);cursor:pointer;font-family:monospace">🖼 Image (.png) · Choose template…</button>`;
 
       drop.querySelector('[data-sh-txt]').addEventListener('click', () => {
         const s = shelters.find(x => x.id === id); drop.remove(); if (!s) return;
@@ -510,10 +597,20 @@ function bindShelterEvents(shelters) {
         URL.revokeObjectURL(url);
       });
 
-      drop.querySelectorAll('[data-sh-png]').forEach(pngBtn => {
-        pngBtn.addEventListener('click', () => {
-          const s = shelters.find(x => x.id === id); drop.remove(); if (!s) return;
-          downloadShelterPNG(s, pngBtn.dataset.template || 'official');
+      drop.querySelector('[data-sh-png]')?.addEventListener('click', () => {
+        const s = shelters.find(x => x.id === id); drop.remove(); if (!s) return;
+        openPngTemplatePicker({
+          heading: 'Shelter image template',
+          templates: PNG_TEMPLATES,
+          sectionDefs: [
+            { key: 'occupancy', label: 'Occupancy bar', default: true },
+            { key: 'facility', label: 'Facility type', default: true },
+            { key: 'address', label: 'Address', default: true },
+            { key: 'ward', label: 'Ward', default: true },
+            { key: 'contact', label: 'Contact', default: true },
+            { key: 'accessibility', label: 'Wheelchair access', default: true }
+          ],
+          onDownload: ({ template, tone, readable, sections }) => downloadShelterPNG(s, template, { tone, readable, sections })
         });
       });
 
@@ -652,21 +749,35 @@ function renderReliefCard(op) {
     </div>`;
 }
 
-async function downloadReliefPNG(op, template = 'official') {
+async function downloadReliefPNG(op, template = 'official', opts = {}) {
+  const tone = opts.tone || 'notification';
+  const readable = opts.readable !== false;
+  const sections = {
+    hazard: true, ward: true, distribution: true, schedule: true, contact: true, ends: true,
+    ...(opts.sections || {})
+  };
   const muniName    = window._drmsaUser?.municipalities?.name || 'Municipality';
   const date        = new Date().toLocaleString('en-ZA');
   const accentColor = { active:'#5a3a1a', upcoming:'#1a3a6b', ended:'#444444' }[op.status] || '#5a3a1a';
   const statusBg    = { active:'#5a3a1a', upcoming:'#1a3a6b', ended:'#555555' }[op.status] || '#5a3a1a';
   const statusLabel = (op.status || 'UNKNOWN').toUpperCase();
-  const cfg = {
-    official: { W: 900, H: 500, title: 'Relief Operation Notification', titleSize: 26, bodySize: 13 },
-    compact: { W: 900, H: 420, title: 'Relief Operation Bulletin', titleSize: 23, bodySize: 12 },
-    social: { W: 1080, H: 1080, title: 'Relief Operation Update', titleSize: 34, bodySize: 15 }
+  const cfgBase = {
+    official: { W: 900, H: 500, title: 'Relief Operation Notification', titleSize: 26, bodySize: 13, layout: { splitRatio: 0.63, baseBg: '#f0eeea', leftBg: '#fafaf8' } },
+    compact: { W: 900, H: 420, title: 'Relief Operation Bulletin', titleSize: 23, bodySize: 12, layout: { splitRatio: 0.58, baseBg: '#f7f5ff', leftBg: '#fcfbff' } },
+    social: { W: 1080, H: 1080, title: 'Relief Operation Update', titleSize: 34, bodySize: 15, layout: { splitRatio: 0.56, baseBg: '#e6eefc', leftBg: '#f7fbff' } },
+    'alert-card': { W: 1000, H: 560, title: 'Relief Operation Alert', titleSize: 29, bodySize: 14, layout: { splitRatio: 0.60, baseBg: '#fff7ed', leftBg: '#fffaf5', headerBg: '#fff3e6', footerText: '#fed7aa' } },
+    'clean-light': { W: 980, H: 540, title: 'Relief Operation Advisory', titleSize: 27, bodySize: 14, layout: { splitRatio: 0.65, baseBg: '#ecfeff', leftBg: '#f4fdff', headerBg: '#ffffff', footerText: '#a5f3fc' } }
   }[template] || { W: 900, H: 500, title: 'Relief Operation Notification', titleSize: 26, bodySize: 13 };
+  const cfg = {
+    ...cfgBase,
+    title: applyTitleTone(cfgBase.title, tone),
+    titleSize: cfgBase.titleSize + (readable ? 1 : 0),
+    bodySize: cfgBase.bodySize + (readable ? 2 : 0)
+  };
 
   const logoImgs = await loadLogoImages();
   const { W, H } = cfg;
-  const { ctx, canvas, SPLIT, bodyTop, FTR_H, RX } = buildNoticeCanvas(logoImgs, accentColor, muniName, date, W, H);
+  const { ctx, canvas, SPLIT, bodyTop, FTR_H, RX } = buildNoticeCanvas(logoImgs, accentColor, muniName, date, W, H, cfg.layout);
 
   // ── LEFT: Title
   ctx.fillStyle = accentColor; ctx.font = `bold ${cfg.titleSize}px Arial, sans-serif`;
@@ -696,15 +807,13 @@ async function downloadReliefPNG(op, template = 'official') {
   wrapRichText(ctx, para2, SPLIT - 40, cfg.bodySize).forEach(line => { drawRichLine(ctx, line, 20, ty, cfg.bodySize, '#1a1a1a'); ty += (cfg.bodySize + 7); });
 
   // ── RIGHT: Fields
-  const reliefFields = [
-    { label: 'Status',             badge: true, badgeText: statusLabel, badgeBg: statusBg },
-    { label: 'Hazard',             value: op.hazard_name || '—' },
-    { label: 'Ward',               value: String(op.ward_number || '—') },
-    { label: 'Distribution point', value: op.distribution_point || '—' },
-    { label: 'Schedule',           value: op.schedule || '—' },
-    { label: 'Public contact',     value: op.public_contact || '—' },
-    { label: 'Ends',               value: op.end_date ? new Date(op.end_date).toLocaleDateString('en-ZA') : '—' }
-  ];
+  const reliefFields = [{ label: 'Status', badge: true, badgeText: statusLabel, badgeBg: statusBg }];
+  if (sections.hazard) reliefFields.push({ label: 'Hazard', value: op.hazard_name || '—' });
+  if (sections.ward) reliefFields.push({ label: 'Ward', value: String(op.ward_number || '—') });
+  if (sections.distribution) reliefFields.push({ label: 'Distribution point', value: op.distribution_point || '—' });
+  if (sections.schedule) reliefFields.push({ label: 'Schedule', value: op.schedule || '—' });
+  if (sections.contact) reliefFields.push({ label: 'Public contact', value: op.public_contact || '—' });
+  if (sections.ends) reliefFields.push({ label: 'Ends', value: op.end_date ? new Date(op.end_date).toLocaleDateString('en-ZA') : '—' });
   drawRightFields(ctx, RX, bodyTop + 16, W, template === 'compact' ? reliefFields.slice(0, 5) : reliefFields);
   drawIssuedBy(ctx, RX, W, H, FTR_H, muniName);
 
@@ -750,7 +859,7 @@ function bindReliefEvents(ops) {
       drop.style.cssText = `position:fixed;top:${rect.bottom + 4}px;left:${rect.left}px;z-index:9999;background:var(--bg2);border:1px solid var(--border);border-radius:6px;min-width:170px;overflow:hidden;box-shadow:0 6px 20px rgba(0,0,0,.35)`;
       drop.innerHTML = `
         <button data-ro-txt="${id}" style="display:block;width:100%;text-align:left;background:transparent;border:none;border-bottom:1px solid var(--border);padding:9px 14px;font-size:12px;color:var(--text);cursor:pointer;font-family:monospace">📄 Text file (.txt)</button>
-        ${PNG_TEMPLATES.map((tpl, idx) => `<button data-ro-png="${id}" data-template="${tpl.key}" style="display:block;width:100%;text-align:left;background:transparent;border:none;${idx === PNG_TEMPLATES.length - 1 ? '' : 'border-bottom:1px solid var(--border);'}padding:9px 14px;font-size:12px;color:var(--text);cursor:pointer;font-family:monospace">🖼 Image (.png) · ${tpl.label}</button>`).join('')}`;
+        <button data-ro-png="${id}" style="display:block;width:100%;text-align:left;background:transparent;border:none;padding:9px 14px;font-size:12px;color:var(--text);cursor:pointer;font-family:monospace">🖼 Image (.png) · Choose template…</button>`;
 
       drop.querySelector('[data-ro-txt]').addEventListener('click', () => {
         const op = ops.find(o => o.id === id); drop.remove(); if (!op) return;
@@ -766,10 +875,20 @@ function bindReliefEvents(ops) {
         URL.revokeObjectURL(url);
       });
 
-      drop.querySelectorAll('[data-ro-png]').forEach(pngBtn => {
-        pngBtn.addEventListener('click', () => {
-          const op = ops.find(o => o.id === id); drop.remove(); if (!op) return;
-          downloadReliefPNG(op, pngBtn.dataset.template || 'official');
+      drop.querySelector('[data-ro-png]')?.addEventListener('click', () => {
+        const op = ops.find(o => o.id === id); drop.remove(); if (!op) return;
+        openPngTemplatePicker({
+          heading: 'Relief operation image template',
+          templates: PNG_TEMPLATES,
+          sectionDefs: [
+            { key: 'hazard', label: 'Hazard', default: true },
+            { key: 'ward', label: 'Ward', default: true },
+            { key: 'distribution', label: 'Distribution point', default: true },
+            { key: 'schedule', label: 'Schedule', default: true },
+            { key: 'contact', label: 'Public contact', default: true },
+            { key: 'ends', label: 'End date', default: true }
+          ],
+          onDownload: ({ template, tone, readable, sections }) => downloadReliefPNG(op, template, { tone, readable, sections })
         });
       });
 
