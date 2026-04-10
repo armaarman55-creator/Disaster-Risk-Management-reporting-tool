@@ -87,10 +87,13 @@ function roleLabel(r) {
 }
 
 function initNav() {
+  initMobileNav();
+
   document.querySelectorAll('.tni').forEach(item => {
     item.addEventListener('click', () => {
       const page = item.dataset.page;
       if (page) navigateTo(page, item);
+      closeMobileNav();
     });
   });
 
@@ -99,6 +102,8 @@ function initNav() {
 }
 
 export function navigateTo(pageId, navItem) {
+  closeMobileNav();
+
   document.querySelectorAll('.page').forEach(p => p.classList.remove('visible'));
 
   const page = document.getElementById('page-' + pageId);
@@ -320,3 +325,28 @@ function renderPlaceholder(pageId, title, subtitle) {
 window._drmsaNavigate = function(pageId) {
   navigateTo(pageId);
 };
+
+function initMobileNav() {
+  const appScreen = document.getElementById('app-screen');
+  const sidebar = document.getElementById('sidebar');
+  const menuBtn = document.getElementById('mobile-menu-btn');
+  if (!appScreen || !sidebar || !menuBtn) return;
+
+  menuBtn.addEventListener('click', (event) => {
+    event.stopPropagation();
+    appScreen.classList.toggle('mobile-nav-open');
+  });
+
+  document.addEventListener('click', (event) => {
+    if (!appScreen.classList.contains('mobile-nav-open')) return;
+    const target = event.target;
+    if (!(target instanceof Node)) return;
+    if (sidebar.contains(target) || menuBtn.contains(target)) return;
+    closeMobileNav();
+  });
+}
+
+function closeMobileNav() {
+  const appScreen = document.getElementById('app-screen');
+  if (appScreen) appScreen.classList.remove('mobile-nav-open');
+}

@@ -36,3 +36,13 @@
 .cp-preview-title{font-size:11px;font-weight:700;margin:8px 0 4px}
 .cp-preview-table{font-size:11px;color:var(--text3);padding:6px 8px;background:var(--bg3);border:1px solid var(--line);border-radius:6px}
 .cp-preview-body p{margin:0 0 8px}
+
+@media (max-width: 900px){
+  .cp-layout.generate-collapsed{grid-template-columns:1fr !important}
+  .cp-actions{justify-content:flex-start}
+}
+@media (max-width: 680px){
+  .cp-detail-head{flex-direction:column}
+  .cp-layout.split-view #cp-plan-detail .cp-detail-wrap{grid-template-columns:1fr}
+  #cp-plan-detail .cp-preview-pane{max-height:none}
+}

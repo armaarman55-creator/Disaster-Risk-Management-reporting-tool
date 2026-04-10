@@ -250,3 +250,20 @@ a{text-decoration:none;color:inherit}
 .page{display:none;flex:1;flex-direction:column}
 .page.visible{display:flex}
 .rail-brand{height:52px;display:flex;align-items:center;gap:11px;padding:0 14px;border-bottom:1px solid var(--border);cursor:pointer;flex-shrink:0;min-width:52px}
+
+@media (max-width: 900px){
+  .frow,.frow-3,.stat-grid-3,.rec-body,.relief-grid{grid-template-columns:1fr}
+  .sec-hdr{flex-direction:column;gap:10px}
+  .ph,.rec-head,.rec-foot,.share-foot,.sp-url-row{flex-wrap:wrap}
+}
+@media (max-width: 768px){
+  .page-body{padding:12px}
+  .sr-list{padding:12px}
+  .sr-list-item{padding:12px;align-items:flex-start}
+  .install-banner{left:12px;right:12px;min-width:0;max-width:none;transform:none;bottom:14px;padding:10px 12px;gap:10px;flex-wrap:wrap}
+}
+@media (max-width: 520px){
+  body{font-size:12px}
+  .btn,.sch{width:100%;justify-content:center}
+  .app-footer{padding:8px 10px;gap:6px;flex-wrap:wrap}
+}

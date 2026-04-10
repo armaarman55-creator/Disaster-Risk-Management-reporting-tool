@@ -16,3 +16,11 @@
 .sr-list-info{flex:1}
 .sr-list-name{font-family:var(--font-display);font-size:13px;font-weight:700;color:var(--text)}
 .sr-list-meta{font-size:11px;color:var(--text3);margin-top:2px;font-family:var(--font-mono)}
+
+@media (max-width: 680px){
+  .sr-col-head{padding:10px 12px;align-items:flex-start;gap:6px;flex-wrap:wrap}
+  .sr-tabs{padding:0 10px;overflow:auto}
+  .sr-body{padding:10px}
+  .sr-list{padding:10px}
+  .sr-list-item{padding:11px;align-items:flex-start;gap:8px}
+}

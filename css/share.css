@@ -15,3 +15,9 @@
 .share-preview-box{background:var(--bg);border:1px solid var(--border);border-radius:var(--r-md);padding:12px;margin-bottom:14px;font-size:11px;color:var(--text2);font-family:var(--font-mono);line-height:1.6;white-space:pre-wrap}
 .share-img-preview{margin-bottom:10px;border-radius:var(--r-md);overflow:hidden;border:1px solid var(--border)}
 .share-img-preview svg{width:100%;height:auto;display:block}
+
+@media (max-width: 680px){
+  .share-modal-overlay{padding:10px}
+  .share-modal-head,.share-modal-body{padding:12px}
+  .img-picker-grid{grid-template-columns:repeat(2,1fr)}
+}
