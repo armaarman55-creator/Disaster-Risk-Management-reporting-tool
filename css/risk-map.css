@@ -24,3 +24,16 @@
 .rm-dd-item.muted{color:var(--text3);cursor:default}
 
 .rm-legend-overlay{position:absolute;right:10px;top:92px;z-index:25;max-width:160px;pointer-events:none}
+
+@media (max-width: 900px){
+  .rm-map-wrap{height:420px}
+}
+@media (max-width: 680px){
+  .rm-wrap{padding:10px 10px 12px}
+  .rm-title{font-size:14px}
+  .rm-sub{font-size:11px}
+  .rm-toolbar{padding:8px;gap:8px}
+  .rm-map-wrap{height:320px}
+  .rm-legend-overlay{position:static;max-width:none;pointer-events:auto}
+  .rm-legend{width:100%}
+}
