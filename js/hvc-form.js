@@ -647,7 +647,7 @@ let _assessmentSaving = false;
 export async function saveAssessment() {
   if (_assessmentSaving) return;
   const label = document.getElementById('a-label')?.value.trim();
-  if (!label) { alert('Please enter an assessment label.'); return; }
+  if (!label) { showToast('Please enter an assessment label.', true); return; }
 
   _editingAssessmentId = null;
   _assessmentSaving    = true;
@@ -671,7 +671,7 @@ export async function saveAssessment() {
   if (assessmentId) {
     const { error } = await supabase.from('hvc_assessments').update(meta).eq('id', assessmentId);
     if (error) {
-      alert('Error saving: ' + error.message);
+      showToast('Error saving: ' + error.message, true);
       _assessmentSaving = false;
       if (btn) { btn.textContent = 'Save assessment'; btn.disabled = false; }
       return;
@@ -679,7 +679,7 @@ export async function saveAssessment() {
   } else {
     const { data, error } = await supabase.from('hvc_assessments').insert(meta).select().single();
     if (error) {
-      alert('Error: ' + error.message);
+      showToast('Error: ' + error.message, true);
       _assessmentSaving = false;
       if (btn) { btn.textContent = 'Save assessment'; btn.disabled = false; }
       return;
