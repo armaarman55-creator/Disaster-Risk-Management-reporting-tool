@@ -2,6 +2,7 @@
 import { supabase }              from './supabase.js';
 import { writeAudit }            from './audit.js';
 import { showDownloadMenu, docHeader } from './download.js';
+import { confirmDialog }         from './confirm-dialog.js';
 import {
   showToast,
   _muniId, _user, _wards,
@@ -270,7 +271,7 @@ export async function editAssessment(id, renderHVCPage) {
 
 async function saveEditedAssessment(assessmentId, assessment, renderHVCPage) {
   const label = document.getElementById('a-label')?.value.trim();
-  if (!label) { alert('Please enter a label.'); return; }
+  if (!label) { showToast('Please enter a label.', true); return; }
 
   const btn = document.getElementById('save-hvc-btn');
   if (btn) { btn.textContent = 'Saving…'; btn.disabled = true; }
@@ -343,7 +344,12 @@ function _collectRows() {
 
 // ── DELETE ASSESSMENT ─────────────────────────────────────
 export async function deleteAssessment(id, label, renderHVCPage) {
-  if (!confirm(`Delete assessment "${label}"?\n\nThis will permanently remove all hazard scores for this assessment. This cannot be undone.`)) return;
+  const ok = await confirmDialog({
+    title: `Delete assessment "${label}"?`,
+    message: 'This will permanently remove all hazard scores for this assessment.\n\nThis action cannot be undone.',
+    confirmText: 'Delete assessment'
+  });
+  if (!ok) return;
 
   const { error: scoreErr } = await supabase.from('hvc_hazard_scores').delete().eq('assessment_id', id);
   const { error: assessErr } = await supabase.from('hvc_assessments').delete().eq('id', id);
