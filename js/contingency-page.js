@@ -12,6 +12,7 @@ import { buildLibrarySections } from './contingency-section-library.js';
 import { showDownloadMenu, docHeader } from './download.js';
 import { supabase } from './supabase.js';
 import { initAssistantPanel, destroyAssistantPanel } from './contingency-dist/contingency-assistant-panel.js';
+import { confirmDialog } from './confirm-dialog.js';
 
 let _activePlanId = null;
 let _activeCategory = '';
@@ -472,11 +473,16 @@ function renderPlanList() {
   });
 
   host.querySelectorAll('.cp-plan-delete[data-plan-id]').forEach(btn => {
-    btn.addEventListener('click', e => {
+    btn.addEventListener('click', async e => {
       e.stopPropagation();
       const id = btn.getAttribute('data-plan-id');
       const title = btn.getAttribute('data-plan-title') || 'this plan';
-      if (!confirm(`Delete "${title}"?\n\nThis cannot be undone.`)) return;
+      const ok = await confirmDialog({
+        title: `Delete "${title}"?`,
+        message: 'This action cannot be undone.',
+        confirmText: 'Delete plan'
+      });
+      if (!ok) return;
       const p = getPlan(id);
       if (p) setPlan({ ...p, deleted: true, status: 'deleted' });
       if (_activePlanId === id) _activePlanId = null;

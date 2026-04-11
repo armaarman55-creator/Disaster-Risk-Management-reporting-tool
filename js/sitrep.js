@@ -1,6 +1,7 @@
 // js/sitrep.js
 import { supabase } from './supabase.js';
 import { showDownloadMenu, docHeader } from './download.js';
+import { confirmDialog } from './confirm-dialog.js';
 
 let _muniId = null;
 let _user = null;
@@ -59,7 +60,12 @@ async function renderSitrepList() {
       e.stopPropagation();
       const id  = btn.dataset.id;
       const num = btn.dataset.num;
-      if (!confirm(`Delete SITREP-${num}? This cannot be undone.`)) return;
+      const ok = await confirmDialog({
+        title: `Delete SITREP-${num}?`,
+        message: 'This action cannot be undone.',
+        confirmText: 'Delete SitRep'
+      });
+      if (!ok) return;
       const { error } = await supabase.from('sitreps').delete().eq('id', id);
       if (error) { alert('Delete failed: ' + error.message); return; }
       await renderSitrepList();

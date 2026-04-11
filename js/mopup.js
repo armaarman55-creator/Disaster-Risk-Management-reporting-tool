@@ -1,6 +1,7 @@
 // js/mopup.js
 import { supabase } from './supabase.js';
 import { showDownloadMenu, docHeader } from './download.js';
+import { confirmDialog } from './confirm-dialog.js';
 
 let _muniId = null;
 let _user = null;
@@ -55,7 +56,12 @@ async function renderMopupList() {
       e.stopPropagation();
       const id  = btn.dataset.id;
       const num = btn.dataset.num;
-      if (!confirm(`Delete MOPUP-${num}? This cannot be undone.`)) return;
+      const ok = await confirmDialog({
+        title: `Delete MOPUP-${num}?`,
+        message: 'This action cannot be undone.',
+        confirmText: 'Delete Mop-up'
+      });
+      if (!ok) return;
       const { error } = await supabase.from('mopup_reports').delete().eq('id', id);
       if (error) { alert('Delete failed: ' + error.message); return; }
       await renderMopupList();

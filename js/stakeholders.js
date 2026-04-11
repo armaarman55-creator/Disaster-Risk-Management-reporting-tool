@@ -1,6 +1,7 @@
 // js/stakeholders.js — Stakeholder directory with hazard assignment
 import { supabase } from './supabase.js';
 import { showDownloadMenu } from './download.js';
+import { confirmDialog } from './confirm-dialog.js';
 
 let _muniId = null;
 let _orgs = [];
@@ -406,7 +407,12 @@ function bindOrgEvents() {
 
   document.querySelectorAll('.org-delete').forEach(btn => {
     btn.addEventListener('click', async () => {
-      if (!confirm('Delete this organisation and all contacts?')) return;
+      const ok = await confirmDialog({
+        title: 'Delete organisation?',
+        message: 'This will delete the organisation and all linked contacts.\n\nThis action cannot be undone.',
+        confirmText: 'Delete organisation'
+      });
+      if (!ok) return;
       await supabase.from('stakeholder_contacts').delete().eq('org_id', btn.dataset.id);
       await supabase.from('stakeholder_orgs').delete().eq('id', btn.dataset.id);
       showToast('✓ Organisation deleted');
@@ -428,7 +434,12 @@ function bindOrgEvents() {
 
   document.querySelectorAll('.contact-delete').forEach(btn => {
     btn.addEventListener('click', async () => {
-      if (!confirm('Delete this contact?')) return;
+      const ok = await confirmDialog({
+        title: 'Delete contact?',
+        message: 'This action cannot be undone.',
+        confirmText: 'Delete contact'
+      });
+      if (!ok) return;
       await supabase.from('stakeholder_contacts').delete().eq('id', btn.dataset.id);
       showToast('✓ Contact deleted');
       await renderStakeholders();
