@@ -1,5 +1,6 @@
 // js/community.js
 import { supabase } from './supabase.js';
+import { confirmDialog } from './confirm-dialog.js';
 
 let _muniId    = null;
 let _activeTab = 'shelters';
@@ -616,7 +617,12 @@ function bindShelterEvents(shelters) {
 
   document.querySelectorAll('.shelter-delete').forEach(btn => {
     btn.addEventListener('click', async () => {
-      if (!confirm('Delete this shelter?')) return;
+      const ok = await confirmDialog({
+        title: 'Delete shelter?',
+        message: 'This action cannot be undone.',
+        confirmText: 'Delete shelter'
+      });
+      if (!ok) return;
       await supabase.from('shelters').delete().eq('id', btn.dataset.id);
       showToast('Shelter deleted');
       await renderShelters(document.getElementById('community-body'));
@@ -897,7 +903,12 @@ function bindReliefEvents(ops) {
 
   document.querySelectorAll('.relief-delete').forEach(btn => {
     btn.addEventListener('click', async () => {
-      if (!confirm('Delete this operation?')) return;
+      const ok = await confirmDialog({
+        title: 'Delete operation?',
+        message: 'This action cannot be undone.',
+        confirmText: 'Delete operation'
+      });
+      if (!ok) return;
       await supabase.from('relief_operations').delete().eq('id', btn.dataset.id);
       showToast('Operation deleted');
       await renderReliefOps(document.getElementById('community-body'));

@@ -2,6 +2,7 @@
 import { supabase }              from './supabase.js';
 import { writeAudit }            from './audit.js';
 import { showDownloadMenu, docHeader } from './download.js';
+import { confirmDialog }         from './confirm-dialog.js';
 import {
   showToast,
   _muniId, _user, _wards,
@@ -343,7 +344,12 @@ function _collectRows() {
 
 // ── DELETE ASSESSMENT ─────────────────────────────────────
 export async function deleteAssessment(id, label, renderHVCPage) {
-  if (!confirm(`Delete assessment "${label}"?\n\nThis will permanently remove all hazard scores for this assessment. This cannot be undone.`)) return;
+  const ok = await confirmDialog({
+    title: `Delete assessment "${label}"?`,
+    message: 'This will permanently remove all hazard scores for this assessment.\n\nThis action cannot be undone.',
+    confirmText: 'Delete assessment'
+  });
+  if (!ok) return;
 
   const { error: scoreErr } = await supabase.from('hvc_hazard_scores').delete().eq('assessment_id', id);
   const { error: assessErr } = await supabase.from('hvc_assessments').delete().eq('id', id);
