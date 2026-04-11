@@ -136,9 +136,7 @@ function bindSignIn() {
 
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) {
-      const msg = error.message === 'Invalid login credentials'
-        ? 'Incorrect email or password. If you just registered, please check your inbox and confirm your email first.'
-        : error.message;
+      const msg = normaliseAuthError(error);
       showError(errEl, msg);
       btn.textContent = 'Sign in'; btn.disabled = false;
       return;
@@ -159,6 +157,19 @@ function bindSignIn() {
   document.getElementById('login-pass')?.addEventListener('keydown', e => {
     if (e.key === 'Enter') document.getElementById('btn-signin')?.click();
   });
+}
+
+function normaliseAuthError(error) {
+  const msg = String(error?.message || '');
+  if (
+    msg === 'Invalid login credentials' ||
+    /invalid credentials/i.test(msg) ||
+    /invalid password/i.test(msg) ||
+    /wrong password/i.test(msg)
+  ) {
+    return 'Incorrect email or password. If you just registered, please check your inbox and confirm your email first.';
+  }
+  return msg || 'Unable to sign in right now. Please try again.';
 }
 
 // ── GUEST LOGIN ───────────────────────────────────────────
