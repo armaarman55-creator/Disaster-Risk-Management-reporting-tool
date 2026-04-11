@@ -617,20 +617,16 @@ export async function exportAssessmentPDF(id, label) {
     return `<span style="background:${c};color:#fff;padding:2px 7px;border-radius:3px;font-size:9px;font-weight:700">${lvl||'—'}</span>`;
   };
   const n = (v, dp=2) => v != null ? Number(v).toFixed(dp) : '—';
-  const riskRefText = (group, fieldSuffix, score) => {
+  const riskRefLabel = (group, fieldSuffix, score) => {
     if (score == null || Number.isNaN(Number(score))) return '—';
     const scale = descriptorScale(group, `x_${fieldSuffix}`);
     const key = Math.max(1, Math.min(5, Math.round(Number(score))));
     const ref = scale?.[key];
-    if (!ref) return '—';
-    return `${ref.label}: ${ref.desc}`;
+    return ref?.label || '—';
   };
-  const nWithText = (group, fieldSuffix, v, dp = 2) => v != null
-    ? `${Number(v).toFixed(dp)} <span class="dim">(${riskRefText(group, fieldSuffix, v)})</span>`
+  const scoreWithRef = (group, fieldSuffix, v) => v != null
+    ? `${Number(v)} <span class="dim">(${riskRefLabel(group, fieldSuffix, v)})</span>`
     : '—';
-  const prioWithText = (idx, level) => idx != null
-    ? `${n(idx)} <span class="dim">(${riskRefText('priority', 'pi', idx)})</span>`
-    : (level || '—');
 
   // ── Table 1: Risk Ranking Summary ─────────────────────
   const summaryRows = scores.map((s, i) => `
@@ -665,12 +661,12 @@ export async function exportAssessmentPDF(id, label) {
     <tr>
       <td>${i + 1}</td>
       <td><strong>${s.hazard_name || '—'}</strong></td>
-      <td class="num">${s.vp ?? '—'}</td>
-      <td class="num">${s.ve ?? '—'}</td>
-      <td class="num">${s.vs ?? '—'}</td>
-      <td class="num">${s.vt ?? '—'}</td>
-      <td class="num">${s.vn ?? '—'}</td>
-      <td class="num bold">${nWithText('vulnerability', 'vp', s.vulnerability_score)}</td>
+      <td class="num">${scoreWithRef('vulnerability', 'vp', s.vp)}</td>
+      <td class="num">${scoreWithRef('vulnerability', 've', s.ve)}</td>
+      <td class="num">${scoreWithRef('vulnerability', 'vs', s.vs)}</td>
+      <td class="num">${scoreWithRef('vulnerability', 'vt', s.vt)}</td>
+      <td class="num">${scoreWithRef('vulnerability', 'vn', s.vn)}</td>
+      <td class="num bold">${n(s.vulnerability_score)}</td>
     </tr>`).join('');
 
   // ── Table 4: Capacity Sub-scores ──────────────────────
@@ -678,13 +674,13 @@ export async function exportAssessmentPDF(id, label) {
     <tr>
       <td>${i + 1}</td>
       <td><strong>${s.hazard_name || '—'}</strong></td>
-      <td class="num">${s.ci ?? '—'}</td>
-      <td class="num">${s.cp ?? '—'}</td>
-      <td class="num">${s.cq ?? '—'}</td>
-      <td class="num">${s.cf ?? '—'}</td>
-      <td class="num">${s.ch ?? '—'}</td>
-      <td class="num">${s.cs ?? '—'}</td>
-      <td class="num bold">${nWithText('capacity', 'ci', s.capacity_score)}</td>
+      <td class="num">${scoreWithRef('capacity', 'ci', s.ci)}</td>
+      <td class="num">${scoreWithRef('capacity', 'cp', s.cp)}</td>
+      <td class="num">${scoreWithRef('capacity', 'cq', s.cq)}</td>
+      <td class="num">${scoreWithRef('capacity', 'cf', s.cf)}</td>
+      <td class="num">${scoreWithRef('capacity', 'ch', s.ch)}</td>
+      <td class="num">${scoreWithRef('capacity', 'cs', s.cs)}</td>
+      <td class="num bold">${n(s.capacity_score)}</td>
       <td class="num">${n(s.resilience_index, 3)}</td>
     </tr>`).join('');
 
@@ -695,10 +691,10 @@ export async function exportAssessmentPDF(id, label) {
       <td><strong>${s.hazard_name || '—'}</strong></td>
       <td>${bandBadge(s.risk_band)}</td>
       <td class="num bold">${n(s.risk_rating)}</td>
-      <td class="num">${s.importance ?? '—'}</td>
-      <td class="num">${s.urgency    ?? '—'}</td>
-      <td class="num">${s.growth     ?? '—'}</td>
-      <td class="num bold">${prioWithText(s.priority_index, s.priority_level)}</td>
+      <td class="num">${scoreWithRef('priority', 'pi', s.importance)}</td>
+      <td class="num">${scoreWithRef('priority', 'pu', s.urgency)}</td>
+      <td class="num">${scoreWithRef('priority', 'pg', s.growth)}</td>
+      <td class="num bold">${n(s.priority_index)}</td>
       <td>${prioBadge(s.priority_level)}</td>
       <td class="dim">${Array.isArray(s.affected_wards) && s.affected_wards.length ? s.affected_wards.map(w=>'W'+w).join(', ') : '—'}</td>
       <td class="dim">${[s.primary_owner, s.secondary_owner, s.tertiary_owner].filter(Boolean).join(', ') || '—'}</td>
