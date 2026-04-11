@@ -1,5 +1,6 @@
 // js/routes.js
 import { supabase } from './supabase.js';
+import { confirmDialog } from './confirm-dialog.js';
 
 let _muniId   = null;
 let _closures = [];
@@ -796,7 +797,12 @@ function bindClosureEvents() {
 
   document.querySelectorAll('.closure-delete').forEach(btn => {
     btn.addEventListener('click', async () => {
-      if (!confirm('Delete this road closure and all its alternative routes?')) return;
+      const ok = await confirmDialog({
+        title: 'Delete road closure?',
+        message: 'This will delete the road closure and all linked alternative routes.\n\nThis action cannot be undone.',
+        confirmText: 'Delete closure'
+      });
+      if (!ok) return;
       await supabase.from('alternative_routes').delete().eq('closure_id', btn.dataset.id);
       await supabase.from('road_closures').delete().eq('id', btn.dataset.id);
       showToast('✓ Closure deleted');
