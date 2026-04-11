@@ -2,10 +2,11 @@
 import { supabase }              from './supabase.js';
 import { writeAudit }            from './audit.js';
 import { showDownloadMenu, docHeader } from './download.js';
+import { confirmDialog }         from './confirm-dialog.js';
 import {
   showToast,
   _muniId, _user, _wards,
-  RISK_BAND, BAND_CLS, PRIO_LEVEL, slug,
+  RISK_BAND, BAND_CLS, PRIO_LEVEL, slug, descriptorScale,
   _scores, _customHazards, _hvcWardSelections, _hvcPickerInited,
   setDraftId, setEditingAssessmentId, clearAssessmentState,
   initHvcWardPicker
@@ -270,7 +271,7 @@ export async function editAssessment(id, renderHVCPage) {
 
 async function saveEditedAssessment(assessmentId, assessment, renderHVCPage) {
   const label = document.getElementById('a-label')?.value.trim();
-  if (!label) { alert('Please enter a label.'); return; }
+  if (!label) { showToast('Please enter a label.', true); return; }
 
   const btn = document.getElementById('save-hvc-btn');
   if (btn) { btn.textContent = 'Saving…'; btn.disabled = true; }
@@ -343,7 +344,12 @@ function _collectRows() {
 
 // ── DELETE ASSESSMENT ─────────────────────────────────────
 export async function deleteAssessment(id, label, renderHVCPage) {
-  if (!confirm(`Delete assessment "${label}"?\n\nThis will permanently remove all hazard scores for this assessment. This cannot be undone.`)) return;
+  const ok = await confirmDialog({
+    title: `Delete assessment "${label}"?`,
+    message: 'This will permanently remove all hazard scores for this assessment.\n\nThis action cannot be undone.',
+    confirmText: 'Delete assessment'
+  });
+  if (!ok) return;
 
   const { error: scoreErr } = await supabase.from('hvc_hazard_scores').delete().eq('assessment_id', id);
   const { error: assessErr } = await supabase.from('hvc_assessments').delete().eq('id', id);
@@ -535,13 +541,29 @@ export async function getHVCXLSXBlob(scores, assessment, muniName) {
 // ── WORD DOWNLOAD ─────────────────────────────────────────
 export function getHVCDocHTML(scores, assessment, muniName) {
   const label = assessment.label || `${assessment.season || ''} ${assessment.year || ''}`;
+  const riskRefText = (group, fieldSuffix, score) => {
+    if (score == null || Number.isNaN(Number(score))) return '—';
+    const scale = descriptorScale(group, `x_${fieldSuffix}`);
+    const key = Math.max(1, Math.min(5, Math.round(Number(score))));
+    const ref = scale?.[key];
+    if (!ref) return '—';
+    return `${ref.label}: ${ref.desc}`;
+  };
+  const fmtScore = (group, fieldSuffix, v, dp = 2) => v != null
+    ? `${Number(v).toFixed(dp)} (${riskRefText(group, fieldSuffix, v)})`
+    : '—';
+  const fmtPriority = (idx, level) => {
+    if (idx == null && !level) return '—';
+    if (idx == null) return `${level || '—'}`;
+    return `${Number(idx).toFixed(2)} (${riskRefText('priority', 'pi', idx)})`;
+  };
   const rows  = scores.map((s, i) => `
     <tr>
       <td>${i + 1}</td><td><strong>${s.hazard_name}</strong></td><td>${s.hazard_category || '—'}</td>
-      <td>${s.hazard_score?.toFixed(2) || '—'}</td><td>${s.vulnerability_score?.toFixed(2) || '—'}</td>
-      <td>${s.capacity_score?.toFixed(2) || '—'}</td><td>${s.resilience_index?.toFixed(3) || '—'}</td>
+      <td>${s.hazard_score?.toFixed(2) || '—'}</td><td>${fmtScore('vulnerability', 'vp', s.vulnerability_score)}</td>
+      <td>${fmtScore('capacity', 'ci', s.capacity_score)}</td><td>${s.resilience_index?.toFixed(3) || '—'}</td>
       <td><strong>${s.risk_rating?.toFixed(2) || '—'}</strong></td><td>${s.risk_band || '—'}</td>
-      <td>${s.priority_level || '—'}</td>
+      <td>${fmtPriority(s.priority_index, s.priority_level)}</td>
       <td>${Array.isArray(s.affected_wards) && s.affected_wards.length ? 'Wards ' + s.affected_wards.join(', ') : '—'}</td>
     </tr>`).join('');
   return `${docHeader(`HVC Assessment — ${label}`, muniName, `Lead assessor: ${assessment.lead_assessor || '—'}`)}
@@ -595,6 +617,20 @@ export async function exportAssessmentPDF(id, label) {
     return `<span style="background:${c};color:#fff;padding:2px 7px;border-radius:3px;font-size:9px;font-weight:700">${lvl||'—'}</span>`;
   };
   const n = (v, dp=2) => v != null ? Number(v).toFixed(dp) : '—';
+  const riskRefText = (group, fieldSuffix, score) => {
+    if (score == null || Number.isNaN(Number(score))) return '—';
+    const scale = descriptorScale(group, `x_${fieldSuffix}`);
+    const key = Math.max(1, Math.min(5, Math.round(Number(score))));
+    const ref = scale?.[key];
+    if (!ref) return '—';
+    return `${ref.label}: ${ref.desc}`;
+  };
+  const nWithText = (group, fieldSuffix, v, dp = 2) => v != null
+    ? `${Number(v).toFixed(dp)} <span class="dim">(${riskRefText(group, fieldSuffix, v)})</span>`
+    : '—';
+  const prioWithText = (idx, level) => idx != null
+    ? `${n(idx)} <span class="dim">(${riskRefText('priority', 'pi', idx)})</span>`
+    : (level || '—');
 
   // ── Table 1: Risk Ranking Summary ─────────────────────
   const summaryRows = scores.map((s, i) => `
@@ -603,12 +639,12 @@ export async function exportAssessmentPDF(id, label) {
       <td><strong>${s.hazard_name || '—'}</strong></td>
       <td class="dim">${s.hazard_category || '—'}</td>
       <td class="num">${n(s.hazard_score)}</td>
-      <td class="num">${n(s.vulnerability_score)}</td>
-      <td class="num">${n(s.capacity_score)}</td>
+      <td class="num">${nWithText('vulnerability', 'vp', s.vulnerability_score)}</td>
+      <td class="num">${nWithText('capacity', 'ci', s.capacity_score)}</td>
       <td class="num">${n(s.resilience_index, 3)}</td>
       <td class="num bold">${n(s.risk_rating)}</td>
       <td>${bandBadge(s.risk_band)}</td>
-      <td class="num">${n(s.priority_index)}</td>
+      <td class="num">${prioWithText(s.priority_index, s.priority_level)}</td>
       <td>${prioBadge(s.priority_level)}</td>
     </tr>`).join('');
 
@@ -634,7 +670,7 @@ export async function exportAssessmentPDF(id, label) {
       <td class="num">${s.vs ?? '—'}</td>
       <td class="num">${s.vt ?? '—'}</td>
       <td class="num">${s.vn ?? '—'}</td>
-      <td class="num bold">${n(s.vulnerability_score)}</td>
+      <td class="num bold">${nWithText('vulnerability', 'vp', s.vulnerability_score)}</td>
     </tr>`).join('');
 
   // ── Table 4: Capacity Sub-scores ──────────────────────
@@ -648,7 +684,7 @@ export async function exportAssessmentPDF(id, label) {
       <td class="num">${s.cf ?? '—'}</td>
       <td class="num">${s.ch ?? '—'}</td>
       <td class="num">${s.cs ?? '—'}</td>
-      <td class="num bold">${n(s.capacity_score)}</td>
+      <td class="num bold">${nWithText('capacity', 'ci', s.capacity_score)}</td>
       <td class="num">${n(s.resilience_index, 3)}</td>
     </tr>`).join('');
 
@@ -662,7 +698,7 @@ export async function exportAssessmentPDF(id, label) {
       <td class="num">${s.importance ?? '—'}</td>
       <td class="num">${s.urgency    ?? '—'}</td>
       <td class="num">${s.growth     ?? '—'}</td>
-      <td class="num bold">${n(s.priority_index)}</td>
+      <td class="num bold">${prioWithText(s.priority_index, s.priority_level)}</td>
       <td>${prioBadge(s.priority_level)}</td>
       <td class="dim">${Array.isArray(s.affected_wards) && s.affected_wards.length ? s.affected_wards.map(w=>'W'+w).join(', ') : '—'}</td>
       <td class="dim">${[s.primary_owner, s.secondary_owner, s.tertiary_owner].filter(Boolean).join(', ') || '—'}</td>
