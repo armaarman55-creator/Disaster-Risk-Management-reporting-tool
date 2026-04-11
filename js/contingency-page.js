@@ -22,6 +22,7 @@ let _autoSaveTimer = null;
 let _menuCollapsed = false;
 let _splitView = false;
 let _autoSaveFlushBound = false;
+let _lastPersistErrorMsg = '';
 
 function showToast(msg, isError = false) {
   document.querySelectorAll('.drmsa-toast').forEach(t => t.remove());
@@ -626,9 +627,15 @@ async function persistPlan(planId) {
   if (!plan) return;
   try {
     await savePlanToBackend(plan, _context);
+    _lastPersistErrorMsg = '';
     return true;
   } catch (e) {
-    console.warn('[Contingency] backend save failed:', e.message || e);
+    const msg = e?.message || String(e);
+    console.warn('[Contingency] backend save failed:', msg);
+    if (msg && msg !== _lastPersistErrorMsg) {
+      showToast(`Auto-save failed: ${msg}`, true);
+      _lastPersistErrorMsg = msg;
+    }
     return false;
   }
 }

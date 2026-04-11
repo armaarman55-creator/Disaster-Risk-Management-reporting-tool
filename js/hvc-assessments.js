@@ -271,7 +271,7 @@ export async function editAssessment(id, renderHVCPage) {
 
 async function saveEditedAssessment(assessmentId, assessment, renderHVCPage) {
   const label = document.getElementById('a-label')?.value.trim();
-  if (!label) { alert('Please enter a label.'); return; }
+  if (!label) { showToast('Please enter a label.', true); return; }
 
   const btn = document.getElementById('save-hvc-btn');
   if (btn) { btn.textContent = 'Saving…'; btn.disabled = true; }
