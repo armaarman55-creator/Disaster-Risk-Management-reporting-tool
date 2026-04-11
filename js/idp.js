@@ -1,6 +1,7 @@
 // js/idp.js — IDP Linkage & Spatial Mitigation Register
 import { supabase } from './supabase.js';
 import { showDownloadMenu, docHeader } from './download.js';
+import { confirmDialog } from './confirm-dialog.js';
 
 function showToast(msg, isError=false) {
   document.querySelectorAll('.drmsa-toast').forEach(t => t.remove());
@@ -675,8 +676,8 @@ async function saveMit() {
   const desc   = document.getElementById('mf-desc')?.value.trim();
   const id     = document.getElementById('mf-save-btn')?.dataset.id;
 
-  if (!hazard) { alert('Please select a hazard.'); return; }
-  if (!desc)   { alert('Please enter a description.'); return; }
+  if (!hazard) { showToast('Please select a hazard.', true); return; }
+  if (!desc)   { showToast('Please enter a description.', true); return; }
 
   const hData   = _hazards.find(h=>h.hazard_name===hazard);
   const btn     = document.getElementById('mf-save-btn');
@@ -804,7 +805,12 @@ function applyFilters(all) {
 function bindMitEvents(mits) {
   document.querySelectorAll('.mit-delete').forEach(btn => {
     btn.addEventListener('click', async () => {
-      if (!confirm('Delete this mitigation?')) return;
+      const ok = await confirmDialog({
+        title: 'Delete mitigation?',
+        message: 'This action cannot be undone.',
+        confirmText: 'Delete mitigation'
+      });
+      if (!ok) return;
       await supabase.from('mitigations').delete().eq('id',btn.dataset.id);
       showToast('Deleted');
       await renderIDP();
@@ -898,7 +904,7 @@ window._downloadMitPDF = function(id) {
   const date = new Date().toLocaleString('en-ZA');
   // We need to find the record — use a global cache approach
   const rec = window._drmsaMitCache?.[id];
-  if (!rec) { alert('Please close and reopen the IDP page, then try again.'); return; }
+  if (!rec) { showToast('Please close and reopen the IDP page, then try again.', true); return; }
   const wardLabels = Array.isArray(rec.affected_wards) && rec.affected_wards.length
     ? rec.affected_wards.map(w => { const wd=_wards.find(x=>x.ward_number==w); return `Ward ${w}${wd?.area_name?' ('+wd.area_name+')':''}`; }).join(', ')
     : 'No wards specified';
