@@ -627,6 +627,8 @@ export async function exportAssessmentPDF(id, label) {
   const scoreWithRef = (group, fieldSuffix, v) => v != null
     ? `${Number(v)} <span class="dim">(${riskRefLabel(group, fieldSuffix, v)})</span>`
     : '—';
+  // Backward-compatible alias in case cached modules still call the older helper name.
+  const nWithText = (group, fieldSuffix, v, _dp = 2) => scoreWithRef(group, fieldSuffix, v);
 
   // ── Table 1: Risk Ranking Summary ─────────────────────
   const summaryRows = scores.map((s, i) => `

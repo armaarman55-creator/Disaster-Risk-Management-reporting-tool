@@ -13,7 +13,7 @@ import {
   setCustomHazards, setHvcWardSelections, clearAssessmentState,
   initHvcWardPicker, renderHvcWardTags, recalcHazardWards
 } from './hvc-state.js';
-import { renderAssessmentList, bindListEvents, openAssessment, editAssessment } from './hvc-assessments.js?v=20260412';
+import { renderAssessmentList, bindListEvents, openAssessment, editAssessment } from './hvc-assessments.js?v=20260414';
 
 // ── INIT ──────────────────────────────────────────────────
 export async function initHVC(user) {
