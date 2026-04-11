@@ -4,6 +4,7 @@ import { showDownloadMenu } from './download.js';
 
 let _muniId = null;
 let _orgs = [];
+const _stakeholderAutoSaveTimers = new Map();
 
 const SECTORS = [
   'Fire Brigade / Fire Services',
@@ -241,10 +242,11 @@ function showOrgForm(existing) {
       </div>
     </div>`;
 
-  document.getElementById('save-org-btn')?.addEventListener('click', async () => {
-    const id = document.getElementById('save-org-btn').dataset.id;
+  const saveBtn = document.getElementById('save-org-btn');
+  async function saveOrg({ silent = false } = {}) {
+    const id = saveBtn?.dataset.id;
     const name = document.getElementById('org-name')?.value.trim();
-    if (!name) return alert('Organisation name required.');
+    if (!name) return false;
 
     const payload = {
       municipality_id: _muniId,
@@ -258,14 +260,37 @@ function showOrgForm(existing) {
       is_active: document.getElementById('org-active')?.checked
     };
 
-    const { error } = id 
-      ? await supabase.from('stakeholder_orgs').update(payload).eq('id', id)
-      : await supabase.from('stakeholder_orgs').insert(payload);
+    const { data, error } = id
+      ? await supabase.from('stakeholder_orgs').update(payload).eq('id', id).select().single()
+      : await supabase.from('stakeholder_orgs').insert(payload).select().single();
+    if (error) {
+      if (!silent) showToast(error.message, true);
+      return false;
+    }
+    if (!id && data?.id && saveBtn) saveBtn.dataset.id = data.id;
+    if (!silent) {
+      showToast('✓ Organisation saved successfully!');
+      document.getElementById('org-form-area').innerHTML = '';
+      await renderStakeholders();
+    }
+    return true;
+  }
+  const scheduleOrgAutoSave = () => {
+    clearTimeout(_stakeholderAutoSaveTimers.get('org'));
+    _stakeholderAutoSaveTimers.set('org', setTimeout(async () => {
+      const ok = await saveOrg({ silent: true });
+      if (ok) showToast('✓ Organisation auto-saved');
+    }, 1200));
+  };
+  area.querySelectorAll('input,textarea,select').forEach(el => {
+    el.addEventListener('input', scheduleOrgAutoSave);
+    el.addEventListener('change', scheduleOrgAutoSave);
+  });
 
-    if (error) return showToast(error.message, true);
-    showToast('✓ Organisation saved successfully!');
-    document.getElementById('org-form-area').innerHTML = '';
-    await renderStakeholders();
+  saveBtn?.addEventListener('click', async () => {
+    const name = document.getElementById('org-name')?.value.trim();
+    if (!name) return alert('Organisation name required.');
+    await saveOrg({ silent: false });
   });
 }
 
@@ -312,13 +337,14 @@ function showContactForm(orgId, existing) {
       </div>
     </div>`;
 
-  document.getElementById(`save-ct-${orgId}`)?.addEventListener('click', async () => {
-    const ctId = document.getElementById(`save-ct-${orgId}`).dataset.id;
-    const oId = document.getElementById(`save-ct-${orgId}`).dataset.org;
+  const saveBtn = document.getElementById(`save-ct-${orgId}`);
+  async function saveContact({ silent = false } = {}) {
+    const ctId = saveBtn?.dataset.id;
+    const oId = saveBtn?.dataset.org;
     const first = document.getElementById(`ct-first-${orgId}`)?.value.trim();
     const last = document.getElementById(`ct-last-${orgId}`)?.value.trim();
     const name = `${first} ${last}`.trim();
-    if (!name) return alert('Contact name required.');
+    if (!name) return false;
 
     const payload = {
       org_id: oId,
@@ -334,13 +360,39 @@ function showContactForm(orgId, existing) {
       is_active: true
     };
 
-    const { error } = ctId 
-      ? await supabase.from('stakeholder_contacts').update(payload).eq('id', ctId)
-      : await supabase.from('stakeholder_contacts').insert(payload);
+    const { data, error } = ctId
+      ? await supabase.from('stakeholder_contacts').update(payload).eq('id', ctId).select().single()
+      : await supabase.from('stakeholder_contacts').insert(payload).select().single();
+    if (error) {
+      if (!silent) showToast(error.message, true);
+      return false;
+    }
+    if (!ctId && data?.id && saveBtn) saveBtn.dataset.id = data.id;
+    if (!silent) {
+      showToast('✓ Contact saved successfully!');
+      await renderStakeholders();
+    }
+    return true;
+  }
+  const timerKey = `ct-${orgId}`;
+  const scheduleContactAutoSave = () => {
+    clearTimeout(_stakeholderAutoSaveTimers.get(timerKey));
+    _stakeholderAutoSaveTimers.set(timerKey, setTimeout(async () => {
+      const ok = await saveContact({ silent: true });
+      if (ok) showToast('✓ Contact auto-saved');
+    }, 1200));
+  };
+  area.querySelectorAll('input,textarea,select').forEach(el => {
+    el.addEventListener('input', scheduleContactAutoSave);
+    el.addEventListener('change', scheduleContactAutoSave);
+  });
 
-    if (error) return showToast(error.message, true);
-    showToast('✓ Contact saved successfully!');
-    await renderStakeholders();
+  saveBtn?.addEventListener('click', async () => {
+    const first = document.getElementById(`ct-first-${orgId}`)?.value.trim();
+    const last = document.getElementById(`ct-last-${orgId}`)?.value.trim();
+    const name = `${first} ${last}`.trim();
+    if (!name) return alert('Contact name required.');
+    await saveContact({ silent: false });
   });
 }
 

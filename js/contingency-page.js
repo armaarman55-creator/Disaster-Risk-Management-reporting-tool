@@ -20,6 +20,7 @@ let _context = null;
 let _autoSaveTimer = null;
 let _menuCollapsed = false;
 let _splitView = false;
+let _autoSaveFlushBound = false;
 
 function showToast(msg, isError = false) {
   document.querySelectorAll('.drmsa-toast').forEach(t => t.remove());
@@ -142,6 +143,16 @@ function scheduleAutoSave(planId, host = null) {
     if (host && current) syncPlanFromForm(host, current);
     persistPlan(planId);
   }, 900);
+}
+
+function flushContingencyAutoSave() {
+  const host = document.getElementById('cp-plan-detail');
+  if (!_activePlanId || !host) return;
+  const current = getPlan(_activePlanId);
+  if (!current) return;
+  clearTimeout(_autoSaveTimer);
+  syncPlanFromForm(host, current);
+  persistPlan(_activePlanId);
 }
 
 function showContingencyExportMenu(anchorBtn, plan) {
@@ -1098,4 +1109,12 @@ export async function initContingencyPage(user) {
     _splitView = !_splitView;
     applyLayoutState();
   });
+
+  if (!_autoSaveFlushBound) {
+    window.addEventListener('beforeunload', flushContingencyAutoSave);
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') flushContingencyAutoSave();
+    });
+    _autoSaveFlushBound = true;
+  }
 }

@@ -5,6 +5,9 @@ import { showDownloadMenu, docHeader } from './download.js';
 let _muniId = null;
 let _user = null;
 let _currentMopup = null;
+let _mopupAutoSaveTimer = null;
+let _mopupAutoSaveBusy = false;
+let _mopupAutoSaveQueued = false;
 
 export async function initMopup(user) {
   _user = user;
@@ -354,32 +357,15 @@ function renderMopupRecommendations(r) {
 }
 
 function bindMopupSummaryEvents(r) {
+  const triggerAutoSave = () => scheduleMopupSummaryAutoSave(r.id);
+  document.querySelectorAll('#mu-body input, #mu-body textarea, #mu-body select').forEach(el => {
+    el.addEventListener('input', triggerAutoSave);
+    el.addEventListener('change', triggerAutoSave);
+  });
+
   document.getElementById('mu-save-btn')?.addEventListener('click', async () => {
-    const fin = {
-      relief: parseFloat(document.getElementById('fin-relief')?.value)||0,
-      repairs: parseFloat(document.getElementById('fin-repairs')?.value)||0,
-      personnel: parseFloat(document.getElementById('fin-personnel')?.value)||0,
-      equipment: parseFloat(document.getElementById('fin-equipment')?.value)||0
-    };
-    const { error } = await supabase.from('mopup_reports').update({
-      incident_name: document.getElementById('mu-name')?.value,
-      hazard_type: document.getElementById('mu-hazard')?.value,
-      duration_days: parseInt(document.getElementById('mu-duration')?.value)||null,
-      activation_date: document.getElementById('mu-activation')?.value||null,
-      standdown_date: document.getElementById('mu-standdown')?.value||null,
-      sitreps_issued: parseInt(document.getElementById('mu-sitreps')?.value)||null,
-      narrative: document.getElementById('mu-narrative')?.value,
-      total_affected: parseInt(document.getElementById('mu-affected')?.value)||0,
-      fatalities: parseInt(document.getElementById('mu-fatalities')?.value)||0,
-      injuries: parseInt(document.getElementById('mu-injuries')?.value)||0,
-      properties_damaged: parseInt(document.getElementById('mu-properties')?.value)||0,
-      structures_destroyed: parseInt(document.getElementById('mu-destroyed')?.value)||0,
-      financial_summary: fin,
-      compiled_by: document.getElementById('mu-compiled-by')?.value,
-      authorised_by: document.getElementById('mu-authorised-by')?.value,
-      updated_at: new Date().toISOString()
-    }).eq('id', r.id);
-    if (!error) showToast('Mop-up report saved');
+    const ok = await persistMopupSummary(r.id);
+    if (ok) showToast('Mop-up report saved');
   });
 
   document.getElementById('mu-authorise-btn')?.addEventListener('click', async () => {
@@ -390,6 +376,73 @@ function bindMopupSummaryEvents(r) {
     document.getElementById('mu-authorise-btn')?.remove();
     showToast('Report authorised');
   });
+}
+
+function readMopupSummaryPayload() {
+  const fin = {
+    relief: parseFloat(document.getElementById('fin-relief')?.value) || 0,
+    repairs: parseFloat(document.getElementById('fin-repairs')?.value) || 0,
+    personnel: parseFloat(document.getElementById('fin-personnel')?.value) || 0,
+    equipment: parseFloat(document.getElementById('fin-equipment')?.value) || 0
+  };
+  return {
+    incident_name: document.getElementById('mu-name')?.value,
+    hazard_type: document.getElementById('mu-hazard')?.value,
+    duration_days: parseInt(document.getElementById('mu-duration')?.value) || null,
+    activation_date: document.getElementById('mu-activation')?.value || null,
+    standdown_date: document.getElementById('mu-standdown')?.value || null,
+    sitreps_issued: parseInt(document.getElementById('mu-sitreps')?.value) || null,
+    narrative: document.getElementById('mu-narrative')?.value,
+    total_affected: parseInt(document.getElementById('mu-affected')?.value) || 0,
+    fatalities: parseInt(document.getElementById('mu-fatalities')?.value) || 0,
+    injuries: parseInt(document.getElementById('mu-injuries')?.value) || 0,
+    properties_damaged: parseInt(document.getElementById('mu-properties')?.value) || 0,
+    structures_destroyed: parseInt(document.getElementById('mu-destroyed')?.value) || 0,
+    financial_summary: fin,
+    compiled_by: document.getElementById('mu-compiled-by')?.value,
+    authorised_by: document.getElementById('mu-authorised-by')?.value,
+    updated_at: new Date().toISOString()
+  };
+}
+
+async function persistMopupSummary(id) {
+  if (!id) return false;
+  const { error } = await supabase.from('mopup_reports').update(readMopupSummaryPayload()).eq('id', id);
+  if (error) {
+    showToast('Auto-save failed: ' + error.message, true);
+    return false;
+  }
+  return true;
+}
+
+function scheduleMopupSummaryAutoSave(id) {
+  if (!id) return;
+  clearTimeout(_mopupAutoSaveTimer);
+  _mopupAutoSaveTimer = setTimeout(() => runMopupSummaryAutoSave(id), 1200);
+}
+
+async function runMopupSummaryAutoSave(id) {
+  if (_mopupAutoSaveBusy) {
+    _mopupAutoSaveQueued = true;
+    return;
+  }
+  _mopupAutoSaveBusy = true;
+  const ok = await persistMopupSummary(id);
+  if (ok) {
+    const title = document.querySelector('.mu-title');
+    if (title && !title.textContent.includes('Saved')) {
+      const prev = title.textContent;
+      title.textContent = `${prev} • Saved`;
+      setTimeout(() => {
+        if (title.textContent.includes('• Saved')) title.textContent = prev;
+      }, 1000);
+    }
+  }
+  _mopupAutoSaveBusy = false;
+  if (_mopupAutoSaveQueued) {
+    _mopupAutoSaveQueued = false;
+    scheduleMopupSummaryAutoSave(id);
+  }
 }
 
 function bindMopupResponseEvents(r) {
