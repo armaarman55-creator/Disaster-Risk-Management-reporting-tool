@@ -610,7 +610,7 @@ function renderShelterCard(s) {
     </div>`;
 }
 
-async function downloadShelterPNG(s, template = 'community-board', opts = {}) {
+async function renderShelterPngDataUrl(s, template = 'community-board', opts = {}) {
   const tone     = opts.tone || 'notification';
   const readable = opts.readable !== false;
   const accent   = opts.color || '#16a34a';
@@ -739,12 +739,16 @@ async function downloadShelterPNG(s, template = 'community-board', opts = {}) {
     tx(muniName+' Disaster Management Centre',14,H-10,'bold 9px Arial,sans-serif','rgba(255,255,255,0.7)');
   }
 
-  if (opts.asDataUrl) return canvas.toDataURL('image/png');
-  canvas.toBlob(blob => {
-    const url = URL.createObjectURL(blob);
-    Object.assign(document.createElement('a'),{href:url,download:`shelter-${template}-${(s.name||'shelter').replace(/\s+/g,'-')}.png`}).click();
-    URL.revokeObjectURL(url);
-  }, 'image/png');
+  return canvas.toDataURL('image/png');
+}
+
+async function downloadShelterPNG(s, template = 'community-board', opts = {}) {
+  const dataUrl = await renderShelterPngDataUrl(s, template, opts);
+  if (opts.asDataUrl) return dataUrl;
+  Object.assign(document.createElement('a'), {
+    href: dataUrl,
+    download: `shelter-${template}-${(s.name || 'shelter').replace(/\s+/g, '-')}.png`
+  }).click();
 }
 
 function bindShelterEvents(shelters) {
@@ -971,7 +975,7 @@ function renderReliefCard(op) {
     </div>`;
 }
 
-async function downloadReliefPNG(op, template = 'ops-brief', opts = {}) {
+async function renderReliefPngDataUrl(op, template = 'ops-brief', opts = {}) {
   const tone     = opts.tone || 'notification';
   const readable = opts.readable !== false;
   const accent   = opts.color || { active:'#5a3a1a', upcoming:'#1a3a6b', ended:'#444444' }[op.status] || '#5a3a1a';
@@ -1105,12 +1109,16 @@ async function downloadReliefPNG(op, template = 'ops-brief', opts = {}) {
     drawFooter();
   }
 
-  if (opts.asDataUrl) return canvas.toDataURL('image/png');
-  canvas.toBlob(blob => {
-    const url = URL.createObjectURL(blob);
-    Object.assign(document.createElement('a'),{href:url,download:`relief-op-${template}-${(op.name||'op').replace(/\s+/g,'-')}.png`}).click();
-    URL.revokeObjectURL(url);
-  }, 'image/png');
+  return canvas.toDataURL('image/png');
+}
+
+async function downloadReliefPNG(op, template = 'ops-brief', opts = {}) {
+  const dataUrl = await renderReliefPngDataUrl(op, template, opts);
+  if (opts.asDataUrl) return dataUrl;
+  Object.assign(document.createElement('a'), {
+    href: dataUrl,
+    download: `relief-op-${template}-${(op.name || 'op').replace(/\s+/g, '-')}.png`
+  }).click();
 }
 
 function bindReliefEvents(ops) {
