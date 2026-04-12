@@ -1,5 +1,6 @@
 // js/community.js
 import { supabase } from './supabase.js';
+import { confirmDialog } from './confirm-dialog.js';
 
 let _muniId    = null;
 let _activeTab = 'shelters';
@@ -244,6 +245,11 @@ function applyTitleTone(title, tone) {
   return String(title || '').replace(/\b(Notification|Notice|Bulletin|Update)\b/i, titleToneWord(tone));
 }
 
+// Compatibility helper for older template markup that referenced swatchHtml().
+function swatchHtml(color = '#1d4ed8') {
+  return `<span aria-hidden="true" style="display:inline-block;width:10px;height:10px;border-radius:999px;background:${color};border:1px solid rgba(255,255,255,.35)"></span>`;
+}
+
 function templatePreviewDataUri(templateKey) {
   const c = document.createElement('canvas');
   c.width = 180; c.height = 96;
@@ -280,6 +286,26 @@ function templatePreviewDataUri(templateKey) {
   return c.toDataURL('image/png');
 }
 
+function buildThumbnails(root, templates = []) {
+  const host = root || document;
+  const items = host.querySelectorAll('[data-template-preview]');
+  items.forEach(node => {
+    const key = node.getAttribute('data-template-preview');
+    if (!key) return;
+    if (node.tagName === 'IMG') {
+      node.src = templatePreviewDataUri(key);
+      return;
+    }
+    if (node.tagName === 'CANVAS') {
+      const ctx = node.getContext('2d');
+      if (!ctx) return;
+      const img = new Image();
+      img.onload = () => ctx.drawImage(img, 0, 0, node.width, node.height);
+      img.src = templatePreviewDataUri(key);
+    }
+  });
+}
+
 function applyTemplateDecor(ctx, template, accentColor, SPLIT, bodyTop, H, FTR_H) {
   if (template === 'alert-card') {
     ctx.fillStyle = '#7f1d1d';
@@ -304,23 +330,28 @@ function applyTemplateDecor(ctx, template, accentColor, SPLIT, bodyTop, H, FTR_H
 
 function openPngTemplatePicker({ heading, templates, sectionDefs = [], onDownload }) {
   document.getElementById('png-template-picker')?.remove();
+  // Compatibility alias for older modal templates that referenced `sectionGroups`.
+  const sectionGroups = Array.isArray(sectionDefs) ? sectionDefs : [];
   const modal = document.createElement('div');
   modal.id = 'png-template-picker';
-  modal.style.cssText = 'position:fixed;inset:0;z-index:10050;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:16px';
+  modal.style.cssText = 'position:fixed;inset:0;z-index:10050;background:rgba(0,0,0,.55);display:flex;align-items:flex-start;justify-content:center;padding:16px 16px 24px;overflow:auto';
   modal.innerHTML = `
-    <div style="width:min(760px,96vw);max-height:88vh;overflow:auto;background:var(--bg2);border:1px solid var(--border2);border-radius:12px;box-shadow:0 10px 36px rgba(0,0,0,.45);padding:16px">
+    <div style="width:min(760px,96vw);max-height:min(88vh,calc(100dvh - 32px));overflow:auto;background:var(--bg2);border:1px solid var(--border2);border-radius:12px;box-shadow:0 10px 36px rgba(0,0,0,.45);padding:16px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
         <h3 style="margin:0;font-size:16px">${heading}</h3>
-        <button type="button" data-close style="border:1px solid var(--border);background:var(--bg3);color:var(--text);border-radius:6px;padding:4px 8px;cursor:pointer">✕</button>
+        <div style="display:flex;align-items:center;gap:6px">
+          <button type="button" id="png-download-top" style="border:1px solid rgba(0,0,0,.35);background:var(--accent);color:#fff;border-radius:6px;padding:5px 10px;cursor:pointer;font-size:12px;font-weight:700;box-shadow:0 0 0 1px rgba(255,255,255,.2) inset">Download PNG</button>
+          <button type="button" data-close style="border:1px solid var(--border);background:var(--bg3);color:var(--text);border-radius:6px;padding:4px 8px;cursor:pointer">✕</button>
+        </div>
       </div>
       <div style="font-size:12px;color:var(--text3);margin-bottom:10px">Select template and content before downloading.</div>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px;margin-bottom:12px">
         ${templates.map((tpl, idx) => `
           <label style="display:block;border:1px solid var(--border);border-radius:8px;padding:9px;background:var(--bg3);cursor:pointer">
             <input type="radio" name="tpl" value="${tpl.key}" ${idx === 0 ? 'checked' : ''} />
-            <img alt="${tpl.label} preview" src="${templatePreviewDataUri(tpl.key)}" style="display:block;width:100%;height:64px;object-fit:cover;border-radius:6px;margin:6px 0;border:1px solid rgba(255,255,255,.22)" />
+            <img alt="${tpl.label} preview" data-template-preview="${tpl.key}" src="${templatePreviewDataUri(tpl.key)}" style="display:block;width:100%;height:64px;object-fit:cover;border-radius:6px;margin:6px 0;border:1px solid rgba(255,255,255,.22)" />
             <div style="font-weight:700;font-size:12px;margin-top:4px">${tpl.label}</div>
-            <div style="font-size:11px;color:var(--text3)">${tpl.desc || tpl.key}</div>
+            <div style="font-size:11px;color:var(--text3);display:flex;align-items:center;gap:6px">${swatchHtml((tpl.preview || '#1d4ed8').match(/#(?:[0-9a-fA-F]{3}){1,2}/)?.[0] || '#1d4ed8')} ${tpl.desc || tpl.key}</div>
           </label>
         `).join('')}
       </div>
@@ -337,29 +368,42 @@ function openPngTemplatePicker({ heading, templates, sectionDefs = [], onDownloa
           Readable text (recommended)
         </label>
       </div>
+      <div style="margin-top:8px">
+        <label style="font-size:12px;display:block">Theme color
+          <input id="png-accent-color" type="color" value="#1d4ed8" style="display:block;width:48px;height:30px;border:none;background:transparent;padding:0;margin-top:6px;cursor:pointer" />
+        </label>
+      </div>
       <div style="margin-top:12px;border-top:1px solid var(--border);padding-top:10px">
         <div style="font-size:12px;font-weight:700;margin-bottom:6px">Include sections</div>
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:6px">
-          ${sectionDefs.map(sec => `<label style="font-size:12px;display:flex;align-items:center;gap:6px"><input type="checkbox" data-sec="${sec.key}" ${sec.default ? 'checked' : ''}/> ${sec.label}</label>`).join('')}
+          ${sectionGroups.map(sec => `<label style="font-size:12px;display:flex;align-items:center;gap:6px"><input type="checkbox" data-sec="${sec.key}" ${sec.default ? 'checked' : ''}/> ${sec.label}</label>`).join('')}
         </div>
       </div>
-      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px">
+      <div style="position:sticky;bottom:0;display:flex;justify-content:flex-end;gap:8px;margin-top:14px;padding:10px 0 4px;background:linear-gradient(180deg, rgba(0,0,0,0), var(--bg2) 45%)">
         <button type="button" data-close style="border:1px solid var(--border);background:var(--bg3);color:var(--text);border-radius:6px;padding:7px 10px;cursor:pointer">Cancel</button>
-        <button type="button" id="png-download-now" style="border:1px solid var(--accent);background:var(--accent);color:#fff;border-radius:6px;padding:7px 12px;cursor:pointer">Download PNG</button>
+        <button type="button" id="png-download-now" style="border:1px solid rgba(0,0,0,.35);background:var(--accent);color:#fff;border-radius:6px;padding:7px 12px;cursor:pointer;font-weight:700;box-shadow:0 0 0 1px rgba(255,255,255,.2) inset">Download PNG</button>
       </div>
     </div>
   `;
   modal.querySelectorAll('[data-close]').forEach(btn => btn.addEventListener('click', () => modal.remove()));
   modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
-  modal.querySelector('#png-download-now')?.addEventListener('click', async () => {
+  const updatePreview = () => buildThumbnails(modal, templates);
+  updatePreview();
+  modal.querySelectorAll('input[name="tpl"], #png-accent-color').forEach(el => {
+    el?.addEventListener('change', updatePreview);
+  });
+  const doDownload = async () => {
     const template = modal.querySelector('input[name="tpl"]:checked')?.value || templates[0]?.key || 'official';
     const tone = modal.querySelector('#png-tone')?.value || 'notification';
     const readable = !!modal.querySelector('#png-readable')?.checked;
+    const accentColor = modal.querySelector('#png-accent-color')?.value || null;
     const sections = {};
-    sectionDefs.forEach(sec => { sections[sec.key] = !!modal.querySelector(`[data-sec="${sec.key}"]`)?.checked; });
+    sectionGroups.forEach(sec => { sections[sec.key] = !!modal.querySelector(`[data-sec="${sec.key}"]`)?.checked; });
     modal.remove();
-    await onDownload({ template, tone, readable, sections });
-  });
+    await onDownload({ template, tone, readable, accentColor, sections });
+  };
+  modal.querySelector('#png-download-now')?.addEventListener('click', doDownload);
+  modal.querySelector('#png-download-top')?.addEventListener('click', doDownload);
   document.body.appendChild(modal);
 }
 
@@ -616,7 +660,12 @@ function bindShelterEvents(shelters) {
 
   document.querySelectorAll('.shelter-delete').forEach(btn => {
     btn.addEventListener('click', async () => {
-      if (!confirm('Delete this shelter?')) return;
+      const ok = await confirmDialog({
+        title: 'Delete shelter?',
+        message: 'This action cannot be undone.',
+        confirmText: 'Delete shelter'
+      });
+      if (!ok) return;
       await supabase.from('shelters').delete().eq('id', btn.dataset.id);
       showToast('Shelter deleted');
       await renderShelters(document.getElementById('community-body'));
@@ -897,7 +946,12 @@ function bindReliefEvents(ops) {
 
   document.querySelectorAll('.relief-delete').forEach(btn => {
     btn.addEventListener('click', async () => {
-      if (!confirm('Delete this operation?')) return;
+      const ok = await confirmDialog({
+        title: 'Delete operation?',
+        message: 'This action cannot be undone.',
+        confirmText: 'Delete operation'
+      });
+      if (!ok) return;
       await supabase.from('relief_operations').delete().eq('id', btn.dataset.id);
       showToast('Operation deleted');
       await renderReliefOps(document.getElementById('community-body'));
