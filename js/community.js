@@ -311,6 +311,26 @@ function buildThumbnails(root, templates = []) {
   });
 }
 
+function buildThumbnails(root, templates = []) {
+  const host = root || document;
+  const items = host.querySelectorAll('[data-template-preview]');
+  items.forEach(node => {
+    const key = node.getAttribute('data-template-preview');
+    if (!key) return;
+    if (node.tagName === 'IMG') {
+      node.src = templatePreviewDataUri(key);
+      return;
+    }
+    if (node.tagName === 'CANVAS') {
+      const ctx = node.getContext('2d');
+      if (!ctx) return;
+      const img = new Image();
+      img.onload = () => ctx.drawImage(img, 0, 0, node.width, node.height);
+      img.src = templatePreviewDataUri(key);
+    }
+  });
+}
+
 function applyTemplateDecor(ctx, template, accentColor, SPLIT, bodyTop, H, FTR_H) {
   if (template === 'alert-card') {
     ctx.fillStyle = '#7f1d1d';
@@ -391,7 +411,11 @@ function openPngTemplatePicker({ heading, templates, sectionDefs = [], defaultCo
   `;
   modal.querySelectorAll('[data-close]').forEach(btn => btn.addEventListener('click', () => modal.remove()));
   modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
-  buildThumbnails(modal, templates);
+  const updatePreview = () => buildThumbnails(modal, templates);
+  updatePreview();
+  modal.querySelectorAll('input[name="tpl"], #png-accent-color').forEach(el => {
+    el?.addEventListener('change', updatePreview);
+  });
   const doDownload = async () => {
     const template = modal.querySelector('input[name="tpl"]:checked')?.value || templates[0]?.key || 'official';
     const tone = modal.querySelector('#png-tone')?.value || 'notification';
