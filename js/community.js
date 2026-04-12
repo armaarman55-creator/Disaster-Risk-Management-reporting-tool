@@ -1,5 +1,6 @@
 // js/community.js
 import { supabase } from './supabase.js';
+import { confirmDialog } from './confirm-dialog.js';
 
 let _muniId    = null;
 let _activeTab = 'shelters';
@@ -244,6 +245,11 @@ function applyTitleTone(title, tone) {
   return String(title || '').replace(/\b(Notification|Notice|Bulletin|Update)\b/i, titleToneWord(tone));
 }
 
+// Compatibility helper for older template markup that referenced swatchHtml().
+function swatchHtml(color = '#1d4ed8') {
+  return `<span aria-hidden="true" style="display:inline-block;width:10px;height:10px;border-radius:999px;background:${color};border:1px solid rgba(255,255,255,.35)"></span>`;
+}
+
 function templatePreviewDataUri(templateKey) {
   const c = document.createElement('canvas');
   c.width = 180; c.height = 96;
@@ -306,9 +312,9 @@ function openPngTemplatePicker({ heading, templates, sectionDefs = [], onDownloa
   document.getElementById('png-template-picker')?.remove();
   const modal = document.createElement('div');
   modal.id = 'png-template-picker';
-  modal.style.cssText = 'position:fixed;inset:0;z-index:10050;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:16px';
+  modal.style.cssText = 'position:fixed;inset:0;z-index:10050;background:rgba(0,0,0,.55);display:flex;align-items:flex-start;justify-content:center;padding:16px 16px 24px;overflow:auto';
   modal.innerHTML = `
-    <div style="width:min(760px,96vw);max-height:88vh;overflow:auto;background:var(--bg2);border:1px solid var(--border2);border-radius:12px;box-shadow:0 10px 36px rgba(0,0,0,.45);padding:16px">
+    <div style="width:min(760px,96vw);max-height:min(88vh,calc(100dvh - 32px));overflow:auto;background:var(--bg2);border:1px solid var(--border2);border-radius:12px;box-shadow:0 10px 36px rgba(0,0,0,.45);padding:16px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
         <h3 style="margin:0;font-size:16px">${heading}</h3>
         <button type="button" data-close style="border:1px solid var(--border);background:var(--bg3);color:var(--text);border-radius:6px;padding:4px 8px;cursor:pointer">✕</button>
@@ -343,7 +349,7 @@ function openPngTemplatePicker({ heading, templates, sectionDefs = [], onDownloa
           ${sectionDefs.map(sec => `<label style="font-size:12px;display:flex;align-items:center;gap:6px"><input type="checkbox" data-sec="${sec.key}" ${sec.default ? 'checked' : ''}/> ${sec.label}</label>`).join('')}
         </div>
       </div>
-      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px">
+      <div style="position:sticky;bottom:0;display:flex;justify-content:flex-end;gap:8px;margin-top:14px;padding:10px 0 4px;background:linear-gradient(180deg, rgba(0,0,0,0), var(--bg2) 45%)">
         <button type="button" data-close style="border:1px solid var(--border);background:var(--bg3);color:var(--text);border-radius:6px;padding:7px 10px;cursor:pointer">Cancel</button>
         <button type="button" id="png-download-now" style="border:1px solid var(--accent);background:var(--accent);color:#fff;border-radius:6px;padding:7px 12px;cursor:pointer">Download PNG</button>
       </div>
@@ -616,7 +622,12 @@ function bindShelterEvents(shelters) {
 
   document.querySelectorAll('.shelter-delete').forEach(btn => {
     btn.addEventListener('click', async () => {
-      if (!confirm('Delete this shelter?')) return;
+      const ok = await confirmDialog({
+        title: 'Delete shelter?',
+        message: 'This action cannot be undone.',
+        confirmText: 'Delete shelter'
+      });
+      if (!ok) return;
       await supabase.from('shelters').delete().eq('id', btn.dataset.id);
       showToast('Shelter deleted');
       await renderShelters(document.getElementById('community-body'));
@@ -897,7 +908,12 @@ function bindReliefEvents(ops) {
 
   document.querySelectorAll('.relief-delete').forEach(btn => {
     btn.addEventListener('click', async () => {
-      if (!confirm('Delete this operation?')) return;
+      const ok = await confirmDialog({
+        title: 'Delete operation?',
+        message: 'This action cannot be undone.',
+        confirmText: 'Delete operation'
+      });
+      if (!ok) return;
       await supabase.from('relief_operations').delete().eq('id', btn.dataset.id);
       showToast('Operation deleted');
       await renderReliefOps(document.getElementById('community-body'));
