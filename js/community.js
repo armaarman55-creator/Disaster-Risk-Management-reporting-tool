@@ -289,26 +289,7 @@ function templatePreviewDataUri(templateKey) {
     x.fillStyle = '#1d4ed8'; x.fillRect(0, 0, 180, 8);
     drawBlocks('#1d4ed822', '#1d4ed833');
   }
-}
-
-function buildThumbnails(root, templates = []) {
-  const host = root || document;
-  const items = host.querySelectorAll('[data-template-preview]');
-  items.forEach(node => {
-    const key = node.getAttribute('data-template-preview');
-    if (!key) return;
-    if (node.tagName === 'IMG') {
-      node.src = templatePreviewDataUri(key);
-      return;
-    }
-    if (node.tagName === 'CANVAS') {
-      const ctx = node.getContext('2d');
-      if (!ctx) return;
-      const img = new Image();
-      img.onload = () => ctx.drawImage(img, 0, 0, node.width, node.height);
-      img.src = templatePreviewDataUri(key);
-    }
-  });
+  return c.toDataURL('image/png');
 }
 
 function buildThumbnails(root, templates = []) {
