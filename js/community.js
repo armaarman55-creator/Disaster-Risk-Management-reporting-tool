@@ -1,6 +1,7 @@
 // js/community.js
 import { supabase } from './supabase.js';
 import { confirmDialog } from './confirm-dialog.js';
+import { hexToRgba, darkenHex, triggerDataUrlDownload } from './png-utils.js';
 
 let _muniId    = null;
 let _activeTab = 'shelters';
@@ -257,6 +258,9 @@ function swatchHtml(color = '#1d4ed8') {
   return `<span aria-hidden="true" style="display:inline-block;width:10px;height:10px;border-radius:999px;background:${color};border:1px solid rgba(255,255,255,.35)"></span>`;
 }
 
+const _hexToRgba = hexToRgba;
+const _darkenHex = darkenHex;
+
 function templatePreviewDataUri(templateKey) {
   const c = document.createElement('canvas');
   c.width = 180; c.height = 96;
@@ -289,26 +293,7 @@ function templatePreviewDataUri(templateKey) {
     x.fillStyle = '#1d4ed8'; x.fillRect(0, 0, 180, 8);
     drawBlocks('#1d4ed822', '#1d4ed833');
   }
-}
-
-function buildThumbnails(root, templates = []) {
-  const host = root || document;
-  const items = host.querySelectorAll('[data-template-preview]');
-  items.forEach(node => {
-    const key = node.getAttribute('data-template-preview');
-    if (!key) return;
-    if (node.tagName === 'IMG') {
-      node.src = templatePreviewDataUri(key);
-      return;
-    }
-    if (node.tagName === 'CANVAS') {
-      const ctx = node.getContext('2d');
-      if (!ctx) return;
-      const img = new Image();
-      img.onload = () => ctx.drawImage(img, 0, 0, node.width, node.height);
-      img.src = templatePreviewDataUri(key);
-    }
-  });
+  return c.toDataURL('image/png');
 }
 
 function buildThumbnails(root, templates = []) {
@@ -352,7 +337,7 @@ function applyTemplateDecor(ctx, template, accentColor, SPLIT, bodyTop, H, FTR_H
   }
 }
 
-function openPngTemplatePicker({ heading, templates, sectionDefs = [], defaultColors = [], onDownload }) {
+function openPngTemplatePicker({ heading, templates, sectionDefs = [], defaultColors = [], onDownload, onPreview = null }) {
   document.getElementById('png-template-picker')?.remove();
   // Compatibility alias for older modal templates that referenced `sectionGroups`.
   const sectionGroups = Array.isArray(sectionDefs) ? sectionDefs : [];
@@ -397,6 +382,13 @@ function openPngTemplatePicker({ heading, templates, sectionDefs = [], defaultCo
           <input id="png-accent-color" type="color" value="#1d4ed8" style="display:block;width:48px;height:30px;border:none;background:transparent;padding:0;margin-top:6px;cursor:pointer" />
         </label>
       </div>
+      <div style="margin-top:10px">
+        <div style="font-size:12px;font-weight:700;margin-bottom:6px">Live preview</div>
+        <div style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;display:flex;align-items:center;justify-content:center;overflow:hidden;height:200px">
+          <canvas id="png-preview-canvas" width="360" height="192" style="max-width:100%;height:auto"></canvas>
+        </div>
+        <div style="font-size:10px;color:var(--text3);margin-top:5px">Preview updates as you change template and color</div>
+      </div>
       <div style="margin-top:12px;border-top:1px solid var(--border);padding-top:10px">
         <div style="font-size:12px;font-weight:700;margin-bottom:6px">Include sections</div>
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:6px">
@@ -411,25 +403,57 @@ function openPngTemplatePicker({ heading, templates, sectionDefs = [], defaultCo
   `;
   modal.querySelectorAll('[data-close]').forEach(btn => btn.addEventListener('click', () => modal.remove()));
   modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
-  const updatePreview = () => buildThumbnails(modal, templates);
+  let previewToken = 0;
+  const updatePreview = async () => {
+    const token = ++previewToken;
+    buildThumbnails(modal, templates);
+    const canvas = modal.querySelector('#png-preview-canvas');
+    const ctx = canvas?.getContext('2d');
+    if (!canvas || !ctx) return;
+    const template = modal.querySelector('input[name="tpl"]:checked')?.value || templates[0]?.key || 'official';
+    const accent = modal.querySelector('#png-accent-color')?.value || '#1d4ed8';
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const drawFrame = (src) => {
+      const img = new Image();
+      img.onload = () => {
+        if (token !== previewToken) return;
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = _hexToRgba(accent, 0.12);
+        ctx.fillRect(0, 0, canvas.width, 18);
+        ctx.fillStyle = accent;
+        ctx.fillRect(0, canvas.height - 7, canvas.width, 7);
+      };
+      img.src = src;
+    };
+    if (typeof onPreview === 'function') {
+      try {
+        const dataUri = await onPreview({ template, tone: modal.querySelector('#png-tone')?.value || 'notification', readable: !!modal.querySelector('#png-readable')?.checked, color: accent });
+        if (dataUri) {
+          drawFrame(dataUri);
+          return;
+        }
+      } catch (_) {}
+    }
+    drawFrame(templatePreviewDataUri(template));
+  };
   updatePreview();
-  modal.querySelectorAll('input[name="tpl"], #png-accent-color').forEach(el => {
+  modal.querySelectorAll('input[name="tpl"], #png-accent-color, #png-tone, #png-readable, [data-sec]').forEach(el => {
     el?.addEventListener('change', updatePreview);
   });
   const doDownload = async () => {
     const template = modal.querySelector('input[name="tpl"]:checked')?.value || templates[0]?.key || 'official';
     const tone = modal.querySelector('#png-tone')?.value || 'notification';
     const readable = !!modal.querySelector('#png-readable')?.checked;
-    const accentColor = modal.querySelector('#png-accent-color')?.value || null;
+    const color = modal.querySelector('#png-accent-color')?.value || null;
     const sections = {};
     sectionGroups.forEach(sec => { sections[sec.key] = !!modal.querySelector(`[data-sec="${sec.key}"]`)?.checked; });
     modal.remove();
-    await onDownload({ template, tone, readable, accentColor, sections });
+    await onDownload({ template, tone, readable, color, sections });
   };
   modal.querySelector('#png-download-now')?.addEventListener('click', doDownload);
   modal.querySelector('#png-download-top')?.addEventListener('click', doDownload);
   document.body.appendChild(modal);
-  buildThumbnails();
+  buildThumbnails(modal, templates);
   requestAnimationFrame(() => { updatePreview(); });
 }
 
@@ -569,7 +593,7 @@ function renderShelterCard(s) {
     </div>`;
 }
 
-async function downloadShelterPNG(s, template = 'community-board', opts = {}) {
+async function renderShelterPngDataUrl(s, template = 'community-board', opts = {}) {
   const tone     = opts.tone || 'notification';
   const readable = opts.readable !== false;
   const accent   = opts.color || '#16a34a';
@@ -698,11 +722,13 @@ async function downloadShelterPNG(s, template = 'community-board', opts = {}) {
     tx(muniName+' Disaster Management Centre',14,H-10,'bold 9px Arial,sans-serif','rgba(255,255,255,0.7)');
   }
 
-  canvas.toBlob(blob => {
-    const url = URL.createObjectURL(blob);
-    Object.assign(document.createElement('a'),{href:url,download:`shelter-${template}-${(s.name||'shelter').replace(/\s+/g,'-')}.png`}).click();
-    URL.revokeObjectURL(url);
-  }, 'image/png');
+  return canvas.toDataURL('image/png');
+}
+
+async function downloadShelterPNG(s, template = 'community-board', opts = {}) {
+  const dataUrl = await renderShelterPngDataUrl(s, template, opts);
+  if (opts.asDataUrl) return dataUrl;
+  triggerDataUrlDownload(dataUrl, `shelter-${template}-${(s.name || 'shelter').replace(/\s+/g, '-')}.png`);
 }
 
 function bindShelterEvents(shelters) {
@@ -789,6 +815,7 @@ function bindShelterEvents(shelters) {
             { key: 'status',       label: 'Status badge',             default: true },
             { key: 'generated_date',label:'Generated date',           default: true },
           ],
+          onPreview: ({ template, tone, readable, color }) => downloadShelterPNG(s, template, { tone, readable, color, asDataUrl: true }),
           onDownload: ({ template, tone, readable, sections, color }) => downloadShelterPNG(s, template, { tone, readable, sections, color })
         });
       });
@@ -928,7 +955,7 @@ function renderReliefCard(op) {
     </div>`;
 }
 
-async function downloadReliefPNG(op, template = 'ops-brief', opts = {}) {
+async function renderReliefPngDataUrl(op, template = 'ops-brief', opts = {}) {
   const tone     = opts.tone || 'notification';
   const readable = opts.readable !== false;
   const accent   = opts.color || { active:'#5a3a1a', upcoming:'#1a3a6b', ended:'#444444' }[op.status] || '#5a3a1a';
@@ -1062,11 +1089,13 @@ async function downloadReliefPNG(op, template = 'ops-brief', opts = {}) {
     drawFooter();
   }
 
-  canvas.toBlob(blob => {
-    const url = URL.createObjectURL(blob);
-    Object.assign(document.createElement('a'),{href:url,download:`relief-op-${template}-${(op.name||'op').replace(/\s+/g,'-')}.png`}).click();
-    URL.revokeObjectURL(url);
-  }, 'image/png');
+  return canvas.toDataURL('image/png');
+}
+
+async function downloadReliefPNG(op, template = 'ops-brief', opts = {}) {
+  const dataUrl = await renderReliefPngDataUrl(op, template, opts);
+  if (opts.asDataUrl) return dataUrl;
+  triggerDataUrlDownload(dataUrl, `relief-op-${template}-${(op.name || 'op').replace(/\s+/g, '-')}.png`);
 }
 
 function bindReliefEvents(ops) {
@@ -1140,6 +1169,7 @@ function bindReliefEvents(ops) {
             { key: 'status_badge',    label: 'Status badge',              default: true },
             { key: 'generated_date',  label: 'Generated date',            default: true },
           ],
+          onPreview: ({ template, tone, readable, color }) => downloadReliefPNG(op, template, { tone, readable, color, asDataUrl: true }),
           onDownload: ({ template, tone, readable, sections, color }) => downloadReliefPNG(op, template, { tone, readable, sections, color })
         });
       });
