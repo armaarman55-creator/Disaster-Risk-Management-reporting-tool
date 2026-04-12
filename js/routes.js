@@ -6,11 +6,11 @@ let _muniId   = null;
 let _closures = [];
 let _muniLogos = { main: null, dm: null, mode: 'main' };
 const ROUTE_PNG_TEMPLATES = [
-  { key: 'official', label: 'Official notice', desc: 'Formal municipal document', preview: 'linear-gradient(135deg,#f8fafc,#e2e8f0)' },
-  { key: 'compact', label: 'Compact bulletin', desc: 'Dense compact card', preview: 'linear-gradient(135deg,#f5f3ff,#ddd6fe)' },
-  { key: 'social', label: 'Social square', desc: 'Social media poster', preview: 'linear-gradient(135deg,#0f172a,#1d4ed8)' },
-  { key: 'alert-card', label: 'Alert card', desc: 'High-contrast emergency card', preview: 'linear-gradient(135deg,#7f1d1d,#dc2626)' },
-  { key: 'clean-light', label: 'Clean light', desc: 'Minimal clean handout', preview: 'linear-gradient(135deg,#ffffff,#d1fae5)' }
+  { key: 'road-sign',     label: 'Road sign',      desc: 'Dark traffic sign visual style' },
+  { key: 'formal-notice', label: 'Formal notice',  desc: 'Official two-column document' },
+  { key: 'social-alert',  label: 'Social alert',   desc: 'Urgent social media card' },
+  { key: 'info-strip',    label: 'Info strip',     desc: 'Wide banner with alt route panel' },
+  { key: 'map-card',      label: 'Map card',       desc: 'Route card with map area' },
 ];
 
 function titleToneWord(tone) {
@@ -58,7 +58,16 @@ function routeTemplatePreviewDataUri(templateKey) {
     x.fillStyle = '#1d4ed8'; x.fillRect(0, 0, 180, 8);
     drawCommon('#1d4ed822', '#1d4ed833');
   }
-  return c.toDataURL('image/png');
+}
+
+// Compatibility helper for older thumbnail pipelines that call _drawRouteThumbnail(ctx, templateKey).
+function _drawRouteThumbnail(ctx, templateKey) {
+  if (!ctx || !ctx.canvas) return;
+  const { width, height } = ctx.canvas;
+  const dataUri = routeTemplatePreviewDataUri(templateKey);
+  const img = new Image();
+  img.onload = () => ctx.drawImage(img, 0, 0, width, height);
+  img.src = dataUri;
 }
 
 // Compatibility helper for older thumbnail pipelines that call _drawRouteThumbnail(ctx, templateKey).
@@ -94,6 +103,30 @@ function applyRouteTemplateDecor(ctx, template, SPLIT, bodyTop, H, FTR_H) {
 
 function openRouteTemplatePicker({ templates, onDownload }) {
   document.getElementById('route-template-picker')?.remove();
+
+  let pickerState = { template: templates[0]?.key || 'road-sign', color: '#dc2626' };
+  const defaultColors = ['#dc2626','#ea580c','#1d4ed8','#374151','#7c3aed','#b45309','#0f766e'];
+  const sectionDefs = [
+    { key: 'reason',        label: 'Closure reason',      default: true },
+    { key: 'authority',     label: 'Authority',            default: true },
+    { key: 'closed_since',  label: 'Closed since',        default: true },
+    { key: 'reopen',        label: 'Expected reopening',   default: true },
+    { key: 'alt_route',     label: 'Alternative route',    default: true },
+    { key: 'affected_wards',label: 'Affected wards',       default: true },
+    { key: 'status_badge',  label: 'Status badge',         default: true },
+    { key: 'generated_date',label: 'Generated date',       default: false },
+  ];
+
+  let pickerSections = {};
+  sectionDefs.forEach(s => { pickerSections[s.key] = s.default; });
+
+  const muniName = window._drmsaUser?.municipalities?.name || 'Municipality';
+  const date = new Date().toLocaleDateString('en-ZA');
+  const roadName = 'Main Street';
+
+  const swatchHtml = defaultColors.map(c=>`<span data-swatch="${c}" style="display:inline-block;width:20px;height:20px;border-radius:50%;background:${c};cursor:pointer;border:2px solid ${c===pickerState.color?'#fff':'transparent'};box-sizing:border-box;flex-shrink:0"></span>`).join('');
+  const sectionGroups = { 'Content': sectionDefs.filter(s=>!['status_badge','generated_date'].includes(s.key)), 'Design elements': sectionDefs.filter(s=>['status_badge','generated_date'].includes(s.key)) };
+
   const modal = document.createElement('div');
   modal.id = 'route-template-picker';
   modal.style.cssText = 'position:fixed;inset:0;z-index:10050;background:rgba(0,0,0,.55);display:flex;align-items:flex-start;justify-content:center;padding:16px 16px 24px;overflow:auto';
@@ -117,26 +150,51 @@ function openRouteTemplatePicker({ templates, onDownload }) {
           </label>
         `).join('')}
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-        <label style="font-size:12px">Notice wording
-          <select id="route-tone" style="width:100%;margin-top:4px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:7px;color:var(--text)">
-            <option value="notification">Notification</option>
-            <option value="advisory">Advisory</option>
-            <option value="update">Update</option>
-          </select>
-        </label>
-        <label style="display:flex;align-items:center;gap:8px;font-size:12px;margin-top:19px">
-          <input id="route-readable" type="checkbox" checked />
-          Readable text (recommended)
-        </label>
-      </div>
-      <div style="margin-top:12px;border-top:1px solid var(--border);padding-top:10px">
-        <div style="font-size:12px;font-weight:700;margin-bottom:6px">Include sections</div>
-        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:6px">
-          <label style="font-size:12px;display:flex;align-items:center;gap:6px"><input type="checkbox" data-sec="authority" checked/> Authority</label>
-          <label style="font-size:12px;display:flex;align-items:center;gap:6px"><input type="checkbox" data-sec="closed_since" checked/> Closed since</label>
-          <label style="font-size:12px;display:flex;align-items:center;gap:6px"><input type="checkbox" data-sec="reopen" checked/> Expected reopening</label>
-          <label style="font-size:12px;display:flex;align-items:center;gap:6px"><input type="checkbox" data-sec="alt_route" checked/> Alternative route box</label>
+      <div style="display:grid;grid-template-columns:1fr 1fr;flex:1;overflow:hidden;min-height:0">
+        <div style="border-right:1px solid var(--border);padding:14px;overflow-y:auto;display:flex;flex-direction:column;gap:12px">
+          <div>
+            <div style="font-size:10px;font-weight:700;color:var(--text3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px">Template</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:7px" id="route-tpl-grid"></div>
+          </div>
+          <div>
+            <div style="font-size:10px;font-weight:700;color:var(--text3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px">Accent colour</div>
+            <div style="display:flex;gap:7px;flex-wrap:wrap" id="route-swatches">${swatchHtml}</div>
+          </div>
+          <div>
+            <div style="font-size:10px;font-weight:700;color:var(--text3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:6px">Live preview</div>
+            <div id="route-preview-wrap" style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;display:flex;align-items:center;justify-content:center;overflow:hidden;height:200px">
+              <canvas id="route-preview-canvas"></canvas>
+            </div>
+            <div style="font-size:10px;color:var(--text3);margin-top:5px">Preview updates as you change options</div>
+          </div>
+        </div>
+        <div style="padding:14px;overflow-y:auto;display:flex;flex-direction:column;gap:12px">
+          <div>
+            <div style="font-size:10px;font-weight:700;color:var(--text3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px">Sections to include</div>
+            ${Object.entries(sectionGroups).map(([grp,secs])=>secs.length?`
+              <div style="border:1px solid var(--border);border-radius:7px;overflow:hidden;margin-bottom:8px">
+                <div style="padding:7px 12px;background:var(--bg3);font-size:11px;font-weight:700;color:var(--text2);border-bottom:1px solid var(--border)">${grp}</div>
+                <div style="padding:8px 12px;display:flex;flex-direction:column;gap:6px">
+                  ${secs.map(s=>`<label style="display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer"><input type="checkbox" data-sec="${s.key}" ${s.default?'checked':''} style="width:13px;height:13px;accent-color:var(--accent)"/> ${s.label}</label>`).join('')}
+                </div>
+              </div>` : '').join('')}
+          </div>
+          <div style="border:1px solid var(--border);border-radius:7px;overflow:hidden">
+            <div style="padding:7px 12px;background:var(--bg3);font-size:11px;font-weight:700;color:var(--text2);border-bottom:1px solid var(--border)">Notice wording</div>
+            <div style="padding:10px 12px;display:flex;flex-direction:column;gap:8px">
+              <label style="font-size:12px">Tone
+                <select id="route-tone" style="display:block;width:100%;margin-top:4px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:6px;color:var(--text);font-size:12px">
+                  <option value="notification">Notification</option>
+                  <option value="advisory">Advisory</option>
+                  <option value="update">Update</option>
+                </select>
+              </label>
+              <label style="display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer">
+                <input id="route-readable" type="checkbox" checked style="width:13px;height:13px;accent-color:var(--accent)"/>
+                Larger readable text (recommended)
+              </label>
+            </div>
+          </div>
         </div>
       </div>
       <div style="position:sticky;bottom:0;display:flex;justify-content:flex-end;gap:8px;margin-top:14px;padding:10px 0 4px;background:linear-gradient(180deg, rgba(0,0,0,0), var(--bg2) 45%)">
@@ -163,6 +221,8 @@ function openRouteTemplatePicker({ templates, onDownload }) {
   modal.querySelector('#route-download-now')?.addEventListener('click', doDownload);
   modal.querySelector('#route-download-top')?.addEventListener('click', doDownload);
   document.body.appendChild(modal);
+  buildThumbnails();
+  requestAnimationFrame(()=>{ updatePreview(); });
 }
 
 export async function initRoutes(user) {
@@ -418,222 +478,148 @@ function showEditClosureForm(closure) {
 }
 
 // ── PNG IMAGE DOWNLOAD ────────────────────────────────────
-async function downloadClosurePNG(c, template = 'official', opts = {}) {
-  const tone = opts.tone || 'notification';
-  const readable = opts.readable !== false;
-  const sections = { authority: true, closed_since: true, reopen: true, alt_route: true, ...(opts.sections || {}) };
-  const alt         = c.alternative_routes?.[0];
-  const muniName    = window._drmsaUser?.municipalities?.name || 'Municipality';
-  const date        = new Date().toLocaleString('en-ZA');
+async function downloadClosurePNG(c, template = 'road-sign', opts = {}) {
+  const tone      = opts.tone || 'notification';
+  const readable  = opts.readable !== false;
+  const accent    = opts.color || { closed:'#1a3a6b', partial:'#7a5200', open:'#1a6b3a' }[c.status] || '#1a3a6b';
+  const sections  = { reason:true, authority:true, closed_since:true, reopen:true, alt_route:true, affected_wards:true, status_badge:true, generated_date:false, ...(opts.sections||{}) };
+  const alt       = c.alternative_routes?.[0];
+  const muniName  = window._drmsaUser?.municipalities?.name || 'Municipality';
+  const date      = new Date().toLocaleString('en-ZA');
   const statusLabel = { closed:'FULLY CLOSED', partial:'PARTIAL CLOSURE', open:'REOPENED' }[c.status] || (c.status||'').toUpperCase();
-  const accentColor = { closed:'#1a3a6b', partial:'#7a5200', open:'#1a6b3a' }[c.status] || '#1a3a6b';
-  const statusBg    = { closed:'#c0392b', partial:'#d4860a', open:'#1a6b3a' }[c.status] || '#555';
-  const cfgBase = {
-    official: { W: 900, baseH: 480, altH: 580, title: 'Road Closure Notice', titleSize: 26, bodySize: 13, splitRatio: 0.63, baseBg: '#f0eeea', leftBg: '#fafaf8', headerBg: '#ffffff' },
-    compact: { W: 900, baseH: 420, altH: 500, title: 'Road Closure Bulletin', titleSize: 23, bodySize: 12, splitRatio: 0.58, baseBg: '#f7f5ff', leftBg: '#fcfbff', headerBg: '#ffffff' },
-    social: { W: 1080, baseH: 860, altH: 980, title: 'Road Closure Update', titleSize: 34, bodySize: 15, splitRatio: 0.56, baseBg: '#e6eefc', leftBg: '#f8fbff', headerBg: '#f8fbff' },
-    'alert-card': { W: 1000, baseH: 560, altH: 650, title: 'Road Closure Alert', titleSize: 30, bodySize: 14, splitRatio: 0.60, baseBg: '#fff1f2', leftBg: '#fff7f7', headerBg: '#fff5f5' },
-    'clean-light': { W: 980, baseH: 540, altH: 630, title: 'Road Closure Advisory', titleSize: 28, bodySize: 14, splitRatio: 0.65, baseBg: '#ecfdf5', leftBg: '#f7fffb', headerBg: '#ffffff' }
-  }[template] || { W: 900, baseH: 480, altH: 580, title: 'Road Closure Notice', titleSize: 26, bodySize: 13 };
-  const cfg = {
-    ...cfgBase,
-    title: applyTitleTone(cfgBase.title, tone),
-    titleSize: cfgBase.titleSize + (readable ? 1 : 0),
-    bodySize: cfgBase.bodySize + (readable ? 2 : 0)
-  };
+  const toneWord  = tone==='advisory'?'Advisory':tone==='update'?'Update':'Notification';
+  const bsz       = readable ? 14 : 12;
+  const logoImgs  = await loadLogoImages();
 
-  const logoImgs = await loadLogoImages();
-
-  // Canvas dimensions depend on selected template
-  const W = cfg.W;
-  const HAS_ALT = !!alt;
-  const H = HAS_ALT ? cfg.altH : cfg.baseH;
-  const SPLIT = Math.round(W * (cfg.splitRatio || 0.63)); // left column width
-  const HDR_H = 76;  // header row height
-  const FTR_H = 32;  // footer bar height
-
-  const canvas = document.createElement('canvas');
-  canvas.width = W; canvas.height = H;
+  const dims = { 'road-sign':{W:960,H:520}, 'formal-notice':{W:900,H:520}, 'social-alert':{W:1080,H:1080}, 'info-strip':{W:1200,H:420}, 'map-card':{W:960,H:560} }[template] || {W:960,H:520};
+  const { W, H } = dims;
+  const canvas = document.createElement('canvas'); canvas.width=W; canvas.height=H;
   const ctx = canvas.getContext('2d');
 
-  // ── Background
-  ctx.fillStyle = cfg.baseBg || '#f0eeea';
-  ctx.fillRect(0, 0, W, H);
+  const fi = (x,y,w,h,col)=>{ctx.fillStyle=col;ctx.fillRect(x,y,w,h);};
+  const tx = (str,x,y,font,col,align='left')=>{ctx.font=font;ctx.fillStyle=col;ctx.textAlign=align;ctx.fillText(str,x,y);ctx.textAlign='left';};
+  const ln = (x1,y1,x2,y2,col,lw=1)=>{ctx.strokeStyle=col;ctx.lineWidth=lw;ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();};
+  const pill = (label,x,y,bg,tc)=>{ctx.font='bold 11px Arial,sans-serif';const tw=ctx.measureText(label).width;ctx.fillStyle=bg;roundRect(ctx,x,y-13,tw+16,18,4);ctx.fill();ctx.fillStyle=tc;ctx.fillText(label,x+8,y+1);};
+  const field = (label,val,x,y,maxW,light=true)=>{tx(label.toUpperCase(),x,y,'bold 9px Arial,sans-serif',light?'#888':'rgba(255,255,255,0.55)');const lines=wrapText(ctx,val,maxW);lines.slice(0,3).forEach((l,i)=>tx(l,x,y+13+i*14,'12px Arial,sans-serif',light?'#1a1a1a':'rgba(255,255,255,0.9)'));return y+14+Math.min(lines.length,3)*14;};
 
-  // ── Top accent bar
-  ctx.fillStyle = accentColor;
-  ctx.fillRect(0, 0, W, 6);
+  const drawHeader = () => {
+    fi(0,0,W,H,'#f0eeea'); fi(0,0,W,6,accent); fi(0,6,W,54,'#fff'); ln(0,60,W,60,'#ddd');
+    let lx=14;
+    for (const img of logoImgs) { if(!img) continue; const dh=40,dw=Math.min(dh*(img.naturalWidth/img.naturalHeight),80); ctx.drawImage(img,lx,6+(54-dh)/2,dw,dh); lx+=dw+10; }
+    tx(muniName,lx+4,30,'bold 12px Arial,sans-serif','#333'); tx('Disaster Management Centre',lx+4,46,'10px Arial,sans-serif','#888');
+    if (sections.generated_date) { tx('Issued: '+date,W-14,30,'10px Arial,sans-serif','#aaa','right'); tx('FOR OFFICIAL USE',W-14,46,'9px Arial,sans-serif','#bbb','right'); }
+    return 60;
+  };
+  const drawFooter = () => { fi(0,H-30,W,30,accent); tx(muniName+' Disaster Management Centre',14,H-10,'10px Arial,sans-serif',_rHexToRgba('#fff',0.75)); tx('Generated: '+date,W-14,H-10,'9px Arial,sans-serif',_rHexToRgba('#fff',0.6),'right'); };
 
-  // ── Header row (white)
-  ctx.fillStyle = cfg.headerBg || '#ffffff';
-  ctx.fillRect(0, 6, W, HDR_H);
-  ctx.strokeStyle = '#d0ccc4';
-  ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.moveTo(0, 6 + HDR_H); ctx.lineTo(W, 6 + HDR_H); ctx.stroke();
+  if (template === 'road-sign') {
+    fi(0,0,W,H,'#1a1a2e'); fi(0,0,W,8,accent);
+    ctx.strokeStyle='rgba(255,255,255,0.2)'; ctx.lineWidth=1.5; ctx.strokeRect(10,16,W-20,H-26);
+    fi(10,16,W-20,36,'rgba(255,255,255,0.06)');
+    let lx=20; for (const img of logoImgs) { if(!img) continue; const dh=28,dw=Math.min(dh*(img.naturalWidth/img.naturalHeight),56); ctx.drawImage(img,lx,22,dw,dh); lx+=dw+8; }
+    tx(muniName,lx+4,30,'bold 12px Arial,sans-serif','rgba(255,255,255,0.8)'); tx('Disaster Management Centre',lx+4,44,'10px Arial,sans-serif','rgba(255,255,255,0.45)');
+    if (sections.generated_date) tx(date,W-20,30,'9px Arial,sans-serif','rgba(255,255,255,0.4)','right');
+    ln(10,52,W-10,52,'rgba(255,255,255,0.12)');
+    if (sections.status_badge) pill(statusLabel,20,76,accent,'#fff');
+    tx(c.road_name,20,100,`bold ${readable?26:22}px Arial,sans-serif`,'#fff');
+    if (sections.reason&&c.reason) tx(`Reason: ${c.reason}`,20,120,'12px Arial,sans-serif','rgba(255,255,255,0.75)');
+    const para=[{text:'The ',bold:false},{text:muniName+' DMC',bold:true},{text:` notifies road users of the closure of `,bold:false},{text:c.road_name,bold:true},...(c.reason?[{text:` due to `,bold:false},{text:c.reason,bold:true}]:[]),{text:'.',bold:false}];
+    let ty=140;
+    wrapRichText(ctx,para,W*0.52-40,bsz).forEach(l=>{drawRichLine(ctx,l,20,ty,bsz,'rgba(255,255,255,0.65)');ty+=bsz+6;});
+    if (alt&&sections.alt_route) { ty+=10; fi(20,ty,W*0.52-40,1,'rgba(255,255,255,0.15)'); ty+=14; tx('ALTERNATIVE ROUTE',20,ty,'bold 10px Arial,sans-serif',_rHexToRgba(accent,0.9)); ty+=14; const altL=wrapText(ctx,alt.description,W*0.52-40); altL.slice(0,2).forEach(l=>{tx(l,20,ty,'11px Arial,sans-serif','rgba(255,255,255,0.75)');ty+=14;}); if(alt.extra_distance) tx(`+${alt.extra_distance} km · ${alt.vehicle_suitability||'All vehicles'}`,20,ty,'10px Arial,sans-serif','rgba(255,255,255,0.55)'); }
+    const RX=Math.round(W*0.56); ln(RX,56,RX,H-10,'rgba(255,255,255,0.1)');
+    let ry=64;
+    if (sections.authority&&c.authority)         ry=field('Authority',c.authority,RX+16,ry,W-RX-30,false);
+    if (sections.closed_since&&c.closed_since)   ry=field('Closed since',new Date(c.closed_since).toLocaleString('en-ZA'),RX+16,ry,W-RX-30,false);
+    if (sections.reopen&&c.expected_reopen)      ry=field('Expected reopening',c.expected_reopen,RX+16,ry,W-RX-30,false);
+    if (sections.affected_wards&&c.affected_wards) { const wards=Array.isArray(c.affected_wards)?c.affected_wards.join(', '):c.affected_wards; ry=field('Affected wards',wards,RX+16,ry,W-RX-30,false); }
+    fi(10,H-20,W-20,16,'rgba(255,255,255,0.06)'); tx(muniName+' Disaster Management',W/2,H-9,'bold 9px Arial,sans-serif','rgba(255,255,255,0.5)','center');
 
-  // Logos in header
-  let logoX = 16;
-  for (const img of logoImgs) {
-    if (!img) continue;
-    const aspect = img.naturalWidth / img.naturalHeight;
-    const drawH  = 48;
-    const drawW  = Math.min(drawH * aspect, 90);
-    ctx.drawImage(img, logoX, 6 + (HDR_H - drawH) / 2, drawW, drawH);
-    logoX += drawW + 10;
+  } else if (template === 'formal-notice') {
+    const bodyTop = drawHeader(); const SP=Math.round(W*0.62); const RX=SP+14;
+    fi(0,bodyTop,SP,H-bodyTop-30,'#fafaf8'); fi(SP,bodyTop,W-SP,H-bodyTop-30,_rHexToRgba(accent,0.06)); ln(SP,bodyTop,SP,H-30,'#ddd');
+    tx(`Road Closure ${toneWord}`,20,bodyTop+36,`bold ${readable?16:14}px Arial,sans-serif`,accent);
+    tx(c.road_name,20,bodyTop+58,`bold ${readable?22:19}px Arial,sans-serif`,'#1a1a1a');
+    if (sections.status_badge) pill(statusLabel,20,bodyTop+82,accent,'#fff');
+    const para=[{text:c.road_name,bold:true},{text:' is closed to all traffic.',bold:false}];
+    const para2=[{text:'The ',bold:false},{text:muniName+' DMC',bold:true},{text:' notifies road users of the closure of ',bold:false},{text:c.road_name,bold:true},...(c.reason?[{text:' due to ',bold:false},{text:c.reason,bold:true}]:[]),{text:'.',bold:false}];
+    let ty=bodyTop+100;
+    wrapRichText(ctx,para,SP-40,bsz).forEach(l=>{drawRichLine(ctx,l,20,ty,bsz,'#1a1a1a');ty+=bsz+6;});
+    ty+=6;
+    wrapRichText(ctx,para2,SP-40,bsz).forEach(l=>{drawRichLine(ctx,l,20,ty,bsz,'#555');ty+=bsz+6;});
+    if (alt&&sections.alt_route) { ty+=12; fi(20,ty,SP-40,1,'#ddd'); ty+=14; tx('ALTERNATIVE ROUTE',20,ty,'bold 10px Arial,sans-serif','#3a7d44'); ty+=14; const al=wrapText(ctx,alt.description,SP-80); al.slice(0,2).forEach(l=>{tx(l,20,ty,'11px Arial,sans-serif','#1a1a1a');ty+=14;}); if(alt.extra_distance) tx(`+${alt.extra_distance} km · ${alt.vehicle_suitability||'All vehicles'}`,20,ty,'10px Arial,sans-serif','#555'); }
+    let ry=bodyTop+16;
+    if (sections.authority&&c.authority)         ry=field('Authority',c.authority,RX,ry,W-RX-14);
+    if (sections.closed_since&&c.closed_since)   ry=field('Closed since',new Date(c.closed_since).toLocaleString('en-ZA'),RX,ry,W-RX-14);
+    if (sections.reopen&&c.expected_reopen)      ry=field('Expected reopening',c.expected_reopen,RX,ry,W-RX-14);
+    if (sections.affected_wards&&c.affected_wards) { const wards=Array.isArray(c.affected_wards)?c.affected_wards.join(', '):c.affected_wards; ry=field('Affected wards',wards,RX,ry,W-RX-14); }
+    const isy=H-30-60; ln(RX,isy,W-14,isy,'#ccc'); tx('ISSUED BY',RX,isy+14,'bold 9px Arial,sans-serif','#888'); tx(muniName,RX,isy+28,'11px Arial,sans-serif','#333'); tx('Disaster Management',RX,isy+42,'10px Arial,sans-serif','#666');
+    drawFooter();
+
+  } else if (template === 'social-alert') {
+    fi(0,0,W,H,_rDarkenHex(accent,40)); fi(0,0,W,H,'rgba(0,0,0,0.12)');
+    fi(0,0,W,H*0.18,'rgba(255,255,255,0.12)');
+    let lx=W*0.07+14; for(const img of logoImgs){if(!img)continue;const dh=32,dw=Math.min(dh*(img.naturalWidth/img.naturalHeight),64);ctx.drawImage(img,lx,H*0.05,dw,dh);lx+=dw+8;}
+    tx(muniName,W/2,H*0.1,`bold ${readable?14:12}px Arial,sans-serif`,'rgba(255,255,255,0.9)','center');
+    tx('Road Closure '+toneWord,W/2,H*0.15,'11px Arial,sans-serif','rgba(255,255,255,0.6)','center');
+    fi(W*0.07,H*0.22,W*0.86,H*0.62,'rgba(255,255,255,0.12)');
+    if (sections.status_badge) { ctx.font='bold 11px Arial,sans-serif'; const tw=ctx.measureText(statusLabel).width; fi(W*0.07+16,H*0.27,tw+16,22,accent); tx(statusLabel,W*0.07+24,H*0.27+15,'bold 11px Arial,sans-serif','#fff'); }
+    tx(c.road_name,W/2,H*0.39,`bold ${readable?30:26}px Arial,sans-serif`,'#fff','center');
+    if (sections.reason&&c.reason)     tx(c.reason,W/2,H*0.46,`${readable?14:12}px Arial,sans-serif`,'rgba(255,255,255,0.8)','center');
+    if (sections.reopen&&c.expected_reopen) tx(`Expected reopening: ${c.expected_reopen}`,W/2,H*0.53,'12px Arial,sans-serif','rgba(255,255,255,0.7)','center');
+    if (alt&&sections.alt_route)       tx(`Alt route: ${alt.description}`,W/2,H*0.6,'11px Arial,sans-serif','rgba(255,255,255,0.65)','center');
+    if (sections.affected_wards&&c.affected_wards) { const wards=Array.isArray(c.affected_wards)?c.affected_wards.join(', '):c.affected_wards; tx(`Wards affected: ${wards}`,W/2,H*0.67,'11px Arial,sans-serif','rgba(255,255,255,0.55)','center'); }
+    if (sections.generated_date) tx(date,W/2,H*0.86,'10px Arial,sans-serif','rgba(255,255,255,0.4)','center');
+
+  } else if (template === 'info-strip') {
+    fi(0,0,W,H,accent); fi(0,0,W,H,'rgba(0,0,0,0.22)');
+    fi(0,0,W,18,'rgba(255,255,255,0.12)');
+    tx(muniName,14,13,'bold 10px Arial,sans-serif','rgba(255,255,255,0.75)');
+    if (sections.generated_date) tx(date,W-14,13,'9px Arial,sans-serif','rgba(255,255,255,0.55)','right');
+    const SP=Math.round(W*0.55); fi(SP,18,W-SP,H-18,'rgba(255,255,255,0.12)'); ln(SP,18,SP,H,'rgba(255,255,255,0.2)');
+    if (sections.status_badge) { ctx.font='bold 11px Arial,sans-serif'; const tw=ctx.measureText(statusLabel).width; fi(18,26,tw+16,20,'rgba(255,255,255,0.25)'); tx(statusLabel,26,40,'bold 11px Arial,sans-serif','#fff'); }
+    tx(`Road Closure ${toneWord}`,18,56,`bold ${readable?17:15}px Arial,sans-serif`,'rgba(255,255,255,0.7)');
+    tx(c.road_name,18,82,`bold ${readable?28:24}px Arial,sans-serif`,'#fff');
+    if (sections.reason&&c.reason)     tx(c.reason,18,104,'12px Arial,sans-serif','rgba(255,255,255,0.8)');
+    if (sections.affected_wards&&c.affected_wards) { const wards=Array.isArray(c.affected_wards)?c.affected_wards.join(', '):c.affected_wards; tx(`Wards: ${wards}`,18,122,'11px Arial,sans-serif','rgba(255,255,255,0.65)'); }
+    if (alt&&sections.alt_route) { const aY=H-60; fi(18,aY,SP-36,50,'rgba(255,255,255,0.1)'); tx('ALTERNATIVE ROUTE',26,aY+16,'bold 9px Arial,sans-serif','rgba(255,255,255,0.65)'); tx(alt.description,26,aY+30,'11px Arial,sans-serif','rgba(255,255,255,0.85)'); if(alt.extra_distance) tx(`+${alt.extra_distance} km · ${alt.vehicle_suitability||'All vehicles'}`,26,aY+44,'10px Arial,sans-serif','rgba(255,255,255,0.6)'); }
+    let ry=28;
+    if (sections.authority&&c.authority)         ry=field('Authority',c.authority,SP+16,ry,W-SP-30,false);
+    if (sections.closed_since&&c.closed_since)   ry=field('Closed since',new Date(c.closed_since).toLocaleString('en-ZA'),SP+16,ry,W-SP-30,false);
+    if (sections.reopen&&c.expected_reopen)      ry=field('Expected reopening',c.expected_reopen,SP+16,ry,W-SP-30,false);
+    tx(muniName+' Disaster Management Centre',14,H-10,'bold 9px Arial,sans-serif','rgba(255,255,255,0.7)');
+
+  } else if (template === 'map-card') {
+    const bodyTop = drawHeader();
+    fi(0,bodyTop,W,H-bodyTop,'#e8f4f8'); fi(0,bodyTop,W,(H-bodyTop)*0.45,'#c8e0ea');
+    // Road path (closed)
+    ctx.strokeStyle='rgba(255,255,255,0.85)'; ctx.lineWidth=8; ctx.beginPath(); ctx.moveTo(0,bodyTop+(H-bodyTop)*0.35); ctx.bezierCurveTo(W*0.3,bodyTop+(H-bodyTop)*0.15,W*0.7,bodyTop+(H-bodyTop)*0.55,W,bodyTop+(H-bodyTop)*0.4); ctx.stroke();
+    ctx.strokeStyle=accent; ctx.lineWidth=4; ctx.setLineDash([12,8]); ctx.beginPath(); ctx.moveTo(0,bodyTop+(H-bodyTop)*0.35); ctx.bezierCurveTo(W*0.3,bodyTop+(H-bodyTop)*0.15,W*0.7,bodyTop+(H-bodyTop)*0.55,W,bodyTop+(H-bodyTop)*0.4); ctx.stroke(); ctx.setLineDash([]);
+    // Closure card
+    const bx=W*0.03, by=bodyTop+(H-bodyTop)*0.48, bw=W*0.44, bh=H-by-10;
+    fi(bx,by,bw,bh,'rgba(255,255,255,0.94)'); ctx.strokeStyle=_rHexToRgba(accent,0.4); ctx.lineWidth=0.5; ctx.strokeRect(bx,by,bw,bh);
+    if(sections.status_badge) pill(statusLabel,bx+10,by+22,accent,'#fff');
+    tx(c.road_name,bx+10,by+38,`bold ${readable?18:16}px Arial,sans-serif`,'#1a1a1a');
+    let cy=by+50;
+    if(sections.reason&&c.reason)            cy=field('Reason',c.reason,bx+10,cy,bw-20);
+    if(sections.closed_since&&c.closed_since) cy=field('Closed since',new Date(c.closed_since).toLocaleDateString('en-ZA'),bx+10,cy,bw-20);
+    if(sections.reopen&&c.expected_reopen)   cy=field('Reopen',c.expected_reopen,bx+10,cy,bw-20);
+    // Alt route card
+    if (alt&&sections.alt_route) {
+      const ax=W*0.52, ay=bodyTop+(H-bodyTop)*0.48, aw=W*0.45, ah=H-ay-10;
+      fi(ax,ay,aw,ah,_rHexToRgba(accent,0.08)); ctx.strokeStyle=_rHexToRgba(accent,0.35); ctx.lineWidth=0.5; ctx.strokeRect(ax,ay,aw,ah);
+      tx('ALTERNATIVE ROUTE',ax+10,ay+18,'bold 10px Arial,sans-serif','#3a7d44');
+      const al=wrapText(ctx,alt.description,aw-20); let altY=ay+34; al.slice(0,3).forEach(l=>{tx(l,ax+10,altY,'11px Arial,sans-serif','#1a1a1a');altY+=14;});
+      if(alt.extra_distance) tx(`+${alt.extra_distance} km · ${alt.vehicle_suitability||'All vehicles'}`,ax+10,altY+4,'10px Arial,sans-serif','#555');
+    }
+    drawFooter();
   }
 
-  // Municipality name + subtitle in header
-  const hTextX = logoX + 6;
-  ctx.fillStyle = '#333333';
-  ctx.font = 'bold 13px Arial, sans-serif';
-  ctx.fillText(muniName, hTextX, 6 + 28);
-  ctx.fillStyle = '#888888';
-  ctx.font = '11px Arial, sans-serif';
-  ctx.fillText('Disaster Management Centre', hTextX, 6 + 46);
-
-  // Issue date top-right
-  ctx.fillStyle = '#aaaaaa';
-  ctx.font = '10px Arial, sans-serif';
-  ctx.textAlign = 'right';
-  ctx.fillText('Issued: ' + date, W - 16, 6 + 26);
-  ctx.fillText('FOR OFFICIAL USE', W - 16, 6 + 42);
-  ctx.textAlign = 'left';
-
-  const bodyTop = 6 + HDR_H;
-  const bodyH   = H - bodyTop - FTR_H;
-
-  // ── Left column background
-  ctx.fillStyle = cfg.leftBg || '#fafaf8';
-  ctx.fillRect(0, bodyTop, SPLIT, bodyH);
-
-  // ── Right column background (already #f0eeea from base)
-
-  // ── Divider between columns
-  ctx.strokeStyle = '#d0ccc4';
-  ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.moveTo(SPLIT, bodyTop); ctx.lineTo(SPLIT, H - FTR_H); ctx.stroke();
-  applyRouteTemplateDecor(ctx, template, SPLIT, bodyTop, H, FTR_H);
-
-  // ── LEFT: Title
-  const titleY = bodyTop + (template === 'social' ? 56 : template === 'alert-card' ? 50 : 40);
-  ctx.fillStyle = accentColor;
-  ctx.font = `bold ${cfg.titleSize}px Arial, sans-serif`;
-  ctx.fillText(cfg.title, 20, titleY);
-
-  // ── LEFT: Body paragraph
-  const bodyLines = wrapRichText(ctx, [
-    { text: c.road_name, bold: true },
-    { text: ' is closed to all traffic.', bold: false }
-  ], SPLIT - 40, cfg.bodySize);
-
-  const para2 = [
-    { text: 'The ', bold: false },
-    { text: muniName + ' Disaster Management Centre', bold: true },
-    { text: ' notifies road users of the closure of ', bold: false },
-    { text: c.road_name, bold: true },
-    { text: c.reason ? ' due to ' : '.', bold: false },
-    ...(c.reason ? [{ text: c.reason, bold: true }, { text: '.', bold: false }] : [])
-  ];
-
-  let ty = titleY + Math.max(26, cfg.bodySize + 10);
-  bodyLines.forEach(line => { drawRichLine(ctx, line, 20, ty, cfg.bodySize, '#1a1a1a'); ty += (cfg.bodySize + 7); });
-  ty += 4;
-  const para2Lines = wrapRichText(ctx, para2, SPLIT - 40, cfg.bodySize);
-  para2Lines.forEach(line => { drawRichLine(ctx, line, 20, ty, cfg.bodySize, '#1a1a1a'); ty += (cfg.bodySize + 7); });
-
-  // ── LEFT: Alternative route box
-  if (alt && sections.alt_route) {
-    const altY = ty + 14;
-    const altH = 72 + (alt.extra_distance ? 20 : 0);
-    ctx.fillStyle = '#e8f0e4';
-    ctx.fillRect(20, altY, SPLIT - 40, altH);
-    ctx.fillStyle = '#3a7d44';
-    ctx.fillRect(20, altY, 4, altH);
-    ctx.strokeStyle = '#b8d4b8';
-    ctx.lineWidth = 1;
-    ctx.strokeRect(20, altY, SPLIT - 40, altH);
-
-    ctx.fillStyle = '#3a7d44';
-    ctx.font = 'bold 10px Arial, sans-serif';
-    ctx.fillText('ALTERNATIVE ROUTE', 32, altY + 18);
-
-    ctx.fillStyle = '#1a1a1a';
-    ctx.font = '12px Arial, sans-serif';
-    const altLines = wrapText(ctx, alt.description, SPLIT - 80);
-    altLines.slice(0, 2).forEach((line, i) => ctx.fillText(line, 32, altY + 36 + i * 18));
-
-    if (alt.extra_distance) {
-      ctx.fillStyle = '#555555';
-      ctx.font = '11px Arial, sans-serif';
-      ctx.fillText(`+${alt.extra_distance} km · ${alt.vehicle_suitability || 'All vehicles'}`, 32, altY + altH - 10);
-    }
-  }
-
-  // ── RIGHT: Detail fields
-  const RX = SPLIT + 16;
-  const fieldDefs = [{ label: 'Status', value: null, badge: true, badgeText: statusLabel, badgeBg: statusBg }];
-  if (sections.authority) fieldDefs.push({ label: 'Authority', value: c.authority || '—' });
-  if (sections.closed_since) fieldDefs.push({ label: 'Closed since', value: c.closed_since ? new Date(c.closed_since).toLocaleString('en-ZA') : '—' });
-  if (sections.reopen) fieldDefs.push({ label: 'Expected reopening', value: c.expected_reopen || 'Unknown' });
-  const routeFields = template === 'compact' ? fieldDefs.slice(0, 3) : fieldDefs;
-
-  let ry = bodyTop + 18;
-  routeFields.forEach(f => {
-    ctx.fillStyle = template === 'alert-card' ? '#7f1d1d' : '#888888';
-    ctx.font = template === 'clean-light' ? 'bold 10px Arial, sans-serif' : 'bold 9px Arial, sans-serif';
-    ctx.fillText(f.label.toUpperCase(), RX, ry);
-    ry += 14;
-    if (f.badge) {
-      ctx.fillStyle = f.badgeBg;
-      const bw = ctx.measureText(f.badgeText).width + 16;
-      roundRect(ctx, RX, ry - 11, bw, 18, template === 'clean-light' ? 8 : 3);
-      ctx.fill();
-      ctx.fillStyle = '#ffffff';
-      ctx.font = 'bold 10px Arial, sans-serif';
-      ctx.fillText(f.badgeText, RX + 8, ry + 3);
-      ry += 22;
-    } else {
-      ctx.fillStyle = '#1a1a1a';
-      ctx.font = template === 'clean-light' ? '13px Arial, sans-serif' : '12px Arial, sans-serif';
-      const valLines = wrapText(ctx, String(f.value), W - SPLIT - 32);
-      valLines.slice(0, 2).forEach(line => { ctx.fillText(line, RX, ry); ry += 16; });
-      ry += 4;
-    }
-    ry += 8;
-  });
-
-  // Issued by (bottom of right col)
-  const issuedY = H - FTR_H - 52;
-  ctx.strokeStyle = '#c8c4bc';
-  ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.moveTo(RX, issuedY); ctx.lineTo(W - 16, issuedY); ctx.stroke();
-  ctx.fillStyle = '#888888';
-  ctx.font = 'bold 9px Arial, sans-serif';
-  ctx.fillText('ISSUED BY', RX, issuedY + 14);
-  ctx.fillStyle = '#333333';
-  ctx.font = '11px Arial, sans-serif';
-  ctx.fillText(muniName, RX, issuedY + 28);
-  ctx.fillStyle = '#666666';
-  ctx.font = '10px Arial, sans-serif';
-  ctx.fillText('Disaster Management', RX, issuedY + 42);
-
-  // ── Footer bar
-  ctx.fillStyle = accentColor;
-  ctx.fillRect(0, H - FTR_H, W, FTR_H);
-  ctx.fillStyle = '#aac4f0';
-  ctx.font = '10px Arial, sans-serif';
-  ctx.fillText(muniName + ' Disaster Management Centre', 16, H - FTR_H + 20);
-  ctx.textAlign = 'right';
-  ctx.fillText('Generated: ' + date, W - 16, H - FTR_H + 20);
-  ctx.textAlign = 'left';
-
+  // Update the picker call site in bindClosureEvents to pass color
   canvas.toBlob(blob => {
     const url = URL.createObjectURL(blob);
-    const a   = Object.assign(document.createElement('a'), {
-      href: url,
-      download: `road-closure-notice-${template}-${(c.road_name||'route').replace(/\s+/g,'-')}.png`
-    });
-    a.click(); URL.revokeObjectURL(url);
+    Object.assign(document.createElement('a'),{href:url,download:`road-closure-${template}-${(c.road_name||'route').replace(/\s+/g,'-')}.png`}).click();
+    URL.revokeObjectURL(url);
   }, 'image/png');
 }
 
@@ -790,7 +776,7 @@ function bindClosureEvents() {
         const c = _closures.find(x => x.id === id); drop.remove(); if (!c) return;
         openRouteTemplatePicker({
           templates: ROUTE_PNG_TEMPLATES,
-          onDownload: ({ template, tone, readable, sections }) => downloadClosurePNG(c, template, { tone, readable, sections })
+          onDownload: ({ template, tone, readable, sections, color }) => downloadClosurePNG(c, template, { tone, readable, sections, color })
         });
       });
 

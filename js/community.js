@@ -5,12 +5,19 @@ import { confirmDialog } from './confirm-dialog.js';
 let _muniId    = null;
 let _activeTab = 'shelters';
 let _muniLogos = { main: null, dm: null, mode: 'main' };
-const PNG_TEMPLATES = [
-  { key: 'official', label: 'Official notice', desc: 'Formal municipal document', preview: 'linear-gradient(135deg,#f8fafc,#e2e8f0)' },
-  { key: 'compact', label: 'Compact bulletin', desc: 'Dense bulletin style', preview: 'linear-gradient(135deg,#f5f3ff,#ddd6fe)' },
-  { key: 'social', label: 'Social square', desc: 'Social media poster', preview: 'linear-gradient(135deg,#0f172a,#1d4ed8)' },
-  { key: 'alert-card', label: 'Alert card', desc: 'High-contrast emergency card', preview: 'linear-gradient(135deg,#7f1d1d,#dc2626)' },
-  { key: 'clean-light', label: 'Clean light', desc: 'Minimal clean handout', preview: 'linear-gradient(135deg,#ffffff,#d1fae5)' }
+const SHELTER_PNG_TEMPLATES = [
+  { key: 'community-board', label: 'Community board',  desc: 'Warm two-column notice board' },
+  { key: 'status-panel',    label: 'Status panel',     desc: 'Capacity & occupancy dashboard' },
+  { key: 'social-post',     label: 'Social post',      desc: 'Bold square for social sharing' },
+  { key: 'field-handout',   label: 'Field handout',    desc: 'A5-style printable handout' },
+  { key: 'emergency-strip', label: 'Emergency strip',  desc: 'High-contrast wide banner' },
+];
+const RELIEF_PNG_TEMPLATES = [
+  { key: 'ops-brief',        label: 'Ops brief',         desc: 'Operational logistics card' },
+  { key: 'community-notice', label: 'Community notice',  desc: 'Formal two-column notice' },
+  { key: 'social-update',    label: 'Social update',     desc: 'Social media status square' },
+  { key: 'info-flyer',       label: 'Info flyer',        desc: 'Distribution point flyer' },
+  { key: 'timeline-card',    label: 'Timeline card',     desc: 'Schedule-focused timeline layout' },
 ];
 
 export async function initCommunity(user) {
@@ -282,8 +289,6 @@ function templatePreviewDataUri(templateKey) {
     x.fillStyle = '#1d4ed8'; x.fillRect(0, 0, 180, 8);
     drawBlocks('#1d4ed822', '#1d4ed833');
   }
-  x.fillStyle = '#ffffffcc'; x.fillRect(10, 12, 120, 6);
-  return c.toDataURL('image/png');
 }
 
 function buildThumbnails(root, templates = []) {
@@ -325,10 +330,9 @@ function applyTemplateDecor(ctx, template, accentColor, SPLIT, bodyTop, H, FTR_H
     ctx.fillStyle = grad;
     ctx.fillRect(0, bodyTop, SPLIT, H - bodyTop - FTR_H);
   }
-  ctx.fillStyle = accentColor;
 }
 
-function openPngTemplatePicker({ heading, templates, sectionDefs = [], onDownload }) {
+function openPngTemplatePicker({ heading, templates, sectionDefs = [], defaultColors = [], onDownload }) {
   document.getElementById('png-template-picker')?.remove();
   // Compatibility alias for older modal templates that referenced `sectionGroups`.
   const sectionGroups = Array.isArray(sectionDefs) ? sectionDefs : [];
@@ -401,6 +405,8 @@ function openPngTemplatePicker({ heading, templates, sectionDefs = [], onDownloa
   modal.querySelector('#png-download-now')?.addEventListener('click', doDownload);
   modal.querySelector('#png-download-top')?.addEventListener('click', doDownload);
   document.body.appendChild(modal);
+  buildThumbnails();
+  requestAnimationFrame(() => { updatePreview(); });
 }
 
 // ── SHELTERS ─────────────────────────────────────────────
@@ -539,97 +545,139 @@ function renderShelterCard(s) {
     </div>`;
 }
 
-async function downloadShelterPNG(s, template = 'official', opts = {}) {
-  const tone = opts.tone || 'notification';
+async function downloadShelterPNG(s, template = 'community-board', opts = {}) {
+  const tone     = opts.tone || 'notification';
   const readable = opts.readable !== false;
-  const sections = {
-    occupancy: true, facility: true, address: true, ward: true, contact: true, accessibility: true,
-    ...(opts.sections || {})
+  const accent   = opts.color || '#16a34a';
+  const sections = { occupancy:true, facility:true, address:true, ward:true, contact:true, accessibility:true, status:true, generated_date:true, ...(opts.sections||{}) };
+  const muniName  = window._drmsaUser?.municipalities?.name || 'Municipality';
+  const date      = new Date().toLocaleString('en-ZA');
+  const pct       = s.capacity ? Math.round((s.current_occupancy||0) / s.capacity * 100) : 0;
+  const statusLabel = (s.status||'UNKNOWN').replace(/-/g,' ').toUpperCase();
+  const toneWord  = tone==='advisory'?'Advisory':tone==='update'?'Update':'Notification';
+  const bsz       = (readable ? 14 : 12);
+  const logoImgs  = await loadLogoImages();
+
+  // ── Canvas dimensions per template
+  const dims = { 'community-board':{W:900,H:520}, 'status-panel':{W:960,H:480}, 'social-post':{W:1080,H:1080}, 'field-handout':{W:620,H:877}, 'emergency-strip':{W:1200,H:420} }[template] || {W:900,H:520};
+  const { W, H } = dims;
+  const canvas = document.createElement('canvas'); canvas.width=W; canvas.height=H;
+  const ctx = canvas.getContext('2d');
+  const lb = _hexToRgba(accent,0.08), mb = _hexToRgba(accent,0.18);
+
+  const fi = (x,y,w,h,c) => { ctx.fillStyle=c; ctx.fillRect(x,y,w,h); };
+  const tx = (str,x,y,font,c,align='left') => { ctx.font=font; ctx.fillStyle=c; ctx.textAlign=align; ctx.fillText(str,x,y); ctx.textAlign='left'; };
+  const ln = (x1,y1,x2,y2,c,lw=1) => { ctx.strokeStyle=c; ctx.lineWidth=lw; ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke(); };
+  const pill = (label,x,y,bg,tc) => { ctx.font='bold 11px Arial,sans-serif'; const tw=ctx.measureText(label).width; ctx.fillStyle=bg; roundRect(ctx,x,y-13,tw+16,18,4); ctx.fill(); ctx.fillStyle=tc; ctx.fillText(label,x+8,y+1); };
+  const field = (label,val,x,y,maxW) => { tx(label.toUpperCase(),x,y,'bold 9px Arial,sans-serif','#888'); const lines=wrapText(ctx,val,maxW); lines.slice(0,3).forEach((l,i)=>tx(l,x,y+13+i*14,'12px Arial,sans-serif','#1a1a1a')); return y+14+Math.min(lines.length,3)*14; };
+
+  const drawHeader = (bgCol) => {
+    fi(0,0,W,H,bgCol||'#f9f8f5'); fi(0,0,W,6,accent);
+    fi(0,6,W,54,'#fff'); ln(0,60,W,60,'#ddd');
+    let lx=14;
+    for (const img of logoImgs) { if(!img) continue; const dh=40,dw=Math.min(dh*(img.naturalWidth/img.naturalHeight),80); ctx.drawImage(img,lx,6+(54-dh)/2,dw,dh); lx+=dw+10; }
+    tx(muniName,lx+4,30,'bold 12px Arial,sans-serif','#333');
+    tx('Disaster Management Centre',lx+4,46,'10px Arial,sans-serif','#888');
+    if (sections.generated_date) { tx('Issued: '+date,W-14,30,'10px Arial,sans-serif','#aaa','right'); tx('FOR OFFICIAL USE',W-14,46,'9px Arial,sans-serif','#bbb','right'); }
+    return 60;
   };
-  const muniName    = window._drmsaUser?.municipalities?.name || 'Municipality';
-  const date        = new Date().toLocaleString('en-ZA');
-  const pct         = s.capacity ? Math.round((s.current_occupancy||0) / s.capacity * 100) : 0;
-  const accentColor = { open:'#1a6b3a', 'at-capacity':'#8b1a1a', partial:'#7a5200', closed:'#444444' }[s.status] || '#1a3a6b';
-  const statusBg    = { open:'#1a6b3a', 'at-capacity':'#c0392b', partial:'#d4860a', closed:'#555555' }[s.status] || '#555';
-  const statusLabel = (s.status || 'UNKNOWN').replace(/-/g, ' ').toUpperCase();
-  const cfgBase = {
-    official: { W: 900, H: 500, title: 'Shelter Notification', titleSize: 26, bodySize: 13, showOccupancy: true, layout: { splitRatio: 0.63, baseBg: '#f0eeea', leftBg: '#fafaf8' } },
-    compact: { W: 900, H: 420, title: 'Shelter Update Bulletin', titleSize: 23, bodySize: 12, showOccupancy: false, layout: { splitRatio: 0.58, baseBg: '#f6f5ff', leftBg: '#fbfaff' } },
-    social: { W: 1080, H: 1080, title: 'Shelter Status Update', titleSize: 34, bodySize: 15, showOccupancy: true, layout: { splitRatio: 0.56, baseBg: '#e6eefc', leftBg: '#f8fbff' } },
-    'alert-card': { W: 1000, H: 560, title: 'Shelter Alert Notice', titleSize: 29, bodySize: 14, showOccupancy: true, layout: { splitRatio: 0.60, baseBg: '#fff1f2', leftBg: '#fff7f7', headerBg: '#fff5f5', footerText: '#fee2e2' } },
-    'clean-light': { W: 980, H: 540, title: 'Shelter Advisory', titleSize: 27, bodySize: 14, showOccupancy: true, layout: { splitRatio: 0.65, baseBg: '#ecfdf5', leftBg: '#f7fffb', headerBg: '#ffffff', footerText: '#d1fae5' } }
-  }[template] || { W: 900, H: 500, title: 'Shelter Notification', titleSize: 26, bodySize: 13, showOccupancy: true };
-  const cfg = {
-    ...cfgBase,
-    title: applyTitleTone(cfgBase.title, tone),
-    titleSize: cfgBase.titleSize + (readable ? 1 : 0),
-    bodySize: cfgBase.bodySize + (readable ? 2 : 0)
-  };
+  const drawFooter = () => { fi(0,H-30,W,30,accent); tx(muniName+' Disaster Management Centre',14,H-10,'10px Arial,sans-serif',_hexToRgba('#fff',0.75)); tx('Generated: '+date,W-14,H-10,'9px Arial,sans-serif',_hexToRgba('#fff',0.6),'right'); };
 
-  const logoImgs = await loadLogoImages();
-  const { W, H } = cfg;
-  const { ctx, canvas, SPLIT, bodyTop, FTR_H, RX } = buildNoticeCanvas(logoImgs, accentColor, muniName, date, W, H, cfg.layout);
-  applyTemplateDecor(ctx, template, accentColor, SPLIT, bodyTop, H, FTR_H);
+  if (template === 'community-board') {
+    const bodyTop = drawHeader(); const SP=Math.round(W*0.62); const RX=SP+14;
+    fi(0,bodyTop,SP,H-bodyTop-30,'#fafaf8'); fi(SP,bodyTop,W-SP,H-bodyTop-30,lb); ln(SP,bodyTop,SP,H-30,'#ddd');
+    tx(`Shelter ${toneWord}`,20,bodyTop+36,`bold ${readable?16:14}px Arial,sans-serif`,accent);
+    tx(s.name,20,bodyTop+56,`bold ${readable?22:19}px Arial,sans-serif`,'#1a1a1a');
+    if (sections.status) pill(statusLabel,20,bodyTop+80,accent,'#fff');
+    const para=[{text:s.name,bold:true},{text:' is currently ',bold:false},{text:s.status||'open',bold:true},{text:' and operational as an emergency shelter.',bold:false}];
+    let ty=bodyTop+100;
+    wrapRichText(ctx,para,SP-40,bsz).forEach(l=>{drawRichLine(ctx,l,20,ty,bsz,'#333');ty+=bsz+6;});
+    ty+=8;
+    const para2=[{text:'The ',bold:false},{text:muniName+' DMC',bold:true},{text:' confirms Ward '+(s.ward_number||'—')+' capacity: ',bold:false},{text:(s.capacity||0)+' persons',bold:true},{text:'. Occupancy: ',bold:false},{text:(s.current_occupancy||0)+'/'+(s.capacity||0)+' ('+pct+'%)',bold:true}];
+    wrapRichText(ctx,para2,SP-40,bsz).forEach(l=>{drawRichLine(ctx,l,20,ty,bsz,'#555');ty+=bsz+6;});
+    if (sections.occupancy&&s.capacity) { ty+=10; tx('OCCUPANCY',20,ty,'bold 9px Arial,sans-serif','#888'); ty+=12; fi(20,ty,SP-40,10,'#ddd'); roundRect(ctx,20,ty,Math.max(4,Math.min(pct/100*(SP-40),SP-40)),10,4); ctx.fillStyle=accent; ctx.fill(); tx(`${s.current_occupancy||0} / ${s.capacity} persons (${pct}%)`,20,ty+22,'11px Arial,sans-serif','#555'); }
+    let ry=bodyTop+16;
+    if (sections.facility)      ry=field('Facility type',s.facility_type||'—',RX,ry,W-RX-14);
+    if (sections.address)       ry=field('Address',s.address||'—',RX,ry,W-RX-14);
+    if (sections.ward)          ry=field('Ward',String(s.ward_number||'—'),RX,ry,W-RX-14);
+    if (sections.contact)       ry=field('Contact',`${s.contact_name||'—'} · ${s.contact_number||'—'}`,RX,ry,W-RX-14);
+    if (sections.accessibility) ry=field('Wheelchair access',s.wheelchair_accessible?'Yes — full access':'No',RX,ry,W-RX-14);
+    const isy=H-30-60; ln(RX,isy,W-14,isy,'#ccc'); tx('ISSUED BY',RX,isy+14,'bold 9px Arial,sans-serif','#888'); tx(muniName,RX,isy+28,'11px Arial,sans-serif','#333'); tx('Disaster Management',RX,isy+42,'10px Arial,sans-serif','#666');
+    drawFooter();
 
-  // ── LEFT: Title
-  const titleY = bodyTop + (template === 'social' ? 56 : template === 'alert-card' ? 50 : 40);
-  ctx.fillStyle = accentColor; ctx.font = `bold ${cfg.titleSize}px Arial, sans-serif`;
-  ctx.fillText(cfg.title, 20, titleY);
+  } else if (template === 'status-panel') {
+    const bodyTop = drawHeader(); const cw=Math.floor((W-30)/3);
+    fi(0,bodyTop,W,H-bodyTop-30,'#fff');
+    tx(`${s.name} — Shelter ${toneWord}`,14,bodyTop+24,`bold ${readable?16:14}px Arial,sans-serif`,accent);
+    if (sections.status) pill(statusLabel,14,bodyTop+48,accent,'#fff');
+    [{l:'Capacity',v:String(s.capacity||0)},{l:'Occupancy',v:String(s.current_occupancy||0)},{l:'Available',v:String(Math.max(0,(s.capacity||0)-(s.current_occupancy||0)))}].forEach((cd,i)=>{
+      const cx=10+i*(cw+5); fi(cx,bodyTop+62,cw,50,lb); ctx.strokeStyle=_hexToRgba(accent,0.25); ctx.lineWidth=0.5; ctx.strokeRect(cx,bodyTop+62,cw,50);
+      tx(cd.l,cx+10,bodyTop+76,'bold 9px Arial,sans-serif','#888'); tx(cd.v,cx+10,bodyTop+100,`bold ${readable?20:18}px Arial,sans-serif`,accent);
+    });
+    if (s.capacity) { const bY=bodyTop+124; fi(10,bY,W-20,10,'#e5e7eb'); fi(10,bY,Math.round((W-20)*pct/100),10,accent); tx(`${pct}% occupied`,10,bY+24,'11px Arial,sans-serif','#555'); }
+    const cols=[[sections.address&&s.address,field.bind(null,ctx,'Address',s.address||'—',14,bodyTop+150,W/2-18)],[sections.facility&&s.facility_type,field.bind(null,ctx,'Facility type',s.facility_type||'—',W/2+8,bodyTop+150,W/2-18)],[sections.contact&&s.contact_name,field.bind(null,ctx,'Contact',`${s.contact_name||'—'} · ${s.contact_number||'—'}`,14,bodyTop+190,W/2-18)],[sections.accessibility,field.bind(null,ctx,'Wheelchair',s.wheelchair_accessible?'Yes':'No',W/2+8,bodyTop+190,W/2-18)]];
+    let leftY=bodyTop+150, rightY=bodyTop+150;
+    if(sections.address)       leftY=field('Address',s.address||'—',14,leftY,W/2-18);
+    if(sections.facility)      rightY=field('Facility type',s.facility_type||'—',W/2+8,rightY,W/2-18);
+    if(sections.contact)       leftY=field('Contact',`${s.contact_name||'—'} · ${s.contact_number||'—'}`,14,leftY,W/2-18);
+    if(sections.accessibility) rightY=field('Wheelchair',s.wheelchair_accessible?'Yes':'No',W/2+8,rightY,W/2-18);
+    if(sections.ward)          field('Ward',String(s.ward_number||'—'),14,leftY,W/2-18);
+    drawFooter();
 
-  // ── LEFT: Body paragraph
-  const para = [
-    { text: s.name, bold: true },
-    { text: ' is currently ', bold: false },
-    { text: s.status || 'open', bold: true },
-    { text: ' and available for displaced residents.', bold: false }
-  ];
-  const para2 = [
-    { text: 'The ', bold: false },
-    { text: muniName + ' Disaster Management Centre', bold: true },
-    { text: ' confirms that ', bold: false },
-    { text: s.name, bold: true },
-    { text: ', Ward ' + (s.ward_number || '—') + ', is operational as an emergency shelter.', bold: false },
-    { text: ' Capacity: ', bold: false },
-    { text: (s.capacity || 0) + ' persons', bold: true },
-    { text: '. Current occupancy: ', bold: false },
-    { text: `${s.current_occupancy || 0} / ${s.capacity || 0} (${pct}%)`, bold: true },
-    { text: '.', bold: false }
-  ];
+  } else if (template === 'social-post') {
+    fi(0,0,W,H,_darkenHex(accent,40)); fi(0,0,W,H,'rgba(0,0,0,0.12)');
+    fi(0,0,W,H*0.18,'rgba(255,255,255,0.12)');
+    tx(muniName,W/2,H*0.09,`bold ${readable?14:12}px Arial,sans-serif`,'rgba(255,255,255,0.9)','center');
+    tx('Disaster Management Centre',W/2,H*0.14,'11px Arial,sans-serif','rgba(255,255,255,0.6)','center');
+    const bx=W*0.07,bw=W*0.86; fi(bx,H*0.22,bw,H*0.6,'rgba(255,255,255,0.12)');
+    if (sections.status) { const pl=pill.toString(); ctx.font='bold 11px Arial,sans-serif'; const tw=ctx.measureText(statusLabel).width; fi(bx+20,H*0.27,tw+20,22,accent); tx(statusLabel,bx+30,H*0.27+15,'bold 11px Arial,sans-serif','#fff'); }
+    tx(s.name,W/2,H*0.38,`bold ${readable?28:24}px Arial,sans-serif`,'#fff','center');
+    tx(`${s.facility_type||'Shelter'} · Ward ${s.ward_number||'—'}`,W/2,H*0.45,`${readable?14:12}px Arial,sans-serif`,'rgba(255,255,255,0.8)','center');
+    if (s.capacity&&sections.occupancy) { const bY=H*0.5,bX=bx+20,bWid=bw-40; fi(bX,bY,bWid,10,_hexToRgba('#fff',0.2)); fi(bX,bY,Math.round(bWid*pct/100),10,accent); tx(`${s.current_occupancy||0} / ${s.capacity} persons (${pct}%)`,W/2,bY+26,'12px Arial,sans-serif','rgba(255,255,255,0.75)','center'); }
+    if (sections.address&&s.address)    tx(s.address,W/2,H*0.62,'12px Arial,sans-serif','rgba(255,255,255,0.7)','center');
+    if (sections.contact&&s.contact_number) tx(s.contact_number,W/2,H*0.68,'12px Arial,sans-serif','rgba(255,255,255,0.65)','center');
+    if (sections.generated_date) tx(date,W/2,H*0.85,'10px Arial,sans-serif','rgba(255,255,255,0.4)','center');
 
-  let ty = titleY + Math.max(26, cfg.bodySize + 10);
-  wrapRichText(ctx, para, SPLIT - 40, cfg.bodySize).forEach(line => { drawRichLine(ctx, line, 20, ty, cfg.bodySize, '#1a1a1a'); ty += (cfg.bodySize + 7); });
-  ty += 6;
-  wrapRichText(ctx, para2, SPLIT - 40, cfg.bodySize).forEach(line => { drawRichLine(ctx, line, 20, ty, cfg.bodySize, '#1a1a1a'); ty += (cfg.bodySize + 7); });
+  } else if (template === 'field-handout') {
+    fi(0,0,W,H,'#fff'); ctx.strokeStyle=_hexToRgba(accent,0.6); ctx.lineWidth=2; ctx.strokeRect(5,5,W-10,H-10);
+    fi(5,5,W-10,28,lb); fi(5,5,W-10,4,accent);
+    tx(muniName,W/2,22,'bold 11px Arial,sans-serif',accent,'center'); ln(5,33,W-5,33,_hexToRgba(accent,0.35));
+    tx(`SHELTER ${toneWord.toUpperCase()}`,W/2,56,`bold ${readable?18:16}px Arial,sans-serif`,'#1a1a1a','center');
+    tx(s.name,W/2,80,`bold ${readable?14:12}px Arial,sans-serif`,accent,'center');
+    if (sections.status) { ctx.font='bold 11px Arial,sans-serif'; const tw=ctx.measureText(statusLabel).width; const px=(W-tw-16)/2; fi(px,92,tw+16,20,accent); tx(statusLabel,px+8,106,'bold 11px Arial,sans-serif','#fff'); }
+    ln(5,120,W-5,120,_hexToRgba(accent,0.2));
+    let y=136;
+    if (sections.address)       y=field('Address',s.address||'—',18,y,W-36);
+    if (sections.ward)          y=field('Ward number',String(s.ward_number||'—'),18,y,W-36);
+    if (sections.facility)      y=field('Facility type',s.facility_type||'—',18,y,W-36);
+    if (sections.capacity??sections.occupancy) y=field('Capacity / Occupancy',`${s.capacity||0} persons · ${s.current_occupancy||0} currently (${pct}%)`,18,y,W-36);
+    if (sections.contact)       y=field('Contact',`${s.contact_name||'—'} · ${s.contact_number||'—'}`,18,y,W-36);
+    if (sections.accessibility) y=field('Wheelchair access',s.wheelchair_accessible?'Yes — full access':'No',18,y,W-36);
+    fi(5,H-36,W-10,31,lb); tx('Generated: '+date,W/2,H-16,'9px Arial,sans-serif','#888','center');
 
-  // ── LEFT: Occupancy bar
-  if (cfg.showOccupancy && sections.occupancy) {
-    ty += 14;
-    ctx.fillStyle = '#888888'; ctx.font = 'bold 9px Arial, sans-serif';
-    ctx.fillText('OCCUPANCY', 20, ty); ty += 12;
-    const barW = SPLIT - 40, barH = 10;
-    ctx.fillStyle = '#d0ccc4'; roundRect(ctx, 20, ty, barW, barH, 4); ctx.fill();
-    const fillW = Math.min(pct / 100 * barW, barW);
-    ctx.fillStyle = accentColor; roundRect(ctx, 20, ty, Math.max(fillW, 4), barH, 4); ctx.fill();
-    ctx.fillStyle = '#555555'; ctx.font = '11px Arial, sans-serif';
-    ctx.fillText(`${s.current_occupancy || 0} / ${s.capacity || 0} persons`, 20, ty + 24);
+  } else if (template === 'emergency-strip') {
+    fi(0,0,W,H,accent); fi(0,0,W,H,'rgba(0,0,0,0.25)');
+    fi(0,0,W,18,'rgba(255,255,255,0.12)');
+    tx(muniName,14,13,'bold 10px Arial,sans-serif','rgba(255,255,255,0.75)');
+    if (sections.generated_date) tx(date,W-14,13,'9px Arial,sans-serif','rgba(255,255,255,0.55)','right');
+    const SP=Math.round(W*0.6); fi(SP,18,W-SP,H-18,'rgba(255,255,255,0.12)'); ln(SP,18,SP,H,'rgba(255,255,255,0.2)');
+    tx(`SHELTER ${toneWord.toUpperCase()}`,18,46,`bold ${readable?20:17}px Arial,sans-serif`,'#fff');
+    tx(s.name,18,72,`bold ${readable?28:24}px Arial,sans-serif`,'#fff');
+    if (sections.status) { ctx.font='bold 11px Arial,sans-serif'; const tw=ctx.measureText(statusLabel).width; fi(18,84,tw+16,20,'rgba(255,255,255,0.25)'); tx(statusLabel,26,98,'bold 11px Arial,sans-serif','#fff'); }
+    if (sections.address&&s.address)     tx(s.address,18,116,'12px Arial,sans-serif','rgba(255,255,255,0.8)');
+    if (sections.contact&&s.contact_number) tx(`Contact: ${s.contact_number}`,18,134,'12px Arial,sans-serif','rgba(255,255,255,0.7)');
+    let ry=28;
+    if (sections.ward)          ry=field('Ward',String(s.ward_number||'—'),SP+16,ry,W-SP-30);
+    if (sections.occupancy)     ry=field('Occupancy',`${s.current_occupancy||0} / ${s.capacity||0} (${pct}%)`,SP+16,ry,W-SP-30);
+    if (sections.facility)      ry=field('Facility type',s.facility_type||'—',SP+16,ry,W-SP-30);
+    if (sections.accessibility) ry=field('Wheelchair',s.wheelchair_accessible?'Yes':'No',SP+16,ry,W-SP-30);
+    tx(muniName+' Disaster Management Centre',14,H-10,'bold 9px Arial,sans-serif','rgba(255,255,255,0.7)');
   }
-
-  // ── RIGHT: Fields
-  const shelterFields = [{ label: 'Status', badge: true, badgeText: statusLabel, badgeBg: statusBg }];
-  if (sections.facility) shelterFields.push({ label: 'Facility type', value: s.facility_type || '—' });
-  if (sections.address) shelterFields.push({ label: 'Address', value: s.address || '—' });
-  if (sections.ward) shelterFields.push({ label: 'Ward', value: String(s.ward_number || '—') });
-  if (sections.contact) shelterFields.push({ label: 'Contact', value: `${s.contact_name || '—'} · ${s.contact_number || '—'}` });
-  if (sections.accessibility) shelterFields.push({ label: 'Wheelchair access', value: s.wheelchair_accessible ? 'Yes' : 'No' });
-  drawRightFields(ctx, RX, bodyTop + 16, W, template === 'compact' ? shelterFields.slice(0, 4) : shelterFields, template);
-  drawIssuedBy(ctx, RX, W, H, FTR_H, muniName);
 
   canvas.toBlob(blob => {
     const url = URL.createObjectURL(blob);
-    const a   = Object.assign(document.createElement('a'), {
-      href: url, download: `shelter-notice-${template}-${(s.name||'shelter').replace(/\s+/g,'-')}.png`
-    });
-    a.click(); URL.revokeObjectURL(url);
+    Object.assign(document.createElement('a'),{href:url,download:`shelter-${template}-${(s.name||'shelter').replace(/\s+/g,'-')}.png`}).click();
+    URL.revokeObjectURL(url);
   }, 'image/png');
 }
 
@@ -705,16 +753,19 @@ function bindShelterEvents(shelters) {
         const s = shelters.find(x => x.id === id); drop.remove(); if (!s) return;
         openPngTemplatePicker({
           heading: 'Shelter image template',
-          templates: PNG_TEMPLATES,
+          templates: SHELTER_PNG_TEMPLATES,
+          defaultColors: ['#16a34a','#0ea5e9','#f59e0b','#ef4444','#8b5cf6','#0f766e','#1d4ed8'],
           sectionDefs: [
-            { key: 'occupancy', label: 'Occupancy bar', default: true },
-            { key: 'facility', label: 'Facility type', default: true },
-            { key: 'address', label: 'Address', default: true },
-            { key: 'ward', label: 'Ward', default: true },
-            { key: 'contact', label: 'Contact', default: true },
-            { key: 'accessibility', label: 'Wheelchair access', default: true }
+            { key: 'occupancy',    label: 'Occupancy bar',            default: true },
+            { key: 'facility',     label: 'Facility type',            default: true },
+            { key: 'address',      label: 'Address',                  default: true },
+            { key: 'ward',         label: 'Ward number',              default: true },
+            { key: 'contact',      label: 'Contact person & number',  default: true },
+            { key: 'accessibility',label: 'Wheelchair access',        default: true },
+            { key: 'status',       label: 'Status badge',             default: true },
+            { key: 'generated_date',label:'Generated date',           default: true },
           ],
-          onDownload: ({ template, tone, readable, sections }) => downloadShelterPNG(s, template, { tone, readable, sections })
+          onDownload: ({ template, tone, readable, sections, color }) => downloadShelterPNG(s, template, { tone, readable, sections, color })
         });
       });
 
@@ -853,82 +904,144 @@ function renderReliefCard(op) {
     </div>`;
 }
 
-async function downloadReliefPNG(op, template = 'official', opts = {}) {
-  const tone = opts.tone || 'notification';
+async function downloadReliefPNG(op, template = 'ops-brief', opts = {}) {
+  const tone     = opts.tone || 'notification';
   const readable = opts.readable !== false;
-  const sections = {
-    hazard: true, ward: true, distribution: true, schedule: true, contact: true, ends: true,
-    ...(opts.sections || {})
+  const accent   = opts.color || { active:'#5a3a1a', upcoming:'#1a3a6b', ended:'#444444' }[op.status] || '#5a3a1a';
+  const sections = { hazard:true, ward:true, distribution:true, schedule:true, contact:true, ends:true, responsible_org:true, status_badge:true, generated_date:true, ...(opts.sections||{}) };
+  const muniName  = window._drmsaUser?.municipalities?.name || 'Municipality';
+  const date      = new Date().toLocaleString('en-ZA');
+  const statusLabel = (op.status||'UNKNOWN').toUpperCase();
+  const toneWord  = tone==='advisory'?'Advisory':tone==='update'?'Update':'Notification';
+  const bsz       = readable ? 14 : 12;
+  const logoImgs  = await loadLogoImages();
+
+  const dims = { 'ops-brief':{W:960,H:500}, 'community-notice':{W:900,H:520}, 'social-update':{W:1080,H:1080}, 'info-flyer':{W:700,H:980}, 'timeline-card':{W:900,H:520} }[template] || {W:960,H:500};
+  const { W, H } = dims;
+  const canvas = document.createElement('canvas'); canvas.width=W; canvas.height=H;
+  const ctx = canvas.getContext('2d');
+  const lb = _hexToRgba(accent,0.08), mb = _hexToRgba(accent,0.18);
+
+  const fi = (x,y,w,h,c) => { ctx.fillStyle=c; ctx.fillRect(x,y,w,h); };
+  const tx = (str,x,y,font,c,align='left') => { ctx.font=font; ctx.fillStyle=c; ctx.textAlign=align; ctx.fillText(str,x,y); ctx.textAlign='left'; };
+  const ln = (x1,y1,x2,y2,c,lw=1) => { ctx.strokeStyle=c; ctx.lineWidth=lw; ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke(); };
+  const pill = (label,x,y,bg,tc) => { ctx.font='bold 11px Arial,sans-serif'; const tw=ctx.measureText(label).width; ctx.fillStyle=bg; roundRect(ctx,x,y-13,tw+16,18,4); ctx.fill(); ctx.fillStyle=tc; ctx.fillText(label,x+8,y+1); };
+  const field = (label,val,x,y,maxW) => { tx(label.toUpperCase(),x,y,'bold 9px Arial,sans-serif','#888'); const lines=wrapText(ctx,val,maxW); lines.slice(0,3).forEach((l,i)=>tx(l,x,y+13+i*14,'12px Arial,sans-serif','#1a1a1a')); return y+14+Math.min(lines.length,3)*14; };
+
+  const drawHeader = (bgCol) => {
+    fi(0,0,W,H,bgCol||'#f9f8f5'); fi(0,0,W,6,accent);
+    fi(0,6,W,54,'#fff'); ln(0,60,W,60,'#ddd');
+    let lx=14;
+    for (const img of logoImgs) { if(!img) continue; const dh=40,dw=Math.min(dh*(img.naturalWidth/img.naturalHeight),80); ctx.drawImage(img,lx,6+(54-dh)/2,dw,dh); lx+=dw+10; }
+    tx(muniName,lx+4,30,'bold 12px Arial,sans-serif','#333');
+    tx('Disaster Management Centre',lx+4,46,'10px Arial,sans-serif','#888');
+    if (sections.generated_date) { tx('Issued: '+date,W-14,30,'10px Arial,sans-serif','#aaa','right'); tx('FOR OFFICIAL USE',W-14,46,'9px Arial,sans-serif','#bbb','right'); }
+    return 60;
   };
-  const muniName    = window._drmsaUser?.municipalities?.name || 'Municipality';
-  const date        = new Date().toLocaleString('en-ZA');
-  const accentColor = { active:'#5a3a1a', upcoming:'#1a3a6b', ended:'#444444' }[op.status] || '#5a3a1a';
-  const statusBg    = { active:'#5a3a1a', upcoming:'#1a3a6b', ended:'#555555' }[op.status] || '#5a3a1a';
-  const statusLabel = (op.status || 'UNKNOWN').toUpperCase();
-  const cfgBase = {
-    official: { W: 900, H: 500, title: 'Relief Operation Notification', titleSize: 26, bodySize: 13, layout: { splitRatio: 0.63, baseBg: '#f0eeea', leftBg: '#fafaf8' } },
-    compact: { W: 900, H: 420, title: 'Relief Operation Bulletin', titleSize: 23, bodySize: 12, layout: { splitRatio: 0.58, baseBg: '#f7f5ff', leftBg: '#fcfbff' } },
-    social: { W: 1080, H: 1080, title: 'Relief Operation Update', titleSize: 34, bodySize: 15, layout: { splitRatio: 0.56, baseBg: '#e6eefc', leftBg: '#f7fbff' } },
-    'alert-card': { W: 1000, H: 560, title: 'Relief Operation Alert', titleSize: 29, bodySize: 14, layout: { splitRatio: 0.60, baseBg: '#fff7ed', leftBg: '#fffaf5', headerBg: '#fff3e6', footerText: '#fed7aa' } },
-    'clean-light': { W: 980, H: 540, title: 'Relief Operation Advisory', titleSize: 27, bodySize: 14, layout: { splitRatio: 0.65, baseBg: '#ecfeff', leftBg: '#f4fdff', headerBg: '#ffffff', footerText: '#a5f3fc' } }
-  }[template] || { W: 900, H: 500, title: 'Relief Operation Notification', titleSize: 26, bodySize: 13 };
-  const cfg = {
-    ...cfgBase,
-    title: applyTitleTone(cfgBase.title, tone),
-    titleSize: cfgBase.titleSize + (readable ? 1 : 0),
-    bodySize: cfgBase.bodySize + (readable ? 2 : 0)
-  };
+  const drawFooter = () => { fi(0,H-30,W,30,accent); tx(muniName+' Disaster Management Centre',14,H-10,'10px Arial,sans-serif',_hexToRgba('#fff',0.75)); tx('Generated: '+date,W-14,H-10,'9px Arial,sans-serif',_hexToRgba('#fff',0.6),'right'); };
 
-  const logoImgs = await loadLogoImages();
-  const { W, H } = cfg;
-  const { ctx, canvas, SPLIT, bodyTop, FTR_H, RX } = buildNoticeCanvas(logoImgs, accentColor, muniName, date, W, H, cfg.layout);
-  applyTemplateDecor(ctx, template, accentColor, SPLIT, bodyTop, H, FTR_H);
+  if (template === 'ops-brief') {
+    const bodyTop = drawHeader(); const SP=Math.round(W*0.52); const RX=SP+14;
+    fi(0,bodyTop,6,H-bodyTop-30,accent); fi(6,bodyTop,SP-6,H-bodyTop-30,'#fff'); fi(SP,bodyTop,W-SP,H-bodyTop-30,lb);
+    ln(SP,bodyTop,SP,H-30,'#ddd');
+    tx(`Relief Operation ${toneWord}`,20,bodyTop+28,`bold ${readable?15:13}px Arial,sans-serif`,accent);
+    tx(op.name,20,bodyTop+52,`bold ${readable?22:19}px Arial,sans-serif`,'#1a1a1a');
+    if (sections.status_badge) pill(statusLabel,20,bodyTop+76,accent,'#fff');
+    const para=[{text:'The ',bold:false},{text:muniName+' DMC',bold:true},{text:' confirms that ',bold:false},{text:op.responsible_org||'the responsible organisation',bold:true},{text:' is managing distribution at ',bold:false},{text:op.distribution_point||'TBC',bold:true},{text:'.',bold:false}];
+    let ty=bodyTop+96;
+    wrapRichText(ctx,para,SP-36,bsz).forEach(l=>{drawRichLine(ctx,l,20,ty,bsz,'#333');ty+=bsz+6;});
+    if (op.schedule&&sections.schedule) { ty+=8; const para2=[{text:'Schedule: ',bold:true},{text:op.schedule,bold:false}]; wrapRichText(ctx,para2,SP-36,bsz).forEach(l=>{drawRichLine(ctx,l,20,ty,bsz,'#555');ty+=bsz+6;}); }
+    let ry=bodyTop+16;
+    if (sections.hazard&&op.hazard_name)         ry=field('Hazard',op.hazard_name,RX,ry,W-RX-14);
+    if (sections.ward)                           ry=field('Ward',String(op.ward_number||'—'),RX,ry,W-RX-14);
+    if (sections.distribution&&op.distribution_point) ry=field('Distribution point',op.distribution_point,RX,ry,W-RX-14);
+    if (sections.contact&&op.public_contact)     ry=field('Public contact',op.public_contact,RX,ry,W-RX-14);
+    if (sections.ends&&op.end_date)              ry=field('Ends',new Date(op.end_date).toLocaleDateString('en-ZA'),RX,ry,W-RX-14);
+    const isy=H-30-60; ln(RX,isy,W-14,isy,'#ccc'); tx('ISSUED BY',RX,isy+14,'bold 9px Arial,sans-serif','#888'); tx(muniName,RX,isy+28,'11px Arial,sans-serif','#333');
+    drawFooter();
 
-  // ── LEFT: Title
-  const titleY = bodyTop + (template === 'social' ? 56 : template === 'alert-card' ? 50 : 40);
-  ctx.fillStyle = accentColor; ctx.font = `bold ${cfg.titleSize}px Arial, sans-serif`;
-  ctx.fillText(cfg.title, 20, titleY);
+  } else if (template === 'community-notice') {
+    const bodyTop = drawHeader(); const SP=Math.round(W*0.62); const RX=SP+14;
+    fi(0,bodyTop,SP,H-bodyTop-30,'#fafaf8'); fi(SP,bodyTop,W-SP,H-bodyTop-30,lb); ln(SP,bodyTop,SP,H-30,'#ddd');
+    tx(`Relief Operation ${toneWord}`,20,bodyTop+36,`bold ${readable?16:14}px Arial,sans-serif`,accent);
+    tx(op.name,20,bodyTop+58,`bold ${readable?22:19}px Arial,sans-serif`,'#1a1a1a');
+    if (sections.status_badge) pill(statusLabel,20,bodyTop+82,accent,'#fff');
+    const para=[{text:op.name,bold:true},{text:' is currently ',bold:false},{text:op.status||'active',bold:true},{text:'.',bold:false}];
+    const para2=[{text:'The ',bold:false},{text:muniName+' DMC',bold:true},{text:' confirms that ',bold:false},{text:op.responsible_org||'the responsible organisation',bold:true},{text:' is coordinating relief distribution',bold:false},...(op.distribution_point?[{text:' at ',bold:false},{text:op.distribution_point,bold:true}]:[]),{text:'.',bold:false}];
+    let ty=bodyTop+102;
+    wrapRichText(ctx,para,SP-40,bsz).forEach(l=>{drawRichLine(ctx,l,20,ty,bsz,'#1a1a1a');ty+=bsz+6;});
+    ty+=6;
+    wrapRichText(ctx,para2,SP-40,bsz).forEach(l=>{drawRichLine(ctx,l,20,ty,bsz,'#555');ty+=bsz+6;});
+    let ry=bodyTop+16;
+    if (sections.hazard&&op.hazard_name)         ry=field('Hazard',op.hazard_name,RX,ry,W-RX-14);
+    if (sections.ward)                           ry=field('Ward',String(op.ward_number||'—'),RX,ry,W-RX-14);
+    if (sections.distribution&&op.distribution_point) ry=field('Distribution point',op.distribution_point,RX,ry,W-RX-14);
+    if (sections.schedule&&op.schedule)          ry=field('Schedule',op.schedule,RX,ry,W-RX-14);
+    if (sections.contact&&op.public_contact)     ry=field('Public contact',op.public_contact,RX,ry,W-RX-14);
+    if (sections.ends&&op.end_date)              ry=field('Ends',new Date(op.end_date).toLocaleDateString('en-ZA'),RX,ry,W-RX-14);
+    const isy=H-30-60; ln(RX,isy,W-14,isy,'#ccc'); tx('ISSUED BY',RX,isy+14,'bold 9px Arial,sans-serif','#888'); tx(muniName,RX,isy+28,'11px Arial,sans-serif','#333');
+    drawFooter();
 
-  // ── LEFT: Body paragraph
-  const para = [
-    { text: op.name, bold: true },
-    { text: ' is currently ', bold: false },
-    { text: op.status || 'active', bold: true },
-    { text: '.', bold: false }
-  ];
-  const para2 = [
-    { text: 'The ', bold: false },
-    { text: muniName + ' Disaster Management Centre', bold: true },
-    { text: ' confirms that ', bold: false },
-    { text: op.responsible_org || 'the responsible organisation', bold: true },
-    { text: ' is managing relief distribution at ', bold: false },
-    { text: op.distribution_point || 'TBC', bold: true },
-    { text: '.', bold: false },
-    ...(op.schedule ? [{ text: ' Distribution schedule: ', bold: false }, { text: op.schedule, bold: true }, { text: '.', bold: false }] : [])
-  ];
+  } else if (template === 'social-update') {
+    fi(0,0,W,H,_darkenHex(accent,40)); fi(0,0,W,H,'rgba(0,0,0,0.12)');
+    fi(0,0,W,H*0.18,'rgba(255,255,255,0.12)');
+    tx(muniName,W/2,H*0.09,`bold ${readable?14:12}px Arial,sans-serif`,'rgba(255,255,255,0.9)','center');
+    tx('Relief Operation Update',W/2,H*0.14,'11px Arial,sans-serif','rgba(255,255,255,0.6)','center');
+    fi(W*0.07,H*0.22,W*0.86,H*0.6,'rgba(255,255,255,0.12)');
+    if (sections.status_badge) { ctx.font='bold 11px Arial,sans-serif'; const tw=ctx.measureText(statusLabel).width; fi(W*0.07+20,H*0.26,tw+16,22,accent); tx(statusLabel,W*0.07+28,H*0.26+15,'bold 11px Arial,sans-serif','#fff'); }
+    tx(op.name,W/2,H*0.38,`bold ${readable?28:24}px Arial,sans-serif`,'#fff','center');
+    if (sections.distribution&&op.distribution_point) tx(op.distribution_point,W/2,H*0.45,`${readable?14:12}px Arial,sans-serif`,'rgba(255,255,255,0.8)','center');
+    if (sections.schedule&&op.schedule)     tx(op.schedule,W/2,H*0.52,`${readable?13:11}px Arial,sans-serif`,'rgba(255,255,255,0.7)','center');
+    if (sections.contact&&op.public_contact) tx(`Contact: ${op.public_contact}`,W/2,H*0.6,'12px Arial,sans-serif','rgba(255,255,255,0.65)','center');
+    if (sections.hazard&&op.hazard_name)    tx(`Hazard: ${op.hazard_name}`,W/2,H*0.67,'11px Arial,sans-serif','rgba(255,255,255,0.55)','center');
+    if (sections.generated_date) tx(date,W/2,H*0.85,'10px Arial,sans-serif','rgba(255,255,255,0.4)','center');
 
-  let ty = titleY + Math.max(26, cfg.bodySize + 10);
-  wrapRichText(ctx, para, SPLIT - 40, cfg.bodySize).forEach(line => { drawRichLine(ctx, line, 20, ty, cfg.bodySize, '#1a1a1a'); ty += (cfg.bodySize + 7); });
-  ty += 6;
-  wrapRichText(ctx, para2, SPLIT - 40, cfg.bodySize).forEach(line => { drawRichLine(ctx, line, 20, ty, cfg.bodySize, '#1a1a1a'); ty += (cfg.bodySize + 7); });
+  } else if (template === 'info-flyer') {
+    fi(0,0,W,H,'#fff');
+    fi(0,0,W,H*0.32,accent); fi(0,0,W,H*0.32,'rgba(0,0,0,0.2)');
+    let lx=16; for (const img of logoImgs) { if(!img) continue; const dh=36,dw=Math.min(dh*(img.naturalWidth/img.naturalHeight),72); ctx.drawImage(img,lx,14,dw,dh); lx+=dw+10; }
+    tx(muniName,lx+4,26,'bold 11px Arial,sans-serif','rgba(255,255,255,0.9)');
+    tx('Disaster Management Centre',lx+4,40,'9px Arial,sans-serif','rgba(255,255,255,0.65)');
+    if (sections.status_badge) { ctx.font='bold 11px Arial,sans-serif'; const tw=ctx.measureText(statusLabel).width; fi(W/2-(tw+16)/2,H*0.14,tw+16,22,_hexToRgba('#fff',0.25)); tx(statusLabel,W/2-(tw)/2,H*0.14+15,'bold 11px Arial,sans-serif','#fff'); }
+    tx(op.name,W/2,H*0.24,`bold ${readable?24:20}px Arial,sans-serif`,'#fff','center');
+    tx(`Relief ${toneWord}`,W/2,H*0.30,'11px Arial,sans-serif','rgba(255,255,255,0.7)','center');
+    fi(0,H*0.32,W,H-H*0.32,lb);
+    tx('Distribution & Relief Information',W/2,H*0.36,`bold ${readable?14:12}px Arial,sans-serif`,accent,'center');
+    ln(W*0.1,H*0.38,W*0.9,H*0.38,_hexToRgba(accent,0.3));
+    let y=H*0.40;
+    if (sections.distribution&&op.distribution_point) y=field('Distribution point',op.distribution_point,20,y,W-40);
+    if (sections.schedule&&op.schedule)               y=field('Schedule',op.schedule,20,y,W-40);
+    if (sections.hazard&&op.hazard_name)              y=field('Hazard',op.hazard_name,20,y,W-40);
+    if (sections.ward)                                y=field('Ward',String(op.ward_number||'—'),20,y,W-40);
+    if (sections.responsible_org&&op.responsible_org) y=field('Responsible organisation',op.responsible_org,20,y,W-40);
+    if (sections.contact&&op.public_contact)          y=field('Public contact',op.public_contact,20,y,W-40);
+    if (sections.ends&&op.end_date)                   y=field('Operation ends',new Date(op.end_date).toLocaleDateString('en-ZA'),20,y,W-40);
+    fi(0,H-36,W,36,lb); tx('Generated: '+date,W/2,H-14,'9px Arial,sans-serif','#888','center');
 
-  // ── RIGHT: Fields
-  const reliefFields = [{ label: 'Status', badge: true, badgeText: statusLabel, badgeBg: statusBg }];
-  if (sections.hazard) reliefFields.push({ label: 'Hazard', value: op.hazard_name || '—' });
-  if (sections.ward) reliefFields.push({ label: 'Ward', value: String(op.ward_number || '—') });
-  if (sections.distribution) reliefFields.push({ label: 'Distribution point', value: op.distribution_point || '—' });
-  if (sections.schedule) reliefFields.push({ label: 'Schedule', value: op.schedule || '—' });
-  if (sections.contact) reliefFields.push({ label: 'Public contact', value: op.public_contact || '—' });
-  if (sections.ends) reliefFields.push({ label: 'Ends', value: op.end_date ? new Date(op.end_date).toLocaleDateString('en-ZA') : '—' });
-  drawRightFields(ctx, RX, bodyTop + 16, W, template === 'compact' ? reliefFields.slice(0, 5) : reliefFields, template);
-  drawIssuedBy(ctx, RX, W, H, FTR_H, muniName);
+  } else if (template === 'timeline-card') {
+    const bodyTop = drawHeader();
+    fi(0,bodyTop,W,H-bodyTop-30,'#fff');
+    tx(`${op.name} — Relief ${toneWord}`,14,bodyTop+26,`bold ${readable?15:13}px Arial,sans-serif`,accent);
+    if (sections.status_badge) pill(statusLabel,14,bodyTop+50,accent,'#fff');
+    const lx=40, lineX=lx; const milY=bodyTop+70, milEnd=H-50;
+    ctx.strokeStyle='#e5e7eb'; ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(lineX,milY); ctx.lineTo(lineX,milEnd); ctx.stroke();
+    const milestones=[{l:'Operation opened',d:new Date(op.created_at||Date.now()).toLocaleDateString('en-ZA'),done:true},{l:'Distribution point active',d:op.distribution_point||'TBC',done:op.status==='active'||op.status==='ended'},{l:'Operation closes',d:op.end_date?new Date(op.end_date).toLocaleDateString('en-ZA'):'TBC',done:op.status==='ended'}];
+    const step=Math.floor((milEnd-milY)/milestones.length);
+    milestones.forEach((m,i)=>{ const my=milY+20+i*step; ctx.fillStyle=m.done?accent:'#e5e7eb'; ctx.beginPath(); ctx.arc(lineX,my,7,0,Math.PI*2); ctx.fill(); if(m.done){tx('✓',lineX,my+4,'bold 9px Arial,sans-serif','#fff','center');} tx(m.l,lineX+18,my+2,`bold ${bsz}px Arial,sans-serif`,m.done?'#1a1a1a':'#aaa'); tx(m.d,lineX+18,my+16,'10px Arial,sans-serif','#888'); });
+    const RX=Math.floor(W*0.55); ln(RX,bodyTop+66,RX,H-30,'#e5e7eb');
+    let ry=bodyTop+70;
+    if (sections.hazard&&op.hazard_name)         ry=field('Hazard',op.hazard_name,RX+14,ry,W-RX-28);
+    if (sections.distribution&&op.distribution_point) ry=field('Distribution point',op.distribution_point,RX+14,ry,W-RX-28);
+    if (sections.schedule&&op.schedule)          ry=field('Schedule',op.schedule,RX+14,ry,W-RX-28);
+    if (sections.responsible_org&&op.responsible_org) ry=field('Organisation',op.responsible_org,RX+14,ry,W-RX-28);
+    if (sections.contact&&op.public_contact)     ry=field('Public contact',op.public_contact,RX+14,ry,W-RX-28);
+    drawFooter();
+  }
 
   canvas.toBlob(blob => {
     const url = URL.createObjectURL(blob);
-    const a   = Object.assign(document.createElement('a'), {
-      href: url, download: `relief-op-notice-${template}-${(op.name||'op').replace(/\s+/g,'-')}.png`
-    });
-    a.click(); URL.revokeObjectURL(url);
+    Object.assign(document.createElement('a'),{href:url,download:`relief-op-${template}-${(op.name||'op').replace(/\s+/g,'-')}.png`}).click();
+    URL.revokeObjectURL(url);
   }, 'image/png');
 }
 
@@ -990,16 +1103,20 @@ function bindReliefEvents(ops) {
         const op = ops.find(o => o.id === id); drop.remove(); if (!op) return;
         openPngTemplatePicker({
           heading: 'Relief operation image template',
-          templates: PNG_TEMPLATES,
+          templates: RELIEF_PNG_TEMPLATES,
+          defaultColors: ['#b45309','#1d4ed8','#15803d','#dc2626','#7c3aed','#0f766e','#374151'],
           sectionDefs: [
-            { key: 'hazard', label: 'Hazard', default: true },
-            { key: 'ward', label: 'Ward', default: true },
-            { key: 'distribution', label: 'Distribution point', default: true },
-            { key: 'schedule', label: 'Schedule', default: true },
-            { key: 'contact', label: 'Public contact', default: true },
-            { key: 'ends', label: 'End date', default: true }
+            { key: 'hazard',          label: 'Hazard type',               default: true },
+            { key: 'ward',            label: 'Ward number',               default: true },
+            { key: 'distribution',    label: 'Distribution point',        default: true },
+            { key: 'schedule',        label: 'Schedule & hours',          default: true },
+            { key: 'contact',         label: 'Public contact',            default: true },
+            { key: 'responsible_org', label: 'Responsible organisation',  default: true },
+            { key: 'ends',            label: 'Operation end date',        default: true },
+            { key: 'status_badge',    label: 'Status badge',              default: true },
+            { key: 'generated_date',  label: 'Generated date',            default: true },
           ],
-          onDownload: ({ template, tone, readable, sections }) => downloadReliefPNG(op, template, { tone, readable, sections })
+          onDownload: ({ template, tone, readable, sections, color }) => downloadReliefPNG(op, template, { tone, readable, sections, color })
         });
       });
 
