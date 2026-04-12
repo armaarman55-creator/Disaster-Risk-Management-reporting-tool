@@ -252,59 +252,42 @@ function applyTitleTone(title, tone) {
   return String(title || '').replace(/\b(Notification|Notice|Bulletin|Update)\b/i, titleToneWord(tone));
 }
 
-// ── PICKER SHARED HELPERS ─────────────────────────────────
-function _hexToRgba(hex, a) {
-  const r = parseInt(hex.slice(1,3),16), g = parseInt(hex.slice(3,5),16), b = parseInt(hex.slice(5,7),16);
-  return `rgba(${r},${g},${b},${a})`;
-}
-function _darkenHex(hex, amt) {
-  const r = Math.max(0,parseInt(hex.slice(1,3),16)-amt), g = Math.max(0,parseInt(hex.slice(3,5),16)-amt), b = Math.max(0,parseInt(hex.slice(5,7),16)-amt);
-  return `#${r.toString(16).padStart(2,'0')}${g.toString(16).padStart(2,'0')}${b.toString(16).padStart(2,'0')}`;
-}
-function _wrapCanvasText(ctx, text, maxWidth) {
-  const words = (text||'').split(' '); const lines = []; let cur = '';
-  words.forEach(w => { const t = cur ? cur+' '+w : w; if (ctx.measureText(t).width > maxWidth && cur) { lines.push(cur); cur = w; } else cur = t; });
-  if (cur) lines.push(cur); return lines;
+// Compatibility helper for older template markup that referenced swatchHtml().
+function swatchHtml(color = '#1d4ed8') {
+  return `<span aria-hidden="true" style="display:inline-block;width:10px;height:10px;border-radius:999px;background:${color};border:1px solid rgba(255,255,255,.35)"></span>`;
 }
 
-function _drawThumbnail(canvas, layout, color) {
-  const ctx = canvas.getContext('2d');
-  const W = canvas.width, H = canvas.height;
-  ctx.clearRect(0,0,W,H);
-  const c = color, lb = _hexToRgba(c,0.1), mb = _hexToRgba(c,0.2);
-  if (layout === 'community-board' || layout === 'ops-brief') {
-    ctx.fillStyle='#f8f7f4'; ctx.fillRect(0,0,W,H);
-    ctx.fillStyle=c; ctx.fillRect(0,0,W,5); ctx.fillRect(0,0,6,H);
-    ctx.fillStyle='#fff'; ctx.fillRect(6,5,W-6,H-5);
-    ctx.fillStyle=c; ctx.fillRect(14,14,44,4);
-    ctx.fillStyle='#ccc'; ctx.fillRect(14,22,W-50,3); ctx.fillRect(14,28,W-65,2);
-    ctx.fillStyle=mb; ctx.fillRect(W-52,10,38,22);
-  } else if (layout === 'status-panel' || layout === 'timeline-card') {
-    ctx.fillStyle='#fff'; ctx.fillRect(0,0,W,H);
-    ctx.fillStyle=c; ctx.fillRect(0,0,W,10);
-    const cw = Math.floor((W-28)/3);
-    [0,1,2].forEach(i => { ctx.fillStyle=lb; ctx.fillRect(8+i*(cw+6),16,cw,20); ctx.fillStyle=c; ctx.fillRect(8+i*(cw+6),16,cw,4); });
-    ctx.fillStyle='#e5e7eb'; ctx.fillRect(8,44,W-16,6); ctx.fillStyle=c; ctx.fillRect(8,44,Math.floor((W-16)*0.68),6);
-    ctx.fillStyle='#ddd'; ctx.fillRect(8,58,W-60,3); ctx.fillRect(8,64,W-80,2);
-  } else if (layout === 'social-post' || layout === 'social-update') {
-    ctx.fillStyle=_darkenHex(c,40); ctx.fillRect(0,0,W,H);
-    ctx.fillStyle='rgba(255,255,255,0.13)'; ctx.fillRect(0,0,W,H*0.22);
-    ctx.fillStyle='rgba(255,255,255,0.88)'; ctx.fillRect(12,H*0.3,W-24,6);
-    ctx.fillStyle='rgba(255,255,255,0.45)'; ctx.fillRect(12,H*0.42,W-40,3); ctx.fillRect(12,H*0.49,W-52,3);
-    ctx.fillStyle='rgba(255,255,255,0.18)'; ctx.fillRect(12,H*0.62,56,14);
-  } else if (layout === 'field-handout' || layout === 'info-flyer') {
-    ctx.fillStyle='#fff'; ctx.fillRect(0,0,W,H);
-    ctx.strokeStyle=_hexToRgba(c,0.5); ctx.lineWidth=1.5; ctx.strokeRect(4,4,W-8,H-8);
-    ctx.fillStyle=lb; ctx.fillRect(4,4,W-8,14); ctx.fillStyle=c; ctx.fillRect(4,4,W-8,3);
-    ctx.fillStyle='#777'; ctx.fillRect(12,22,55,4); ctx.fillStyle='#ccc'; ctx.fillRect(12,30,W-30,2); ctx.fillRect(12,35,W-40,2); ctx.fillRect(12,41,W-30,2);
-    ctx.fillStyle=mb; ctx.fillRect(W-52,18,44,28);
-  } else if (layout === 'emergency-strip' || layout === 'community-notice') {
-    ctx.fillStyle=c; ctx.fillRect(0,0,W,H);
-    ctx.fillStyle='rgba(0,0,0,0.22)'; ctx.fillRect(0,0,W,H);
-    ctx.fillStyle='rgba(255,255,255,0.12)'; ctx.fillRect(0,0,W,16);
-    ctx.fillStyle='rgba(255,255,255,0.9)'; ctx.fillRect(10,20,W-20,5);
-    ctx.fillStyle='rgba(255,255,255,0.5)'; ctx.fillRect(10,29,W-35,3); ctx.fillRect(10,35,W-50,3);
-    ctx.fillStyle='rgba(255,255,255,0.15)'; ctx.fillRect(W-62,14,52,H-20);
+function templatePreviewDataUri(templateKey) {
+  const c = document.createElement('canvas');
+  c.width = 180; c.height = 96;
+  const x = c.getContext('2d');
+  const drawBlocks = (left = '#ffffff66', right = '#ffffff99') => {
+    x.fillStyle = left; x.fillRect(10, 30, 96, 48);
+    x.fillStyle = right; x.fillRect(112, 30, 58, 48);
+  };
+  if (templateKey === 'alert-card') {
+    x.fillStyle = '#7f1d1d'; x.fillRect(0, 0, 180, 96);
+    x.fillStyle = '#ef4444'; x.fillRect(0, 0, 180, 12);
+    drawBlocks('#fff1', '#fff3');
+  } else if (templateKey === 'clean-light') {
+    x.fillStyle = '#ecfdf5'; x.fillRect(0, 0, 180, 96);
+    x.fillStyle = '#ffffff'; x.fillRect(8, 8, 164, 80);
+    x.strokeStyle = '#a7f3d0'; x.strokeRect(8, 8, 164, 80);
+    drawBlocks('#10b98122', '#10b98133');
+  } else if (templateKey === 'social') {
+    const g = x.createLinearGradient(0, 0, 180, 96);
+    g.addColorStop(0, '#0f172a'); g.addColorStop(1, '#1d4ed8');
+    x.fillStyle = g; x.fillRect(0, 0, 180, 96);
+    x.fillStyle = '#fff'; x.fillRect(12, 16, 156, 8);
+    drawBlocks('#ffffff1a', '#ffffff44');
+  } else if (templateKey === 'compact') {
+    x.fillStyle = '#f5f3ff'; x.fillRect(0, 0, 180, 96);
+    x.fillStyle = '#8b5cf6'; x.fillRect(0, 0, 180, 8);
+    drawBlocks('#7c3aed22', '#7c3aed33');
+  } else {
+    x.fillStyle = '#f8fafc'; x.fillRect(0, 0, 180, 96);
+    x.fillStyle = '#1d4ed8'; x.fillRect(0, 0, 180, 8);
+    drawBlocks('#1d4ed822', '#1d4ed833');
   }
 }
 
@@ -433,10 +416,34 @@ function openPngTemplatePicker({ heading, templates, sectionDefs = [], defaultCo
   modal.id = 'png-template-picker';
   modal.style.cssText = 'position:fixed;inset:0;z-index:10050;background:rgba(0,0,0,.55);display:flex;align-items:flex-start;justify-content:center;padding:16px 16px 24px;overflow:auto';
   modal.innerHTML = `
-    <div style="width:min(820px,97vw);max-height:92vh;overflow:hidden;display:flex;flex-direction:column;background:var(--bg2);border:1px solid var(--border2);border-radius:12px;box-shadow:0 12px 40px rgba(0,0,0,.5)">
-      <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 18px;border-bottom:1px solid var(--border);flex-shrink:0">
-        <h3 style="margin:0;font-size:15px;font-weight:700">${heading}</h3>
-        <button data-close style="border:1px solid var(--border);background:var(--bg3);color:var(--text);border-radius:6px;padding:4px 10px;cursor:pointer;font-size:13px">✕</button>
+    <div style="width:min(760px,96vw);max-height:min(88vh,calc(100dvh - 32px));overflow:auto;background:var(--bg2);border:1px solid var(--border2);border-radius:12px;box-shadow:0 10px 36px rgba(0,0,0,.45);padding:16px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <h3 style="margin:0;font-size:16px">${heading}</h3>
+        <button type="button" data-close style="border:1px solid var(--border);background:var(--bg3);color:var(--text);border-radius:6px;padding:4px 8px;cursor:pointer">✕</button>
+      </div>
+      <div style="font-size:12px;color:var(--text3);margin-bottom:10px">Select template and content before downloading.</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px;margin-bottom:12px">
+        ${templates.map((tpl, idx) => `
+          <label style="display:block;border:1px solid var(--border);border-radius:8px;padding:9px;background:var(--bg3);cursor:pointer">
+            <input type="radio" name="tpl" value="${tpl.key}" ${idx === 0 ? 'checked' : ''} />
+            <img alt="${tpl.label} preview" src="${templatePreviewDataUri(tpl.key)}" style="display:block;width:100%;height:64px;object-fit:cover;border-radius:6px;margin:6px 0;border:1px solid rgba(255,255,255,.22)" />
+            <div style="font-weight:700;font-size:12px;margin-top:4px">${tpl.label}</div>
+            <div style="font-size:11px;color:var(--text3)">${tpl.desc || tpl.key}</div>
+          </label>
+        `).join('')}
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <label style="font-size:12px">Notice wording
+          <select id="png-tone" style="width:100%;margin-top:4px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:7px;color:var(--text)">
+            <option value="notification">Notification</option>
+            <option value="advisory">Advisory</option>
+            <option value="update">Update</option>
+          </select>
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;font-size:12px;margin-top:19px">
+          <input id="png-readable" type="checkbox" checked />
+          Readable text (recommended)
+        </label>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;flex:1;overflow:hidden;min-height:0">
         <div style="border-right:1px solid var(--border);padding:14px;overflow-y:auto;display:flex;flex-direction:column;gap:12px">
@@ -485,7 +492,7 @@ function openPngTemplatePicker({ heading, templates, sectionDefs = [], defaultCo
           </div>
         </div>
       </div>
-      <div style="position:sticky;bottom:-16px;display:flex;justify-content:flex-end;gap:8px;margin-top:14px;padding:10px 0 4px;background:linear-gradient(180deg, rgba(0,0,0,0), var(--bg2) 45%)">
+      <div style="position:sticky;bottom:0;display:flex;justify-content:flex-end;gap:8px;margin-top:14px;padding:10px 0 4px;background:linear-gradient(180deg, rgba(0,0,0,0), var(--bg2) 45%)">
         <button type="button" data-close style="border:1px solid var(--border);background:var(--bg3);color:var(--text);border-radius:6px;padding:7px 10px;cursor:pointer">Cancel</button>
         <button type="button" id="png-download-now" style="border:1px solid var(--accent);background:var(--accent);color:#fff;border-radius:6px;padding:7px 12px;cursor:pointer">Download PNG</button>
       </div>

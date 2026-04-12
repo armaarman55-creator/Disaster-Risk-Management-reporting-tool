@@ -21,50 +21,42 @@ function applyTitleTone(title, tone) {
   return String(title || '').replace(/\b(Notification|Notice|Bulletin|Update)\b/i, titleToneWord(tone));
 }
 
-// ── ROUTE PICKER HELPERS ──────────────────────────────────
-function _rHexToRgba(hex, a) {
-  const r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16);
-  return `rgba(${r},${g},${b},${a})`;
-}
-function _rDarkenHex(hex, amt) {
-  const r=Math.max(0,parseInt(hex.slice(1,3),16)-amt),g=Math.max(0,parseInt(hex.slice(3,5),16)-amt),b=Math.max(0,parseInt(hex.slice(5,7),16)-amt);
-  return `#${r.toString(16).padStart(2,'0')}${g.toString(16).padStart(2,'0')}${b.toString(16).padStart(2,'0')}`;
+// Compatibility helper for older template markup that referenced swatchHtml().
+function swatchHtml(color = '#1d4ed8') {
+  return `<span aria-hidden="true" style="display:inline-block;width:10px;height:10px;border-radius:999px;background:${color};border:1px solid rgba(255,255,255,.35)"></span>`;
 }
 
-function _drawRouteThumbnail(canvas, layout, color) {
-  const ctx = canvas.getContext('2d');
-  const W=canvas.width, H=canvas.height, c=color;
-  const lb=_rHexToRgba(c,0.1), mb=_rHexToRgba(c,0.22);
-  ctx.clearRect(0,0,W,H);
-  if (layout==='road-sign') {
-    ctx.fillStyle='#1a1a2e'; ctx.fillRect(0,0,W,H);
-    ctx.fillStyle=c; ctx.fillRect(0,0,W,8);
-    ctx.strokeStyle='rgba(255,255,255,0.25)'; ctx.lineWidth=0.8; ctx.strokeRect(6,12,W-12,H-18);
-    ctx.fillStyle='rgba(255,255,255,0.8)'; ctx.fillRect(14,18,55,5); ctx.fillRect(14,27,38,3); ctx.fillRect(14,33,50,3);
-    ctx.fillStyle=mb; ctx.fillRect(W-48,16,34,22); ctx.fillStyle='rgba(255,255,255,0.6)'; ctx.fillRect(14,50,W-28,10);
-  } else if (layout==='formal-notice') {
-    ctx.fillStyle='#f8f7f4'; ctx.fillRect(0,0,W,H);
-    ctx.fillStyle=c; ctx.fillRect(0,0,W,6); ctx.fillStyle='#fff'; ctx.fillRect(8,10,W-16,H-16); ctx.strokeStyle='#ddd'; ctx.lineWidth=0.5; ctx.strokeRect(8,10,W-16,H-16);
-    ctx.fillStyle=c; ctx.fillRect(16,16,42,4); ctx.fillStyle='#ccc'; ctx.fillRect(16,24,W-36,2); ctx.fillRect(16,30,W-50,2);
-    ctx.fillStyle=mb; ctx.fillRect(W-50,14,38,22);
-  } else if (layout==='social-alert') {
-    ctx.fillStyle=_rDarkenHex(c,35); ctx.fillRect(0,0,W,H);
-    ctx.fillStyle='rgba(255,255,255,0.12)'; ctx.fillRect(0,0,W,H*0.22);
-    ctx.fillStyle='rgba(255,255,255,0.88)'; ctx.fillRect(12,H*0.3,W-24,7);
-    ctx.fillStyle='rgba(255,255,255,0.45)'; ctx.fillRect(12,H*0.43,W-40,3); ctx.fillRect(12,H*0.5,W-52,3);
-    ctx.fillStyle=c; ctx.fillRect(12,H*0.62,50,14);
-  } else if (layout==='info-strip') {
-    ctx.fillStyle=c; ctx.fillRect(0,0,W,H); ctx.fillStyle='rgba(0,0,0,0.22)'; ctx.fillRect(0,0,W,H);
-    ctx.fillStyle='rgba(255,255,255,0.12)'; ctx.fillRect(0,0,W,14);
-    ctx.fillStyle='rgba(255,255,255,0.88)'; ctx.fillRect(10,20,W-20,5);
-    ctx.fillStyle='rgba(255,255,255,0.5)'; ctx.fillRect(10,30,W-35,3); ctx.fillRect(10,36,W-50,3);
-    ctx.fillStyle='rgba(255,255,255,0.15)'; ctx.fillRect(W-58,14,50,H-20);
-  } else if (layout==='map-card') {
-    ctx.fillStyle='#e8f4f8'; ctx.fillRect(0,0,W,H); ctx.fillStyle='#d1e8f0'; ctx.fillRect(0,0,W,H*0.5);
-    ctx.strokeStyle='rgba(255,255,255,0.85)'; ctx.lineWidth=5; ctx.beginPath(); ctx.moveTo(0,H*0.35); ctx.bezierCurveTo(W*0.3,H*0.15,W*0.7,H*0.65,W,H*0.5); ctx.stroke();
-    ctx.strokeStyle=c; ctx.lineWidth=2.5; ctx.setLineDash([6,4]); ctx.beginPath(); ctx.moveTo(0,H*0.35); ctx.bezierCurveTo(W*0.3,H*0.15,W*0.7,H*0.65,W,H*0.5); ctx.stroke(); ctx.setLineDash([]);
-    ctx.fillStyle='rgba(255,255,255,0.9)'; ctx.fillRect(W*0.04,H*0.52,W*0.44,H*0.42); ctx.strokeStyle=_rHexToRgba(c,0.35); ctx.lineWidth=0.5; ctx.strokeRect(W*0.04,H*0.52,W*0.44,H*0.42);
-    ctx.fillStyle=c; ctx.fillRect(0,H-22,W,22); ctx.fillStyle='rgba(255,255,255,0.85)'; ctx.fillRect(8,H-16,44,3); ctx.fillRect(8,H-9,30,2);
+function routeTemplatePreviewDataUri(templateKey) {
+  const c = document.createElement('canvas');
+  c.width = 180; c.height = 96;
+  const x = c.getContext('2d');
+  const drawCommon = (left = '#ffffff66', right = '#ffffff99') => {
+    x.fillStyle = left; x.fillRect(8, 28, 104, 50);
+    x.fillStyle = right; x.fillRect(118, 28, 54, 50);
+    x.fillStyle = '#fff'; x.fillRect(8, 10, 134, 6);
+  };
+  if (templateKey === 'alert-card') {
+    x.fillStyle = '#7f1d1d'; x.fillRect(0, 0, 180, 96);
+    x.fillStyle = '#ef4444'; x.fillRect(0, 0, 180, 12);
+    drawCommon('#fff1', '#fff3');
+  } else if (templateKey === 'clean-light') {
+    x.fillStyle = '#ecfdf5'; x.fillRect(0, 0, 180, 96);
+    x.fillStyle = '#ffffff'; x.fillRect(8, 8, 164, 80);
+    x.strokeStyle = '#a7f3d0'; x.strokeRect(8, 8, 164, 80);
+    drawCommon('#10b98122', '#10b98133');
+  } else if (templateKey === 'social') {
+    const g = x.createLinearGradient(0, 0, 180, 96);
+    g.addColorStop(0, '#0f172a'); g.addColorStop(1, '#1d4ed8');
+    x.fillStyle = g; x.fillRect(0, 0, 180, 96);
+    drawCommon('#ffffff1a', '#ffffff44');
+  } else if (templateKey === 'compact') {
+    x.fillStyle = '#f5f3ff'; x.fillRect(0, 0, 180, 96);
+    x.fillStyle = '#8b5cf6'; x.fillRect(0, 0, 180, 8);
+    drawCommon('#7c3aed22', '#7c3aed33');
+  } else {
+    x.fillStyle = '#f8fafc'; x.fillRect(0, 0, 180, 96);
+    x.fillStyle = '#1d4ed8'; x.fillRect(0, 0, 180, 8);
+    drawCommon('#1d4ed822', '#1d4ed833');
   }
 }
 
@@ -177,10 +169,21 @@ function openRouteTemplatePicker({ templates, onDownload }) {
   modal.id = 'route-template-picker';
   modal.style.cssText = 'position:fixed;inset:0;z-index:10050;background:rgba(0,0,0,.55);display:flex;align-items:flex-start;justify-content:center;padding:16px 16px 24px;overflow:auto';
   modal.innerHTML = `
-    <div style="width:min(820px,97vw);max-height:92vh;overflow:hidden;display:flex;flex-direction:column;background:var(--bg2);border:1px solid var(--border2);border-radius:12px;box-shadow:0 12px 40px rgba(0,0,0,.5)">
-      <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 18px;border-bottom:1px solid var(--border);flex-shrink:0">
-        <h3 style="margin:0;font-size:15px;font-weight:700">Route closure image template</h3>
-        <button data-close style="border:1px solid var(--border);background:var(--bg3);color:var(--text);border-radius:6px;padding:4px 10px;cursor:pointer;font-size:13px">✕</button>
+    <div style="width:min(760px,96vw);max-height:min(88vh,calc(100dvh - 32px));overflow:auto;background:var(--bg2);border:1px solid var(--border2);border-radius:12px;box-shadow:0 10px 36px rgba(0,0,0,.45);padding:16px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <h3 style="margin:0;font-size:16px">Route notice image template</h3>
+        <button type="button" data-close style="border:1px solid var(--border);background:var(--bg3);color:var(--text);border-radius:6px;padding:4px 8px;cursor:pointer">✕</button>
+      </div>
+      <div style="font-size:12px;color:var(--text3);margin-bottom:10px">Select template and content before downloading.</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px;margin-bottom:12px">
+        ${templates.map((tpl, idx) => `
+          <label style="display:block;border:1px solid var(--border);border-radius:8px;padding:9px;background:var(--bg3);cursor:pointer">
+            <input type="radio" name="tpl" value="${tpl.key}" ${idx === 0 ? 'checked' : ''} />
+            <img alt="${tpl.label} preview" src="${routeTemplatePreviewDataUri(tpl.key)}" style="display:block;width:100%;height:64px;object-fit:cover;border-radius:6px;margin:6px 0;border:1px solid rgba(255,255,255,.22)" />
+            <div style="font-weight:700;font-size:12px;margin-top:4px">${tpl.label}</div>
+            <div style="font-size:11px;color:var(--text3)">${tpl.desc || tpl.key}</div>
+          </label>
+        `).join('')}
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;flex:1;overflow:hidden;min-height:0">
         <div style="border-right:1px solid var(--border);padding:14px;overflow-y:auto;display:flex;flex-direction:column;gap:12px">
@@ -229,7 +232,7 @@ function openRouteTemplatePicker({ templates, onDownload }) {
           </div>
         </div>
       </div>
-      <div style="position:sticky;bottom:-16px;display:flex;justify-content:flex-end;gap:8px;margin-top:14px;padding:10px 0 4px;background:linear-gradient(180deg, rgba(0,0,0,0), var(--bg2) 45%)">
+      <div style="position:sticky;bottom:0;display:flex;justify-content:flex-end;gap:8px;margin-top:14px;padding:10px 0 4px;background:linear-gradient(180deg, rgba(0,0,0,0), var(--bg2) 45%)">
         <button type="button" data-close style="border:1px solid var(--border);background:var(--bg3);color:var(--text);border-radius:6px;padding:7px 10px;cursor:pointer">Cancel</button>
         <button type="button" id="route-download-now" style="border:1px solid var(--accent);background:var(--accent);color:#fff;border-radius:6px;padding:7px 12px;cursor:pointer">Download PNG</button>
       </div>
