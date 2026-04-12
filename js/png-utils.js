@@ -25,3 +25,65 @@ export function triggerDataUrlDownload(dataUrl, filename) {
     download: filename,
   }).click();
 }
+
+export function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y); ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
+
+export function wrapText(ctx, text, maxWidth) {
+  const words = (text || '').split(' ');
+  const lines = []; let current = '';
+  words.forEach(word => {
+    const test = current ? current + ' ' + word : word;
+    if (ctx.measureText(test).width > maxWidth && current) {
+      lines.push(current); current = word;
+    } else current = test;
+  });
+  if (current) lines.push(current);
+  return lines;
+}
+
+export function wrapRichText(ctx, segments, maxWidth, fontSize) {
+  const words = [];
+  segments.forEach(seg => {
+    seg.text.split(' ').forEach(w => { if (w) words.push({ text: w, bold: seg.bold }); });
+  });
+  const lines = []; let current = [];
+  const lineW = segs => {
+    let w = 0, first = true;
+    segs.forEach(seg => {
+      ctx.font = (seg.bold ? 'bold ' : '') + fontSize + 'px Arial, sans-serif';
+      w += ctx.measureText((first ? '' : ' ') + seg.text).width;
+      first = false;
+    });
+    return w;
+  };
+  words.forEach(word => {
+    const test = [...current, word];
+    if (lineW(test) > maxWidth && current.length) {
+      lines.push(current); current = [word];
+    } else current = test;
+  });
+  if (current.length) lines.push(current);
+  return lines;
+}
+
+export function drawRichLine(ctx, segments, x, y, fontSize, color) {
+  let cx = x;
+  segments.forEach((seg, i) => {
+    ctx.font = (seg.bold ? 'bold ' : '') + fontSize + 'px Arial, sans-serif';
+    ctx.fillStyle = color;
+    const text = (i === 0 ? '' : ' ') + seg.text;
+    ctx.fillText(text, cx, y);
+    cx += ctx.measureText(text).width;
+  });
+}

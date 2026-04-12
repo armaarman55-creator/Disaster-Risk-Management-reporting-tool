@@ -1,7 +1,7 @@
 // js/community.js
 import { supabase } from './supabase.js';
 import { confirmDialog } from './confirm-dialog.js';
-import { hexToRgba, darkenHex, triggerDataUrlDownload } from './png-utils.js';
+import { hexToRgba, darkenHex, triggerDataUrlDownload, roundRect, wrapText, wrapRichText, drawRichLine } from './png-utils.js';
 
 let _muniId    = null;
 let _activeTab = 'shelters';
@@ -62,69 +62,6 @@ async function loadTab(tab) {
     case 'shelters':   await renderShelters(body);   break;
     case 'relief-ops': await renderReliefOps(body);  break;
   }
-}
-
-// ── CANVAS HELPERS ────────────────────────────────────────
-function roundRect(ctx, x, y, w, h, r) {
-  ctx.beginPath();
-  ctx.moveTo(x + r, y); ctx.lineTo(x + w - r, y);
-  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
-  ctx.lineTo(x + w, y + h - r);
-  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
-  ctx.lineTo(x + r, y + h);
-  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
-  ctx.lineTo(x, y + r);
-  ctx.quadraticCurveTo(x, y, x + r, y);
-  ctx.closePath();
-}
-
-function wrapText(ctx, text, maxWidth) {
-  const words = (text || '').split(' ');
-  const lines = []; let current = '';
-  words.forEach(word => {
-    const test = current ? current + ' ' + word : word;
-    if (ctx.measureText(test).width > maxWidth && current) {
-      lines.push(current); current = word;
-    } else current = test;
-  });
-  if (current) lines.push(current);
-  return lines;
-}
-
-function wrapRichText(ctx, segments, maxWidth, fontSize) {
-  const words = [];
-  segments.forEach(seg => {
-    seg.text.split(' ').forEach(w => { if (w) words.push({ text: w, bold: seg.bold }); });
-  });
-  const lines = []; let current = [];
-  const lineW = segs => {
-    let w = 0, first = true;
-    segs.forEach(seg => {
-      ctx.font = (seg.bold ? 'bold ' : '') + fontSize + 'px Arial, sans-serif';
-      w += ctx.measureText((first ? '' : ' ') + seg.text).width;
-      first = false;
-    });
-    return w;
-  };
-  words.forEach(word => {
-    const test = [...current, word];
-    if (lineW(test) > maxWidth && current.length) { lines.push(current); current = [word]; }
-    else current = test;
-  });
-  if (current.length) lines.push(current);
-  return lines;
-}
-
-function drawRichLine(ctx, segments, x, y, fontSize, color) {
-  let cx = x; let first = true;
-  segments.forEach(seg => {
-    ctx.font = (seg.bold ? 'bold ' : '') + fontSize + 'px Arial, sans-serif';
-    ctx.fillStyle = color;
-    const txt = (first ? '' : ' ') + seg.text;
-    ctx.fillText(txt, cx, y);
-    cx += ctx.measureText(txt).width;
-    first = false;
-  });
 }
 
 async function loadLogoImages() {
