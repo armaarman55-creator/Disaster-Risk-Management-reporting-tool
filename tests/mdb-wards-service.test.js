@@ -87,3 +87,63 @@ test('fetchMdbWardsByMunicipality returns null features when all attempts fail',
     globalThis.fetch = originalFetch;
   }
 });
+
+test('fetchMdbWardsByMunicipality escapes values in where clauses', async () => {
+  const originalFetch = globalThis.fetch;
+  const urls = [];
+  globalThis.fetch = async (url) => {
+    urls.push(String(url));
+    if (urls.length === 1) {
+      return {
+        ok: true,
+        json: async () => ({
+          fields: [
+            { name: 'WARD_NO' },
+            { name: 'CAT_B' },
+            { name: 'MUNICNAME' }
+          ]
+        })
+      };
+    }
+    return {
+      ok: true,
+      json: async () => ({ features: [] })
+    };
+  };
+
+  try {
+    await fetchMdbWardsByMunicipality({ muniCode: "A'B", muniName: "O'Neil" });
+    const decodedUrls = urls.slice(1).map((u) => decodeURIComponent(u));
+    assert.equal(decodedUrls.some((u) => u.includes("CAT_B='A''B'")), true);
+    assert.equal(decodedUrls.some((u) => u.includes("MUNICNAME='O''Neil'")), true);
+    assert.equal(decodedUrls.some((u) => u.includes("MUNICNAME LIKE '%O''Neil%'")), true);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('fetchMdbWardsByMunicipality handles probe failure with fallback fields', async () => {
+  const originalFetch = globalThis.fetch;
+  const urls = [];
+  globalThis.fetch = async (url) => {
+    urls.push(String(url));
+    if (urls.length === 1) {
+      throw new Error('probe failed');
+    }
+    return {
+      ok: true,
+      json: async () => ({ features: [] })
+    };
+  };
+
+  try {
+    const result = await fetchMdbWardsByMunicipality({ muniCode: 'ABC123', muniName: 'Demo' });
+    assert.equal(result.wardNumField, 'WARD_NO');
+    assert.equal(result.features, null);
+    const decodedUrls = urls.slice(1).map((u) => decodeURIComponent(u));
+    assert.equal(decodedUrls.some((u) => u.includes("CAT_B='ABC123'")), true);
+    assert.equal(decodedUrls.some((u) => u.includes("MUNICNAME='Demo'")), true);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
