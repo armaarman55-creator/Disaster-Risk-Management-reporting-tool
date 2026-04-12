@@ -400,18 +400,8 @@ function _drawLivePreview(ctx, layout, W, H, color, secs, entityType, muniName, 
 
 function openPngTemplatePicker({ heading, templates, sectionDefs = [], defaultColors = [], onDownload }) {
   document.getElementById('png-template-picker')?.remove();
-
-  // State
-  let pickerState = {
-    template: templates[0]?.key || '',
-    color: defaultColors[0] || '#1a3a6b',
-    sections: {}
-  };
-  sectionDefs.forEach(s => { pickerState.sections[s.key] = s.default !== false; });
-
-  // Detect entity type for live preview
-  const entityType = heading.toLowerCase().includes('shelter') ? 'shelter' : heading.toLowerCase().includes('relief') ? 'relief' : 'route';
-
+  // Compatibility alias for older modal templates that referenced `sectionGroups`.
+  const sectionGroups = Array.isArray(sectionDefs) ? sectionDefs : [];
   const modal = document.createElement('div');
   modal.id = 'png-template-picker';
   modal.style.cssText = 'position:fixed;inset:0;z-index:10050;background:rgba(0,0,0,.55);display:flex;align-items:flex-start;justify-content:center;padding:16px 16px 24px;overflow:auto';
@@ -419,7 +409,10 @@ function openPngTemplatePicker({ heading, templates, sectionDefs = [], defaultCo
     <div style="width:min(760px,96vw);max-height:min(88vh,calc(100dvh - 32px));overflow:auto;background:var(--bg2);border:1px solid var(--border2);border-radius:12px;box-shadow:0 10px 36px rgba(0,0,0,.45);padding:16px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
         <h3 style="margin:0;font-size:16px">${heading}</h3>
-        <button type="button" data-close style="border:1px solid var(--border);background:var(--bg3);color:var(--text);border-radius:6px;padding:4px 8px;cursor:pointer">✕</button>
+        <div style="display:flex;align-items:center;gap:6px">
+          <button type="button" id="png-download-top" style="border:1px solid var(--accent);background:var(--accent);color:#fff;border-radius:6px;padding:4px 8px;cursor:pointer;font-size:12px">Download PNG</button>
+          <button type="button" data-close style="border:1px solid var(--border);background:var(--bg3);color:var(--text);border-radius:6px;padding:4px 8px;cursor:pointer">✕</button>
+        </div>
       </div>
       <div style="font-size:12px;color:var(--text3);margin-bottom:10px">Select template and content before downloading.</div>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px;margin-bottom:12px">
@@ -445,123 +438,31 @@ function openPngTemplatePicker({ heading, templates, sectionDefs = [], defaultCo
           Readable text (recommended)
         </label>
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;flex:1;overflow:hidden;min-height:0">
-        <div style="border-right:1px solid var(--border);padding:14px;overflow-y:auto;display:flex;flex-direction:column;gap:12px">
-          <div>
-            <div style="font-size:10px;font-weight:700;color:var(--text3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px">Template</div>
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:7px" id="picker-tpl-grid"></div>
-          </div>
-          <div>
-            <div style="font-size:10px;font-weight:700;color:var(--text3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px">Accent colour</div>
-            <div style="display:flex;gap:7px;flex-wrap:wrap" id="picker-swatches">${swatchHtml}</div>
-          </div>
-          <div>
-            <div style="font-size:10px;font-weight:700;color:var(--text3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:6px">Live preview</div>
-            <div id="picker-preview-wrap" style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;display:flex;align-items:center;justify-content:center;overflow:hidden;height:200px">
-              <canvas id="picker-preview-canvas"></canvas>
-            </div>
-            <div style="font-size:10px;color:var(--text3);margin-top:5px">Preview updates as you change options</div>
-          </div>
-        </div>
-        <div style="padding:14px;overflow-y:auto;display:flex;flex-direction:column;gap:12px">
-          <div>
-            <div style="font-size:10px;font-weight:700;color:var(--text3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px">Sections to include</div>
-            ${Object.entries(sectionGroups).map(([grp, secs]) => secs.length ? `
-              <div style="border:1px solid var(--border);border-radius:7px;overflow:hidden;margin-bottom:8px">
-                <div style="padding:7px 12px;background:var(--bg3);font-size:11px;font-weight:700;color:var(--text2);border-bottom:1px solid var(--border)">${grp}</div>
-                <div style="padding:8px 12px;display:flex;flex-direction:column;gap:6px">
-                  ${secs.map(s=>`<label style="display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer"><input type="checkbox" data-sec="${s.key}" ${s.default!==false?'checked':''} style="width:13px;height:13px;accent-color:var(--accent)"/> ${s.label}</label>`).join('')}
-                </div>
-              </div>` : '').join('')}
-          </div>
-          <div style="border:1px solid var(--border);border-radius:7px;overflow:hidden">
-            <div style="padding:7px 12px;background:var(--bg3);font-size:11px;font-weight:700;color:var(--text2);border-bottom:1px solid var(--border)">Notice wording</div>
-            <div style="padding:10px 12px;display:flex;flex-direction:column;gap:8px">
-              <label style="font-size:12px">Tone
-                <select id="png-tone" style="display:block;width:100%;margin-top:4px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:6px;color:var(--text);font-size:12px">
-                  <option value="notification">Notification</option>
-                  <option value="advisory">Advisory</option>
-                  <option value="update">Update</option>
-                </select>
-              </label>
-              <label style="display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer">
-                <input id="png-readable" type="checkbox" checked style="width:13px;height:13px;accent-color:var(--accent)"/>
-                Larger readable text (recommended)
-              </label>
-            </div>
-          </div>
+      <div style="margin-top:12px;border-top:1px solid var(--border);padding-top:10px">
+        <div style="font-size:12px;font-weight:700;margin-bottom:6px">Include sections</div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:6px">
+          ${sectionGroups.map(sec => `<label style="font-size:12px;display:flex;align-items:center;gap:6px"><input type="checkbox" data-sec="${sec.key}" ${sec.default ? 'checked' : ''}/> ${sec.label}</label>`).join('')}
         </div>
       </div>
       <div style="position:sticky;bottom:0;display:flex;justify-content:flex-end;gap:8px;margin-top:14px;padding:10px 0 4px;background:linear-gradient(180deg, rgba(0,0,0,0), var(--bg2) 45%)">
         <button type="button" data-close style="border:1px solid var(--border);background:var(--bg3);color:var(--text);border-radius:6px;padding:7px 10px;cursor:pointer">Cancel</button>
         <button type="button" id="png-download-now" style="border:1px solid var(--accent);background:var(--accent);color:#fff;border-radius:6px;padding:7px 12px;cursor:pointer">Download PNG</button>
       </div>
-    </div>`;
-
-  const muniName = window._drmsaUser?.municipalities?.name || 'Municipality';
-  const date = new Date().toLocaleDateString('en-ZA');
-
-  function buildThumbnails() {
-    const grid = modal.querySelector('#picker-tpl-grid'); if (!grid) return;
-    grid.innerHTML = '';
-    templates.forEach((tpl, idx) => {
-      const card = document.createElement('label');
-      card.style.cssText = `display:block;border:${pickerState.template===tpl.key?'2px solid var(--accent)':'1px solid var(--border)'};border-radius:7px;padding:7px;background:var(--bg3);cursor:pointer;transition:border-color .12s`;
-      const thumb = document.createElement('canvas'); thumb.width = 180; thumb.height = 76;
-      _drawThumbnail(thumb, tpl.key, pickerState.color);
-      thumb.style.cssText = 'display:block;width:100%;height:60px;object-fit:cover;border-radius:5px;margin-bottom:5px';
-      const inp = document.createElement('input'); inp.type='radio'; inp.name='tpl'; inp.value=tpl.key; inp.style.display='none'; if (pickerState.template===tpl.key) inp.checked=true;
-      const nm = document.createElement('div'); nm.style.cssText='font-weight:700;font-size:11px;color:var(--text)'; nm.textContent=tpl.label;
-      const ds = document.createElement('div'); ds.style.cssText='font-size:10px;color:var(--text3);margin-top:2px'; ds.textContent=tpl.desc;
-      card.append(thumb, inp, nm, ds);
-      card.addEventListener('click', () => { pickerState.template=tpl.key; buildThumbnails(); updatePreview(); });
-      grid.appendChild(card);
-    });
-  }
-
-  function updateSwatches() {
-    modal.querySelectorAll('[data-swatch]').forEach(sw => {
-      sw.style.border = sw.dataset.swatch === pickerState.color ? '2px solid #fff' : '2px solid transparent';
-    });
-  }
-
-  function updatePreview() {
-    const wrap = modal.querySelector('#picker-preview-wrap');
-    const canvas = modal.querySelector('#picker-preview-canvas');
-    if (!wrap || !canvas) return;
-    const aW = wrap.clientWidth - 8, aH = wrap.clientHeight - 8;
-    const tpl = templates.find(t=>t.key===pickerState.template)||templates[0];
-    const layout = tpl?.key || 'community-board';
-    let cW, cH;
-    if (layout==='social-post'||layout==='social-update') { cW=Math.min(aW,aH); cH=cW; }
-    else if (layout==='emergency-strip'||layout==='community-notice') { cW=aW; cH=Math.round(aW*0.38); }
-    else if (layout==='field-handout') { cW=Math.round(aH*0.707); cH=aH; }
-    else { cW=aW; cH=Math.round(aW*0.56); }
-    cH=Math.min(cH,aH); cW=Math.min(cW,aW);
-    canvas.width=cW*2; canvas.height=cH*2; canvas.style.width=cW+'px'; canvas.style.height=cH+'px';
-    const ctx=canvas.getContext('2d'); ctx.scale(2,2); ctx.clearRect(0,0,cW,cH);
-    const secSnap = {};
-    modal.querySelectorAll('[data-sec]').forEach(chk => { secSnap[chk.dataset.sec] = chk.checked; });
-    _drawLivePreview(ctx, layout, cW, cH, pickerState.color, secSnap, entityType, muniName, date);
-  }
-
-  modal.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', () => modal.remove()));
-  modal.addEventListener('click', e => { if (e.target===modal) modal.remove(); });
-
-  modal.querySelector('#png-download-now')?.addEventListener('click', async () => {
+    </div>
+  `;
+  modal.querySelectorAll('[data-close]').forEach(btn => btn.addEventListener('click', () => modal.remove()));
+  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+  const doDownload = async () => {
+    const template = modal.querySelector('input[name="tpl"]:checked')?.value || templates[0]?.key || 'official';
     const tone = modal.querySelector('#png-tone')?.value || 'notification';
     const readable = !!modal.querySelector('#png-readable')?.checked;
     const sections = {};
-    sectionDefs.forEach(s => { sections[s.key] = !!modal.querySelector(`[data-sec="${s.key}"]`)?.checked; });
+    sectionGroups.forEach(sec => { sections[sec.key] = !!modal.querySelector(`[data-sec="${sec.key}"]`)?.checked; });
     modal.remove();
-    await onDownload({ template: pickerState.template, tone, readable, sections, color: pickerState.color });
-  });
-
-  modal.querySelectorAll('[data-swatch]').forEach(sw => {
-    sw.addEventListener('click', () => { pickerState.color = sw.dataset.swatch; updateSwatches(); buildThumbnails(); updatePreview(); });
-  });
-  modal.querySelectorAll('[data-sec]').forEach(chk => { chk.addEventListener('change', updatePreview); });
-
+    await onDownload({ template, tone, readable, sections });
+  };
+  modal.querySelector('#png-download-now')?.addEventListener('click', doDownload);
+  modal.querySelector('#png-download-top')?.addEventListener('click', doDownload);
   document.body.appendChild(modal);
   buildThumbnails();
   requestAnimationFrame(() => { updatePreview(); });

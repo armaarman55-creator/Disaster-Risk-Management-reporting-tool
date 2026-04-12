@@ -60,82 +60,34 @@ function routeTemplatePreviewDataUri(templateKey) {
   }
 }
 
-function _drawRouteLivePreview(ctx, layout, W, H, color, secs, muniName, date, roadName, c) {
-  const accent=color, lb=_rHexToRgba(accent,0.08), mb=_rHexToRgba(accent,0.18);
-  const fi=(x,y,w,h,col)=>{ctx.fillStyle=col;ctx.fillRect(x,y,w,h);};
-  const tx=(str,x,y,font,col,align='left')=>{ctx.font=font;ctx.fillStyle=col;ctx.textAlign=align;ctx.fillText(str,x,y);ctx.textAlign='left';};
-  const ln=(x1,y1,x2,y2,col,lw=0.5)=>{ctx.strokeStyle=col;ctx.lineWidth=lw;ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();};
-  const pill=(label,x,y,bg,tc)=>{ctx.font='bold 9px Arial';const tw=ctx.measureText(label).width;ctx.fillStyle=bg;ctx.beginPath();ctx.roundRect(x,y-10,tw+12,14,4);ctx.fill();ctx.fillStyle=tc;ctx.fillText(label,x+6,y);};
-  const dr=(label,val,x,y,mW)=>{tx(label,x,y,'bold 8px Arial','#aaa');const ls=val.split(' ');let cur='',lines=[];ls.forEach(w=>{const t=cur?cur+' '+w:w;if(ctx.measureText(t).width>mW&&cur){lines.push(cur);cur=w;}else cur=t;});if(cur)lines.push(cur);lines.slice(0,2).forEach((l,i)=>tx(l,x,y+10+i*11,'9px Arial','#eee'));return y+14+Math.min(lines.length,2)*11;};
-  const drLight=(label,val,x,y,mW)=>{tx(label,x,y,'bold 8px Arial','#999');const ls=(val||'').split(' ');let cur='',lines=[];ls.forEach(w=>{const t=cur?cur+' '+w:w;if(ctx.measureText(t).width>mW&&cur){lines.push(cur);cur=w;}else cur=t;});if(cur)lines.push(cur);lines.slice(0,2).forEach((l,i)=>tx(l,x,y+10+i*11,'9px Arial','#222'));return y+14+Math.min(lines.length,2)*11;};
+// Compatibility helper for older thumbnail pipelines that call _drawRouteThumbnail(ctx, templateKey).
+function _drawRouteThumbnail(ctx, templateKey) {
+  if (!ctx || !ctx.canvas) return;
+  const { width, height } = ctx.canvas;
+  const dataUri = routeTemplatePreviewDataUri(templateKey);
+  const img = new Image();
+  img.onload = () => ctx.drawImage(img, 0, 0, width, height);
+  img.src = dataUri;
+}
 
-  if (layout==='road-sign') {
-    fi(0,0,W,H,'#1a1a2e'); fi(0,0,W,8,accent);
-    ctx.strokeStyle='rgba(255,255,255,0.2)'; ctx.lineWidth=1; ctx.strokeRect(8,14,W-16,H-22);
-    fi(8,14,W-16,28,'rgba(255,255,255,0.06)');
-    tx(muniName,W/2,26,'bold 10px Arial','rgba(255,255,255,0.7)','center'); tx('Road Closure Notice',W/2,38,'9px Arial','rgba(255,255,255,0.45)','center');
-    ln(8,42,W-8,42,'rgba(255,255,255,0.1)');
-    if(secs.status_badge) pill('CLOSED',16,60,accent,'#fff');
-    tx(roadName,16,76,'bold 14px Arial','#fff');
-    if(secs.reason) tx('Emergency repairs to water main',16,90,'9px Arial','rgba(255,255,255,0.7)');
-    const rx=Math.floor(W*0.55); ln(rx,46,rx,H-16,'rgba(255,255,255,0.1)',0.5);
-    let ry=56;
-    if(secs.authority)    ry=dr('AUTHORITY','City Works Department',rx+8,ry,W-rx-16);
-    if(secs.closed_since) ry=dr('CLOSED SINCE','1 Jan 2026',rx+8,ry,W-rx-16);
-    if(secs.reopen)       ry=dr('REOPEN','15 Jan 2026',rx+8,ry,W-rx-16);
-    if(secs.alt_route)    ry=dr('ALTERNATIVE','Oak Ave via River Rd',rx+8,ry,W-rx-16);
-    fi(8,H-20,W-16,16,'rgba(255,255,255,0.05)'); tx(date,W-16,H-9,'8px Arial','rgba(255,255,255,0.35)','right');
-  } else if (layout==='formal-notice') {
-    fi(0,0,W,H,'#f0eeea'); fi(0,0,W,6,accent); fi(0,6,W,44,'#fff'); ln(0,50,W,50,'#d0ccc4');
-    tx(muniName,14,26,'bold 11px Arial','#333'); tx('Disaster Management Centre',14,40,'9px Arial','#888');
-    tx(date,W-14,26,'9px Arial','#aaa','right'); tx('FOR OFFICIAL USE',W-14,40,'8px Arial','#bbb','right');
-    fi(0,50,W,H-50-28,'#fafaf8'); const sp=Math.floor(W*0.62); ln(sp,50,sp,H-28,'#ddd');
-    if(secs.status_badge) pill('CLOSED',16,72,accent,'#fff');
-    tx(roadName,16,90,'bold 14px Arial','#1a1a1a');
-    if(secs.reason) { tx('Reason: Emergency repairs to water main',16,106,'9px Arial','#555'); }
-    let ry=58; const rx=sp+10;
-    if(secs.authority)    ry=drLight('AUTHORITY','City Works Dept',rx,ry,W-rx-14);
-    if(secs.closed_since) ry=drLight('CLOSED SINCE','1 Jan 2026',rx,ry,W-rx-14);
-    if(secs.reopen)       ry=drLight('REOPEN','15 Jan 2026',rx,ry,W-rx-14);
-    if(secs.alt_route)    ry=drLight('ALTERNATIVE','Oak Ave via River Rd',rx,ry,W-rx-14);
-    fi(0,H-28,W,28,accent); tx(muniName+' DMC',14,H-10,'9px Arial','rgba(255,255,255,0.75)'); tx('Generated: '+date,W-14,H-10,'9px Arial','rgba(255,255,255,0.55)','right');
-  } else if (layout==='social-alert') {
-    fi(0,0,W,H,_rDarkenHex(accent,40)); fi(0,0,W,H,'rgba(0,0,0,0.1)');
-    fi(0,0,W,H*0.2,'rgba(255,255,255,0.12)');
-    tx(muniName,W/2,H*0.1,'bold 10px Arial','rgba(255,255,255,0.88)','center'); tx('Road Closure Alert',W/2,H*0.16,'9px Arial','rgba(255,255,255,0.55)','center');
-    fi(W*0.07,H*0.24,W*0.86,H*0.56,'rgba(255,255,255,0.12)');
-    if(secs.status_badge) { ctx.font='bold 9px Arial'; const tw=ctx.measureText('ROAD CLOSED').width; fi(W*0.07+12,H*0.28,tw+12,14,accent); tx('ROAD CLOSED',W*0.07+18,H*0.28+10,'bold 9px Arial','#fff'); }
-    tx(roadName,W/2,H*0.41,'bold 14px Arial','#fff','center');
-    if(secs.reason) tx('Emergency repairs to water main',W/2,H*0.49,'9px Arial','rgba(255,255,255,0.75)','center');
-    if(secs.alt_route) tx('Alt: Oak Ave via River Rd',W/2,H*0.57,'9px Arial','rgba(255,255,255,0.6)','center');
-    if(secs.reopen) tx('Reopen: 15 Jan 2026',W/2,H*0.65,'9px Arial','rgba(255,255,255,0.55)','center');
-    tx(date,W/2,H*0.85,'8px Arial','rgba(255,255,255,0.4)','center');
-  } else if (layout==='info-strip') {
-    fi(0,0,W,H,accent); fi(0,0,W,H,'rgba(0,0,0,0.22)');
-    fi(0,0,W,14,'rgba(255,255,255,0.12)');
-    tx(muniName,12,10,'bold 9px Arial','rgba(255,255,255,0.7)'); tx(date,W-10,10,'8px Arial','rgba(255,255,255,0.5)','right');
-    const sp=Math.floor(W*0.6); fi(sp,14,W-sp,H-14,'rgba(255,255,255,0.12)'); ln(sp,14,sp,H,'rgba(255,255,255,0.2)',0.5);
-    if(secs.status_badge) pill('ROAD CLOSED',14,34,_rHexToRgba('#fff',0.25),'rgba(255,255,255,0.9)');
-    tx(roadName,14,50,'bold 14px Arial','#fff');
-    if(secs.reason) tx('Reason: Emergency repairs',14,64,'9px Arial','rgba(255,255,255,0.7)');
-    if(secs.alt_route) tx('Alt: Oak Avenue via River Road',14,78,'9px Arial','rgba(255,255,255,0.6)');
-    let ry=24;
-    if(secs.authority)    ry=dr('AUTHORITY','City Works Dept',sp+8,ry,W-sp-16);
-    if(secs.closed_since) ry=dr('CLOSED SINCE','1 Jan 2026',sp+8,ry,W-sp-16);
-    if(secs.reopen)       ry=dr('REOPEN','15 Jan 2026',sp+8,ry,W-sp-16);
-    tx(muniName+' DMC',14,H-8,'bold 8px Arial','rgba(255,255,255,0.75)');
-  } else if (layout==='map-card') {
-    fi(0,0,W,H,'#e8f4f8'); fi(0,0,W,H*0.48,'#d1e8f0');
-    ctx.strokeStyle='rgba(255,255,255,0.9)'; ctx.lineWidth=6; ctx.beginPath(); ctx.moveTo(0,H*0.35); ctx.bezierCurveTo(W*0.3,H*0.15,W*0.7,H*0.65,W,H*0.5); ctx.stroke();
-    ctx.strokeStyle=accent; ctx.lineWidth=3; ctx.setLineDash([8,5]); ctx.beginPath(); ctx.moveTo(0,H*0.35); ctx.bezierCurveTo(W*0.3,H*0.15,W*0.7,H*0.65,W,H*0.5); ctx.stroke(); ctx.setLineDash([]);
-    const bx=W*0.04,by=H*0.5,bw=W*0.44,bh=H*0.44;
-    fi(bx,by,bw,bh,'rgba(255,255,255,0.93)'); ctx.strokeStyle=_rHexToRgba(accent,0.4); ctx.lineWidth=0.5; ctx.strokeRect(bx,by,bw,bh);
-    pill('CLOSED',bx+8,by+18,accent,'#fff'); tx(roadName,bx+8,by+32,'bold 11px Arial','#1a1a1a');
-    let cy=by+42;
-    if(secs.reason)  { ctx.font='9px Arial'; ctx.fillStyle='#555'; ctx.fillText('Emergency repairs',bx+8,cy); cy+=14; }
-    if(secs.reopen)  { ctx.font='9px Arial'; ctx.fillStyle='#555'; ctx.fillText('Reopen: 15 Jan 2026',bx+8,cy); cy+=14; }
-    if(secs.alt_route) { const ax=W*0.53,ay=H*0.52,aw=W*0.42,ah=H*0.44; fi(ax,ay,aw,ah,lb); ctx.strokeStyle=_rHexToRgba(accent,0.35); ctx.lineWidth=0.5; ctx.strokeRect(ax,ay,aw,ah); tx('ALT ROUTE',ax+8,ay+14,'bold 8px Arial',accent); tx('Oak Ave via River Rd',ax+8,ay+26,'9px Arial','#333'); tx('+2.1 km · All vehicles',ax+8,ay+38,'8px Arial','#777'); }
-    fi(0,H-22,W,22,accent); tx(muniName+' Disaster Management Centre',W/2,H-8,'bold 9px Arial','rgba(255,255,255,0.8)','center');
+function applyRouteTemplateDecor(ctx, template, SPLIT, bodyTop, H, FTR_H) {
+  if (template === 'alert-card') {
+    ctx.fillStyle = '#7f1d1d';
+    ctx.fillRect(0, bodyTop, SPLIT, 28);
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 12px Arial, sans-serif';
+    ctx.fillText('TRAFFIC ALERT', 20, bodyTop + 18);
+  } else if (template === 'clean-light') {
+    ctx.strokeStyle = '#a7f3d0';
+    ctx.lineWidth = 1;
+    roundRect(ctx, 14, bodyTop + 10, SPLIT - 28, H - bodyTop - FTR_H - 20, 10);
+    ctx.stroke();
+  } else if (template === 'social') {
+    const grad = ctx.createLinearGradient(0, bodyTop, SPLIT, H - FTR_H);
+    grad.addColorStop(0, 'rgba(15,23,42,0.08)');
+    grad.addColorStop(1, 'rgba(37,99,235,0.18)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, bodyTop, SPLIT, H - bodyTop - FTR_H);
   }
 }
 
@@ -172,7 +124,10 @@ function openRouteTemplatePicker({ templates, onDownload }) {
     <div style="width:min(760px,96vw);max-height:min(88vh,calc(100dvh - 32px));overflow:auto;background:var(--bg2);border:1px solid var(--border2);border-radius:12px;box-shadow:0 10px 36px rgba(0,0,0,.45);padding:16px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
         <h3 style="margin:0;font-size:16px">Route notice image template</h3>
-        <button type="button" data-close style="border:1px solid var(--border);background:var(--bg3);color:var(--text);border-radius:6px;padding:4px 8px;cursor:pointer">✕</button>
+        <div style="display:flex;align-items:center;gap:6px">
+          <button type="button" id="route-download-top" style="border:1px solid var(--accent);background:var(--accent);color:#fff;border-radius:6px;padding:4px 8px;cursor:pointer;font-size:12px">Download PNG</button>
+          <button type="button" data-close style="border:1px solid var(--border);background:var(--bg3);color:var(--text);border-radius:6px;padding:4px 8px;cursor:pointer">✕</button>
+        </div>
       </div>
       <div style="font-size:12px;color:var(--text3);margin-bottom:10px">Select template and content before downloading.</div>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px;margin-bottom:12px">
@@ -236,63 +191,25 @@ function openRouteTemplatePicker({ templates, onDownload }) {
         <button type="button" data-close style="border:1px solid var(--border);background:var(--bg3);color:var(--text);border-radius:6px;padding:7px 10px;cursor:pointer">Cancel</button>
         <button type="button" id="route-download-now" style="border:1px solid var(--accent);background:var(--accent);color:#fff;border-radius:6px;padding:7px 12px;cursor:pointer">Download PNG</button>
       </div>
-    </div>`;
-
-  function buildThumbnails() {
-    const grid = modal.querySelector('#route-tpl-grid'); if (!grid) return;
-    grid.innerHTML = '';
-    templates.forEach(tpl => {
-      const card = document.createElement('label');
-      card.style.cssText = `display:block;border:${pickerState.template===tpl.key?'2px solid var(--accent)':'1px solid var(--border)'};border-radius:7px;padding:7px;background:var(--bg3);cursor:pointer;transition:border-color .12s`;
-      const thumb = document.createElement('canvas'); thumb.width=180; thumb.height=76;
-      _drawRouteThumbnail(thumb, tpl.key, pickerState.color);
-      thumb.style.cssText='display:block;width:100%;height:60px;object-fit:cover;border-radius:5px;margin-bottom:5px';
-      const inp=document.createElement('input'); inp.type='radio'; inp.name='rtpl'; inp.value=tpl.key; inp.style.display='none'; if(pickerState.template===tpl.key) inp.checked=true;
-      const nm=document.createElement('div'); nm.style.cssText='font-weight:700;font-size:11px;color:var(--text)'; nm.textContent=tpl.label;
-      const ds=document.createElement('div'); ds.style.cssText='font-size:10px;color:var(--text3);margin-top:2px'; ds.textContent=tpl.desc;
-      card.append(thumb,inp,nm,ds);
-      card.addEventListener('click',()=>{ pickerState.template=tpl.key; buildThumbnails(); updatePreview(); });
-      grid.appendChild(card);
-    });
-  }
-
-  function updateSwatches() {
-    modal.querySelectorAll('[data-swatch]').forEach(sw => { sw.style.border=sw.dataset.swatch===pickerState.color?'2px solid #fff':'2px solid transparent'; });
-  }
-
-  function updatePreview() {
-    const wrap=modal.querySelector('#route-preview-wrap'); const canvas=modal.querySelector('#route-preview-canvas');
-    if(!wrap||!canvas) return;
-    const aW=wrap.clientWidth-8, aH=wrap.clientHeight-8;
-    const layout=pickerState.template;
-    let cW,cH;
-    if(layout==='social-alert'){ cW=Math.min(aW,aH); cH=cW; }
-    else if(layout==='info-strip'){ cW=aW; cH=Math.round(aW*0.36); }
-    else if(layout==='road-sign'){ cW=aW; cH=Math.round(aW*0.48); }
-    else { cW=aW; cH=Math.round(aW*0.56); }
-    cH=Math.min(cH,aH); cW=Math.min(cW,aW);
-    canvas.width=cW*2; canvas.height=cH*2; canvas.style.width=cW+'px'; canvas.style.height=cH+'px';
-    const ctx=canvas.getContext('2d'); ctx.scale(2,2); ctx.clearRect(0,0,cW,cH);
-    const secSnap={};
-    modal.querySelectorAll('[data-sec]').forEach(chk=>{ secSnap[chk.dataset.sec]=chk.checked; });
-    _drawRouteLivePreview(ctx, layout, cW, cH, pickerState.color, secSnap, muniName, date, roadName);
-  }
-
-  modal.querySelectorAll('[data-close]').forEach(b=>b.addEventListener('click',()=>modal.remove()));
-  modal.addEventListener('click',e=>{ if(e.target===modal) modal.remove(); });
-
-  modal.querySelector('#route-download-now')?.addEventListener('click', async () => {
-    const tone=modal.querySelector('#route-tone')?.value||'notification';
-    const readable=!!modal.querySelector('#route-readable')?.checked;
-    const sections={};
-    sectionDefs.forEach(s=>{ sections[s.key]=!!modal.querySelector(`[data-sec="${s.key}"]`)?.checked; });
+    </div>
+  `;
+  modal.querySelectorAll('[data-close]').forEach(btn => btn.addEventListener('click', () => modal.remove()));
+  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+  const doDownload = async () => {
+    const template = modal.querySelector('input[name="tpl"]:checked')?.value || templates[0]?.key || 'official';
+    const tone = modal.querySelector('#route-tone')?.value || 'notification';
+    const readable = !!modal.querySelector('#route-readable')?.checked;
+    const sections = {
+      authority: !!modal.querySelector('[data-sec="authority"]')?.checked,
+      closed_since: !!modal.querySelector('[data-sec="closed_since"]')?.checked,
+      reopen: !!modal.querySelector('[data-sec="reopen"]')?.checked,
+      alt_route: !!modal.querySelector('[data-sec="alt_route"]')?.checked
+    };
     modal.remove();
-    await onDownload({ template: pickerState.template, tone, readable, sections, color: pickerState.color });
-  });
-
-  modal.querySelectorAll('[data-swatch]').forEach(sw=>{ sw.addEventListener('click',()=>{ pickerState.color=sw.dataset.swatch; updateSwatches(); buildThumbnails(); updatePreview(); }); });
-  modal.querySelectorAll('[data-sec]').forEach(chk=>{ chk.addEventListener('change', updatePreview); });
-
+    await onDownload({ template, tone, readable, sections });
+  };
+  modal.querySelector('#route-download-now')?.addEventListener('click', doDownload);
+  modal.querySelector('#route-download-top')?.addEventListener('click', doDownload);
   document.body.appendChild(modal);
   buildThumbnails();
   requestAnimationFrame(()=>{ updatePreview(); });
