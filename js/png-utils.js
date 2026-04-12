@@ -1,6 +1,13 @@
+function normalizeHex(hex) {
+  const cleaned = String(hex || '').replace('#', '').trim().replace(/[^a-f0-9]/gi, '');
+  if (!cleaned) return '000000';
+  if (cleaned.length === 3) return cleaned.split('').map(ch => ch + ch).join('');
+  if (cleaned.length < 6) return '000000';
+  return cleaned.slice(0, 6);
+}
+
 export function hexToRgba(hex, alpha = 1) {
-  const v = String(hex || '').replace('#', '').trim();
-  const full = v.length === 3 ? v.split('').map(ch => ch + ch).join('') : v.padEnd(6, '0').slice(0, 6);
+  const full = normalizeHex(hex);
   const num = Number.parseInt(full, 16);
   const r = (num >> 16) & 255;
   const g = (num >> 8) & 255;
@@ -9,8 +16,7 @@ export function hexToRgba(hex, alpha = 1) {
 }
 
 export function darkenHex(hex, amount = 24) {
-  const v = String(hex || '').replace('#', '').trim();
-  const full = v.length === 3 ? v.split('').map(ch => ch + ch).join('') : v.padEnd(6, '0').slice(0, 6);
+  const full = normalizeHex(hex);
   const num = Number.parseInt(full, 16);
   const clamp = n => Math.max(0, Math.min(255, n));
   const r = clamp(((num >> 16) & 255) - amount);
@@ -45,7 +51,7 @@ export function roundRect(ctx, x, y, w, h, r) {
 }
 
 export function wrapText(ctx, text, maxWidth) {
-  const words = (text || '').split(' ');
+  const words = String(text || '').trim().split(/\s+/).filter(Boolean);
   const lines = []; let current = '';
   words.forEach(word => {
     const test = current ? current + ' ' + word : word;
@@ -59,8 +65,10 @@ export function wrapText(ctx, text, maxWidth) {
 
 export function wrapRichText(ctx, segments, maxWidth, fontSize) {
   const words = [];
-  segments.forEach(seg => {
-    seg.text.split(' ').forEach(w => { if (w) words.push({ text: w, bold: seg.bold }); });
+  (segments || []).forEach(seg => {
+    String(seg?.text || '').split(/\s+/).forEach(w => {
+      if (w) words.push({ text: w, bold: !!seg?.bold });
+    });
   });
   const lines = []; let current = [];
   const lineW = segs => {
@@ -84,10 +92,10 @@ export function wrapRichText(ctx, segments, maxWidth, fontSize) {
 
 export function drawRichLine(ctx, segments, x, y, fontSize, color) {
   let cx = x;
-  segments.forEach((seg, i) => {
+  (segments || []).forEach((seg, i) => {
     ctx.font = (seg.bold ? 'bold ' : '') + fontSize + 'px Arial, sans-serif';
     ctx.fillStyle = color;
-    const text = (i === 0 ? '' : ' ') + seg.text;
+    const text = (i === 0 ? '' : ' ') + String(seg.text || '');
     ctx.fillText(text, cx, y);
     cx += ctx.measureText(text).width;
   });

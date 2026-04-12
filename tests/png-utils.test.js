@@ -21,6 +21,10 @@ test('hexToRgba clamps alpha bounds', () => {
   assert.equal(hexToRgba('#112233', -1), 'rgba(17, 34, 51, 0)');
 });
 
+test('hexToRgba falls back to black for invalid hex input', () => {
+  assert.equal(hexToRgba('not-a-color', 0.5), 'rgba(0, 0, 0, 0.5)');
+});
+
 test('darkenHex returns darkened rgb value', () => {
   assert.equal(darkenHex('#336699', 20), 'rgb(31, 82, 133)');
 });
@@ -55,7 +59,7 @@ test('reportPreviewError writes to console.error with context', () => {
 
 test('wrapText wraps long text by maxWidth', () => {
   const ctx = { measureText: (s) => ({ width: s.length * 6 }) };
-  const lines = wrapText(ctx, 'alpha beta gamma delta epsilon', 60);
+  const lines = wrapText(ctx, ' alpha   beta gamma   delta epsilon ', 60);
   assert.equal(lines.length > 1, true);
 });
 
@@ -82,6 +86,18 @@ test('drawRichLine writes each segment to canvas context', () => {
   assert.equal(calls.length, 2);
   assert.equal(calls[0].text, 'Hello');
   assert.equal(calls[1].text.startsWith(' '), true);
+});
+
+test('wrapRichText and drawRichLine handle missing segment text safely', () => {
+  const ctx = {
+    font: '',
+    fillStyle: '',
+    measureText: (s) => ({ width: s.length * 5 }),
+    fillText: () => {}
+  };
+  const lines = wrapRichText(ctx, [{ text: null, bold: true }, { bold: false }], 100, 12);
+  assert.deepEqual(lines, []);
+  drawRichLine(ctx, [{ text: null, bold: true }], 0, 0, 10, '#000');
 });
 
 test('roundRect executes path operations without throwing', () => {
