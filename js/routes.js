@@ -36,6 +36,17 @@ function _rHexToRgba(hex, alpha = 1) {
   return `rgba(${r}, ${g}, ${b}, ${Math.max(0, Math.min(1, alpha))})`;
 }
 
+function _rDarkenHex(hex, amount = 24) {
+  const v = String(hex || '').replace('#', '').trim();
+  const full = v.length === 3 ? v.split('').map(ch => ch + ch).join('') : v.padEnd(6, '0').slice(0, 6);
+  const num = Number.parseInt(full, 16);
+  const clamp = n => Math.max(0, Math.min(255, n));
+  const r = clamp(((num >> 16) & 255) - amount);
+  const g = clamp(((num >> 8) & 255) - amount);
+  const b = clamp((num & 255) - amount);
+  return `rgb(${r}, ${g}, ${b})`;
+}
+
 function routeTemplatePreviewDataUri(templateKey) {
   const c = document.createElement('canvas');
   c.width = 180; c.height = 96;
@@ -122,7 +133,7 @@ function applyRouteTemplateDecor(ctx, template, SPLIT, bodyTop, H, FTR_H) {
   }
 }
 
-function openRouteTemplatePicker({ templates, onDownload }) {
+function openRouteTemplatePicker({ templates, onDownload, onPreview = null }) {
   document.getElementById('route-template-picker')?.remove();
 
   const pickerState = { template: templates[0]?.key || 'road-sign', color: '#dc2626' };
@@ -222,7 +233,9 @@ function openRouteTemplatePicker({ templates, onDownload }) {
       el.style.borderColor = (el.getAttribute('data-swatch') || '').toLowerCase() === String(color || '').toLowerCase() ? '#fff' : 'transparent';
     });
   };
-  const updatePreview = () => {
+  let previewToken = 0;
+  const updatePreview = async () => {
+    const token = ++previewToken;
     buildThumbnails(modal, templates);
     const canvas = modal.querySelector('#route-preview-canvas');
     const ctx = canvas?.getContext('2d');
@@ -237,18 +250,31 @@ function openRouteTemplatePicker({ templates, onDownload }) {
     const h = Math.round(w * 0.56);
     canvas.width = w;
     canvas.height = h;
-    const img = new Image();
-    img.onload = () => {
-      ctx.clearRect(0, 0, w, h);
-      ctx.drawImage(img, 0, 0, w, h);
-      ctx.fillStyle = _rHexToRgba(accent, 0.2);
-      ctx.fillRect(0, 0, w, 16);
-      ctx.fillStyle = accent;
-      ctx.fillRect(0, h - 7, w, 7);
-      ctx.strokeStyle = _rHexToRgba(accent, 0.4);
-      ctx.strokeRect(0.5, 0.5, w - 1, h - 1);
+    const drawFrame = (src) => {
+      const img = new Image();
+      img.onload = () => {
+        if (token !== previewToken) return;
+        ctx.clearRect(0, 0, w, h);
+        ctx.drawImage(img, 0, 0, w, h);
+        ctx.fillStyle = _rHexToRgba(accent, 0.2);
+        ctx.fillRect(0, 0, w, 16);
+        ctx.fillStyle = accent;
+        ctx.fillRect(0, h - 7, w, 7);
+        ctx.strokeStyle = _rHexToRgba(accent, 0.4);
+        ctx.strokeRect(0.5, 0.5, w - 1, h - 1);
+      };
+      img.src = src;
     };
-    img.src = routeTemplatePreviewDataUri(template);
+    if (typeof onPreview === 'function') {
+      try {
+        const dataUri = await onPreview({ template, tone: modal.querySelector('#route-tone')?.value || 'notification', readable: !!modal.querySelector('#route-readable')?.checked, color: accent });
+        if (dataUri) {
+          drawFrame(dataUri);
+          return;
+        }
+      } catch (_) {}
+    }
+    drawFrame(routeTemplatePreviewDataUri(template));
   };
 
   modal.querySelectorAll('#route-swatches [data-swatch]').forEach(el => {
@@ -578,12 +604,20 @@ async function downloadClosurePNG(c, template = 'road-sign', opts = {}) {
     if (sections.generated_date) tx(date,W-20,30,'9px Arial,sans-serif','rgba(255,255,255,0.4)','right');
     ln(10,52,W-10,52,'rgba(255,255,255,0.12)');
     if (sections.status_badge) pill(statusLabel,20,76,accent,'#fff');
-    tx(c.road_name,20,100,`bold ${readable?26:22}px Arial,sans-serif`,'#fff');
-    if (sections.reason&&c.reason) tx(`Reason: ${c.reason}`,20,120,'12px Arial,sans-serif','rgba(255,255,255,0.75)');
+    const roadLines = wrapText(ctx, c.road_name || 'Road closure', W * 0.52 - 40);
+    let roadY = 100;
+    roadLines.slice(0, 2).forEach((line, idx) => {
+      tx(line, 20, roadY + idx * (readable ? 28 : 24), `bold ${readable ? 26 : 22}px Arial,sans-serif`, '#fff');
+    });
+    let reasonY = roadY + (Math.min(roadLines.length, 2) * (readable ? 28 : 24)) + 4;
+    if (sections.reason && c.reason) {
+      tx(`Reason: ${c.reason}`, 20, reasonY, '12px Arial,sans-serif', 'rgba(255,255,255,0.75)');
+      reasonY += 20;
+    }
     const para=[{text:'The ',bold:false},{text:muniName+' DMC',bold:true},{text:` notifies road users of the closure of `,bold:false},{text:c.road_name,bold:true},...(c.reason?[{text:` due to `,bold:false},{text:c.reason,bold:true}]:[]),{text:'.',bold:false}];
-    let ty=140;
-    wrapRichText(ctx,para,W*0.52-40,bsz).forEach(l=>{drawRichLine(ctx,l,20,ty,bsz,'rgba(255,255,255,0.65)');ty+=bsz+6;});
-    if (alt&&sections.alt_route) { ty+=10; fi(20,ty,W*0.52-40,1,'rgba(255,255,255,0.15)'); ty+=14; tx('ALTERNATIVE ROUTE',20,ty,'bold 10px Arial,sans-serif',_rHexToRgba(accent,0.9)); ty+=14; const altL=wrapText(ctx,alt.description,W*0.52-40); altL.slice(0,2).forEach(l=>{tx(l,20,ty,'11px Arial,sans-serif','rgba(255,255,255,0.75)');ty+=14;}); if(alt.extra_distance) tx(`+${alt.extra_distance} km · ${alt.vehicle_suitability||'All vehicles'}`,20,ty,'10px Arial,sans-serif','rgba(255,255,255,0.55)'); }
+    let ty = Math.max(140, reasonY + 8);
+    wrapRichText(ctx, para, W * 0.52 - 40, bsz).forEach(l => { drawRichLine(ctx, l, 20, ty, bsz, 'rgba(255,255,255,0.65)'); ty += bsz + 10; });
+    if (alt && sections.alt_route) { ty += 14; fi(20, ty, W * 0.52 - 40, 1, 'rgba(255,255,255,0.15)'); ty += 18; tx('ALTERNATIVE ROUTE', 20, ty, 'bold 10px Arial,sans-serif', _rHexToRgba(accent, 0.9)); ty += 18; const altL = wrapText(ctx, alt.description, W * 0.52 - 40); altL.slice(0, 2).forEach(l => { tx(l, 20, ty, '11px Arial,sans-serif', 'rgba(255,255,255,0.75)'); ty += 16; }); if (alt.extra_distance) tx(`+${alt.extra_distance} km · ${alt.vehicle_suitability || 'All vehicles'}`, 20, ty + 2, '10px Arial,sans-serif', 'rgba(255,255,255,0.55)'); }
     const RX=Math.round(W*0.56); ln(RX,56,RX,H-10,'rgba(255,255,255,0.1)');
     let ry=64;
     if (sections.authority&&c.authority)         ry=field('Authority',c.authority,RX+16,ry,W-RX-30,false);
@@ -596,14 +630,19 @@ async function downloadClosurePNG(c, template = 'road-sign', opts = {}) {
     const bodyTop = drawHeader(); const SP=Math.round(W*0.62); const RX=SP+14;
     fi(0,bodyTop,SP,H-bodyTop-30,'#fafaf8'); fi(SP,bodyTop,W-SP,H-bodyTop-30,_rHexToRgba(accent,0.06)); ln(SP,bodyTop,SP,H-30,'#ddd');
     tx(`Road Closure ${toneWord}`,20,bodyTop+36,`bold ${readable?16:14}px Arial,sans-serif`,accent);
-    tx(c.road_name,20,bodyTop+58,`bold ${readable?22:19}px Arial,sans-serif`,'#1a1a1a');
-    if (sections.status_badge) pill(statusLabel,20,bodyTop+82,accent,'#fff');
+    const headingLines = wrapText(ctx, c.road_name || 'Road closure', SP - 40);
+    let headingY = bodyTop + 58;
+    headingLines.slice(0, 2).forEach((line, idx) => {
+      tx(line, 20, headingY + idx * (readable ? 24 : 21), `bold ${readable ? 22 : 19}px Arial,sans-serif`, '#1a1a1a');
+    });
+    const badgeY = headingY + (Math.min(headingLines.length, 2) * (readable ? 24 : 21)) + 8;
+    if (sections.status_badge) pill(statusLabel,20,badgeY,accent,'#fff');
     const para=[{text:c.road_name,bold:true},{text:' is closed to all traffic.',bold:false}];
     const para2=[{text:'The ',bold:false},{text:muniName+' DMC',bold:true},{text:' notifies road users of the closure of ',bold:false},{text:c.road_name,bold:true},...(c.reason?[{text:' due to ',bold:false},{text:c.reason,bold:true}]:[]),{text:'.',bold:false}];
-    let ty=bodyTop+100;
-    wrapRichText(ctx,para,SP-40,bsz).forEach(l=>{drawRichLine(ctx,l,20,ty,bsz,'#1a1a1a');ty+=bsz+6;});
-    ty+=6;
-    wrapRichText(ctx,para2,SP-40,bsz).forEach(l=>{drawRichLine(ctx,l,20,ty,bsz,'#555');ty+=bsz+6;});
+    let ty = Math.max(bodyTop + 100, badgeY + 28);
+    wrapRichText(ctx, para, SP - 40, bsz).forEach(l => { drawRichLine(ctx, l, 20, ty, bsz, '#1a1a1a'); ty += bsz + 10; });
+    ty += 10;
+    wrapRichText(ctx, para2, SP - 40, bsz).forEach(l => { drawRichLine(ctx, l, 20, ty, bsz, '#555'); ty += bsz + 10; });
     if (alt&&sections.alt_route) { ty+=12; fi(20,ty,SP-40,1,'#ddd'); ty+=14; tx('ALTERNATIVE ROUTE',20,ty,'bold 10px Arial,sans-serif','#3a7d44'); ty+=14; const al=wrapText(ctx,alt.description,SP-80); al.slice(0,2).forEach(l=>{tx(l,20,ty,'11px Arial,sans-serif','#1a1a1a');ty+=14;}); if(alt.extra_distance) tx(`+${alt.extra_distance} km · ${alt.vehicle_suitability||'All vehicles'}`,20,ty,'10px Arial,sans-serif','#555'); }
     let ry=bodyTop+16;
     if (sections.authority&&c.authority)         ry=field('Authority',c.authority,RX,ry,W-RX-14);
@@ -672,7 +711,7 @@ async function downloadClosurePNG(c, template = 'road-sign', opts = {}) {
     drawFooter();
   }
 
-  // Update the picker call site in bindClosureEvents to pass color
+  if (opts.asDataUrl) return canvas.toDataURL('image/png');
   canvas.toBlob(blob => {
     const url = URL.createObjectURL(blob);
     Object.assign(document.createElement('a'),{href:url,download:`road-closure-${template}-${(c.road_name||'route').replace(/\s+/g,'-')}.png`}).click();
@@ -833,6 +872,7 @@ function bindClosureEvents() {
         const c = _closures.find(x => x.id === id); drop.remove(); if (!c) return;
         openRouteTemplatePicker({
           templates: ROUTE_PNG_TEMPLATES,
+          onPreview: ({ template, tone, readable, color }) => downloadClosurePNG(c, template, { tone, readable, color, asDataUrl: true }),
           onDownload: ({ template, tone, readable, sections, color }) => downloadClosurePNG(c, template, { tone, readable, sections, color })
         });
       });
