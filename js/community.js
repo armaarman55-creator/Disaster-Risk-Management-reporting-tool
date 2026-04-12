@@ -431,11 +431,7 @@ function openPngTemplatePicker({ heading, templates, sectionDefs = [], defaultCo
 
   const modal = document.createElement('div');
   modal.id = 'png-template-picker';
-  modal.style.cssText = 'position:fixed;inset:0;z-index:10050;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:16px';
-
-  const swatchHtml = defaultColors.map(c => `<span data-swatch="${c}" title="${c}" style="display:inline-block;width:20px;height:20px;border-radius:50%;background:${c};cursor:pointer;border:2px solid ${c===pickerState.color?'#fff':'transparent'};box-sizing:border-box;flex-shrink:0"></span>`).join('');
-  const sectionGroups = { 'Content': sectionDefs.filter(s=>!['status','status_badge','muni_logo','generated_date'].includes(s.key)), 'Design elements': sectionDefs.filter(s=>['status','status_badge','muni_logo','generated_date'].includes(s.key)) };
-
+  modal.style.cssText = 'position:fixed;inset:0;z-index:10050;background:rgba(0,0,0,.55);display:flex;align-items:flex-start;justify-content:center;padding:16px 16px 24px;overflow:auto';
   modal.innerHTML = `
     <div style="width:min(820px,97vw);max-height:92vh;overflow:hidden;display:flex;flex-direction:column;background:var(--bg2);border:1px solid var(--border2);border-radius:12px;box-shadow:0 12px 40px rgba(0,0,0,.5)">
       <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 18px;border-bottom:1px solid var(--border);flex-shrink:0">
@@ -489,9 +485,9 @@ function openPngTemplatePicker({ heading, templates, sectionDefs = [], defaultCo
           </div>
         </div>
       </div>
-      <div style="display:flex;justify-content:flex-end;gap:8px;padding:12px 18px;border-top:1px solid var(--border);flex-shrink:0">
-        <button data-close style="border:1px solid var(--border);background:var(--bg3);color:var(--text);border-radius:6px;padding:7px 14px;cursor:pointer;font-size:13px">Cancel</button>
-        <button id="png-download-now" style="border:none;background:var(--accent);color:#fff;border-radius:6px;padding:7px 16px;cursor:pointer;font-size:13px;font-weight:700">Download PNG</button>
+      <div style="position:sticky;bottom:-16px;display:flex;justify-content:flex-end;gap:8px;margin-top:14px;padding:10px 0 4px;background:linear-gradient(180deg, rgba(0,0,0,0), var(--bg2) 45%)">
+        <button type="button" data-close style="border:1px solid var(--border);background:var(--bg3);color:var(--text);border-radius:6px;padding:7px 10px;cursor:pointer">Cancel</button>
+        <button type="button" id="png-download-now" style="border:1px solid var(--accent);background:var(--accent);color:#fff;border-radius:6px;padding:7px 12px;cursor:pointer">Download PNG</button>
       </div>
     </div>`;
 
