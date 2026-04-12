@@ -26,6 +26,11 @@ export function triggerDataUrlDownload(dataUrl, filename) {
   }).click();
 }
 
+export function reportPreviewError(scope, error, context = {}) {
+  const msg = error?.message || String(error || 'Unknown preview error');
+  console.error(`[${scope}] ${msg}`, { context, error });
+}
+
 export function roundRect(ctx, x, y, w, h, r) {
   ctx.beginPath();
   ctx.moveTo(x + r, y); ctx.lineTo(x + w - r, y);

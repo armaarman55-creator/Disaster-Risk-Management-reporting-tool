@@ -1,7 +1,7 @@
 // js/routes.js
 import { supabase } from './supabase.js';
 import { confirmDialog } from './confirm-dialog.js';
-import { hexToRgba, darkenHex, triggerDataUrlDownload, roundRect, wrapText, wrapRichText, drawRichLine } from './png-utils.js';
+import { hexToRgba, darkenHex, triggerDataUrlDownload, roundRect, wrapText, wrapRichText, drawRichLine, reportPreviewError } from './png-utils.js';
 
 let _muniId   = null;
 let _closures = [];
@@ -255,7 +255,9 @@ function openRouteTemplatePicker({ templates, onDownload, onPreview = null }) {
           drawFrame(dataUri);
           return;
         }
-      } catch (_) {}
+      } catch (error) {
+        reportPreviewError('route-preview', error, { template, accent });
+      }
     }
     drawFrame(routeTemplatePreviewDataUri(template));
   };

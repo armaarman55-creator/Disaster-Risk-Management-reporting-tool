@@ -1,7 +1,7 @@
 // js/community.js
 import { supabase } from './supabase.js';
 import { confirmDialog } from './confirm-dialog.js';
-import { hexToRgba, darkenHex, triggerDataUrlDownload, roundRect, wrapText, wrapRichText, drawRichLine } from './png-utils.js';
+import { hexToRgba, darkenHex, triggerDataUrlDownload, roundRect, wrapText, wrapRichText, drawRichLine, reportPreviewError } from './png-utils.js';
 
 let _muniId    = null;
 let _activeTab = 'shelters';
@@ -369,7 +369,9 @@ function openPngTemplatePicker({ heading, templates, sectionDefs = [], defaultCo
           drawFrame(dataUri);
           return;
         }
-      } catch (_) {}
+      } catch (error) {
+        reportPreviewError('community-preview', error, { template, accent });
+      }
     }
     drawFrame(templatePreviewDataUri(template));
   };
