@@ -70,6 +70,16 @@ function _drawRouteThumbnail(ctx, templateKey) {
   img.src = dataUri;
 }
 
+// Compatibility helper for older thumbnail pipelines that call _drawRouteThumbnail(ctx, templateKey).
+function _drawRouteThumbnail(ctx, templateKey) {
+  if (!ctx || !ctx.canvas) return;
+  const { width, height } = ctx.canvas;
+  const dataUri = routeTemplatePreviewDataUri(templateKey);
+  const img = new Image();
+  img.onload = () => ctx.drawImage(img, 0, 0, width, height);
+  img.src = dataUri;
+}
+
 function applyRouteTemplateDecor(ctx, template, SPLIT, bodyTop, H, FTR_H) {
   if (template === 'alert-card') {
     ctx.fillStyle = '#7f1d1d';
@@ -125,7 +135,7 @@ function openRouteTemplatePicker({ templates, onDownload }) {
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
         <h3 style="margin:0;font-size:16px">Route notice image template</h3>
         <div style="display:flex;align-items:center;gap:6px">
-          <button type="button" id="route-download-top" style="border:1px solid var(--accent);background:var(--accent);color:#fff;border-radius:6px;padding:4px 8px;cursor:pointer;font-size:12px">Download PNG</button>
+          <button type="button" id="route-download-top" style="border:1px solid rgba(0,0,0,.35);background:var(--accent);color:#fff;border-radius:6px;padding:5px 10px;cursor:pointer;font-size:12px;font-weight:700;box-shadow:0 0 0 1px rgba(255,255,255,.2) inset">Download PNG</button>
           <button type="button" data-close style="border:1px solid var(--border);background:var(--bg3);color:var(--text);border-radius:6px;padding:4px 8px;cursor:pointer">✕</button>
         </div>
       </div>
@@ -189,7 +199,7 @@ function openRouteTemplatePicker({ templates, onDownload }) {
       </div>
       <div style="position:sticky;bottom:0;display:flex;justify-content:flex-end;gap:8px;margin-top:14px;padding:10px 0 4px;background:linear-gradient(180deg, rgba(0,0,0,0), var(--bg2) 45%)">
         <button type="button" data-close style="border:1px solid var(--border);background:var(--bg3);color:var(--text);border-radius:6px;padding:7px 10px;cursor:pointer">Cancel</button>
-        <button type="button" id="route-download-now" style="border:1px solid var(--accent);background:var(--accent);color:#fff;border-radius:6px;padding:7px 12px;cursor:pointer">Download PNG</button>
+        <button type="button" id="route-download-now" style="border:1px solid rgba(0,0,0,.35);background:var(--accent);color:#fff;border-radius:6px;padding:7px 12px;cursor:pointer;font-weight:700;box-shadow:0 0 0 1px rgba(255,255,255,.2) inset">Download PNG</button>
       </div>
     </div>
   `;

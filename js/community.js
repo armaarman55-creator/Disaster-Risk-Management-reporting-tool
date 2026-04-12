@@ -291,110 +291,44 @@ function templatePreviewDataUri(templateKey) {
   }
 }
 
-function _drawLivePreview(ctx, layout, W, H, color, secs, entityType, muniName, date) {
-  const accent = color;
-  const lb = _hexToRgba(accent,0.08), mb = _hexToRgba(accent,0.18);
-  const fi = (x,y,w,h,c) => { ctx.fillStyle=c; ctx.fillRect(x,y,w,h); };
-  const tx = (s,x,y,font,c,align='left') => { ctx.font=font; ctx.fillStyle=c; ctx.textAlign=align; ctx.fillText(s,x,y); ctx.textAlign='left'; };
-  const ln = (x1,y1,x2,y2,c,lw=0.5) => { ctx.strokeStyle=c; ctx.lineWidth=lw; ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke(); };
-  const pill = (label,x,y,bg,tc) => { ctx.font='bold 9px Arial'; const tw=ctx.measureText(label).width; ctx.fillStyle=bg; ctx.beginPath(); ctx.roundRect(x,y-10,tw+12,14,4); ctx.fill(); ctx.fillStyle=tc; ctx.fillText(label,x+6,y); };
-  const dataRow = (label,val,x,y,maxW) => {
-    tx(label,x,y,'bold 8px Arial','#999');
-    const lines = _wrapCanvasText(ctx, val, maxW);
-    lines.slice(0,2).forEach((l,i) => tx(l,x,y+11+i*11,'9px Arial','#222'));
-    return y + 14 + Math.min(lines.length,2)*11;
-  };
-  const entityLabel = entityType === 'shelter' ? 'Khanya Community Hall' : entityType === 'relief' ? 'Ward 14 Relief Operation' : 'Main Street';
-  const statusLabel = entityType === 'shelter' ? 'OPEN' : entityType === 'relief' ? 'ACTIVE' : 'CLOSED';
+function buildThumbnails(root, templates = []) {
+  const host = root || document;
+  const items = host.querySelectorAll('[data-template-preview]');
+  items.forEach(node => {
+    const key = node.getAttribute('data-template-preview');
+    if (!key) return;
+    if (node.tagName === 'IMG') {
+      node.src = templatePreviewDataUri(key);
+      return;
+    }
+    if (node.tagName === 'CANVAS') {
+      const ctx = node.getContext('2d');
+      if (!ctx) return;
+      const img = new Image();
+      img.onload = () => ctx.drawImage(img, 0, 0, node.width, node.height);
+      img.src = templatePreviewDataUri(key);
+    }
+  });
+}
 
-  if (layout === 'community-board' || layout === 'ops-brief') {
-    fi(0,0,W,H,'#f9f8f5'); fi(0,0,W,5,accent); fi(0,5,W,42,'#fff'); ln(0,47,W,47,'#e5e3df');
-    tx(muniName,12,22,'bold 11px Arial',accent); tx('Disaster Management Centre',12,36,'9px Arial','#888');
-    tx(date,W-10,22,'9px Arial','#aaa','right'); tx('FOR OFFICIAL USE',W-10,36,'8px Arial','#bbb','right');
-    fi(0,47,W,H-47-28,'#fff'); tx(entityLabel,14,70,'bold 14px Arial','#1a1a1a');
-    if (secs.status||secs.status_badge) pill(statusLabel,14,90,accent,'#fff');
-    let y=100, sp=Math.floor(W*0.62);
-    if (secs.address||secs.reason)      y=dataRow(entityType==='shelter'?'ADDRESS':'REASON',entityType==='shelter'?'123 Example St, Ward 7':'Emergency water main repairs',14,y,sp-28);
-    if (secs.ward)                      y=dataRow('WARD','7',14,y,sp-28);
-    if (secs.capacity||secs.distribution) y=dataRow(entityType==='shelter'?'CAPACITY':'DISTRIBUTION PT',entityType==='shelter'?'350 persons':'Town Hall Parking',14,y,sp-28);
-    if (secs.contact)                   y=dataRow('CONTACT','Jane Smith · 083 000 0000',14,y,sp-28);
-    ln(sp,47,sp,H-28,'#e5e3df'); let ry=58;
-    if (secs.facility||secs.hazard||secs.authority)     ry=dataRow(entityType==='shelter'?'FACILITY':entityType==='relief'?'HAZARD':'AUTHORITY',entityType==='shelter'?'Community Hall':entityType==='relief'?'Flooding':'City Works Dept',sp+10,ry,W-sp-20);
-    if (secs.accessibility||secs.schedule||secs.closed_since) ry=dataRow(entityType==='shelter'?'WHEELCHAIR':entityType==='relief'?'SCHEDULE':'CLOSED SINCE',entityType==='shelter'?'Yes – full access':entityType==='relief'?'Mon–Sat 08:00–17:00':'1 Jan 2026',sp+10,ry,W-sp-20);
-    if (secs.occupancy||secs.end_date||secs.reopen)     ry=dataRow(entityType==='shelter'?'OCCUPANCY':'END / REOPEN',entityType==='shelter'?'238 / 350 (68%)':'31 Jan 2026',sp+10,ry,W-sp-20);
-    fi(0,H-28,W,28,accent); tx(muniName+' Disaster Management Centre',12,H-10,'9px Arial',_hexToRgba('#fff',0.75)); tx('Generated: '+date,W-10,H-10,'9px Arial',_hexToRgba('#fff',0.6),'right');
-
-  } else if (layout === 'status-panel') {
-    fi(0,0,W,H,'#fff'); fi(0,0,W,10,accent);
-    tx(muniName,12,26,'bold 11px Arial',accent); tx('Disaster Management Centre · Shelter Status',12,40,'9px Arial','#888'); tx(date,W-10,26,'9px Arial','#aaa','right');
-    const cw=Math.floor((W-30)/3);
-    [{l:'Capacity',v:'350'},{l:'Occupancy',v:'238'},{l:'Available',v:'112'}].forEach((cd,i)=>{
-      const cx=10+i*(cw+5); fi(cx,52,cw,40,lb); ctx.strokeStyle=_hexToRgba(accent,0.25); ctx.lineWidth=0.5; ctx.strokeRect(cx,52,cw,40);
-      tx(cd.l,cx+8,65,'bold 8px Arial','#888'); tx(cd.v,cx+8,82,'bold 16px Arial',accent);
-    });
-    fi(10,100,W-20,8,'#e5e7eb'); fi(10,100,Math.round((W-20)*0.68),8,accent);
-    tx('68% occupied',10,118,'9px Arial','#555');
-    let y=128;
-    if (secs.address)      y=dataRow('ADDRESS','123 Example Street, Ward 7',10,y,W/2-15);
-    if (secs.contact)      y=dataRow('CONTACT','Jane Smith · 083 000 0000',10,y,W/2-15);
-    if (secs.accessibility) dataRow('WHEELCHAIR ACCESS','Yes — full ramp access',W/2+5,128,W/2-15);
-    fi(0,H-22,W,22,'#f3f4f6'); tx('Generated: '+date,W-10,H-8,'8px Arial','#aaa','right');
-
-  } else if (layout === 'social-post' || layout === 'social-update') {
-    fi(0,0,W,H,_darkenHex(accent,40)); fi(0,0,W,H,'rgba(0,0,0,0.1)');
-    fi(0,0,W,H*0.22,'rgba(255,255,255,0.12)');
-    tx(muniName,W/2,H*0.12,'bold 11px Arial','rgba(255,255,255,0.85)','center');
-    tx('Disaster Management Centre',W/2,H*0.18,'9px Arial','rgba(255,255,255,0.55)','center');
-    fi(W*0.1,H*0.25,W*0.8,H*0.48,'rgba(255,255,255,0.13)');
-    if (secs.status||secs.status_badge) pill(statusLabel,W*0.1+12,H*0.32,'rgba(255,255,255,0.25)','rgba(255,255,255,0.9)');
-    tx(entityLabel,W/2,H*0.43,'bold 14px Arial','#fff','center');
-    const sub = entityType==='shelter'?'Capacity: 350 · Ward 7':entityType==='relief'?'Distribution: Town Hall Parking':'Closed: Reopen 15 Jan';
-    tx(sub,W/2,H*0.52,'10px Arial','rgba(255,255,255,0.75)','center');
-    if (secs.contact||secs.alt_route||secs.distribution)
-      tx(entityType==='relief'?'Contact: 083 000 0000':entityType==='routes'?'Alt: Oak Ave via River Rd':'Contact: 083 000 0000',W/2,H*0.62,'9px Arial','rgba(255,255,255,0.6)','center');
-    tx(date,W/2,H*0.88,'9px Arial','rgba(255,255,255,0.4)','center');
-
-  } else if (layout === 'field-handout' || layout === 'info-flyer') {
-    fi(0,0,W,H,'#fff'); ctx.strokeStyle=_hexToRgba(accent,0.5); ctx.lineWidth=2; ctx.strokeRect(4,4,W-8,H-8);
-    fi(4,4,W-8,22,lb); fi(4,4,W-8,3,accent);
-    tx(muniName,W/2,18,'bold 9px Arial',accent,'center'); ln(4,26,W-4,26,_hexToRgba(accent,0.3));
-    const noticeTitle = entityType==='shelter'?'SHELTER NOTICE':entityType==='relief'?'RELIEF OPERATION NOTICE':'ROAD CLOSURE NOTICE';
-    tx(noticeTitle,W/2,42,'bold 13px Arial','#1a1a1a','center');
-    tx(entityLabel,W/2,57,'11px Arial',accent,'center');
-    let y=70;
-    if (secs.status||secs.status_badge) { pill(statusLabel,W/2-20,y,accent,'#fff'); y+=20; }
-    if (secs.address||secs.reason)      y=dataRow(entityType==='shelter'?'ADDRESS':'REASON','123 Example Street',10,y,W-20);
-    if (secs.ward)                      y=dataRow('WARD','Ward 7',10,y,W-20);
-    if (secs.capacity||secs.schedule||secs.distribution) y=dataRow(entityType==='shelter'?'CAPACITY':entityType==='relief'?'SCHEDULE':'DISTRIBUTION PT',entityType==='shelter'?'350 persons':'Mon–Sat 08:00–17:00',10,y,W-20);
-    if (secs.contact)                   y=dataRow('CONTACT','Jane Smith · 083 000 0000',10,y,W-20);
-    fi(4,H-22,W-8,18,lb); tx('Generated: '+date,W/2,H-10,'8px Arial','#888','center');
-
-  } else if (layout === 'emergency-strip' || layout === 'community-notice') {
-    fi(0,0,W,H,accent); fi(0,0,W,H,'rgba(0,0,0,0.22)');
-    fi(0,0,W,14,'rgba(255,255,255,0.12)');
-    tx(muniName,12,10,'bold 9px Arial','rgba(255,255,255,0.7)'); tx(date,W-10,10,'8px Arial','rgba(255,255,255,0.5)','right');
-    const sp=Math.floor(W*0.58);
-    tx(entityType==='shelter'?'SHELTER NOTICE':entityType==='relief'?'RELIEF OPERATION':'ROAD CLOSURE ALERT',14,34,'bold 13px Arial','#fff');
-    tx(entityLabel,14,50,'11px Arial','rgba(255,255,255,0.85)');
-    if (secs.address||secs.reason)       tx(entityType==='shelter'?'123 Example Street · Ward 7':'Reason: Emergency repairs',14,64,'9px Arial','rgba(255,255,255,0.65)');
-    if (secs.contact||secs.alt_route)    tx(entityType==='routes'?'Alt: Oak Avenue via River Rd':'Contact: 083 000 0000',14,78,'9px Arial','rgba(255,255,255,0.55)');
-    fi(sp,14,W-sp,H-14,'rgba(255,255,255,0.12)');
-    let ry=28;
-    ry=dataRow('STATUS',statusLabel,sp+8,ry,W-sp-16);
-    if (secs.ward)                        ry=dataRow('WARD','7',sp+8,ry,W-sp-16);
-    if (secs.capacity||secs.schedule||secs.distribution) ry=dataRow(entityType==='shelter'?'CAPACITY':entityType==='relief'?'SCHEDULE':'ALT ROUTE',entityType==='shelter'?'350 persons':'08:00–17:00 Daily',sp+8,ry,W-sp-16);
-    fi(0,H-16,W,16,_hexToRgba(accent,0.5)); tx(muniName+' DMC',14,H-4,'bold 8px Arial','rgba(255,255,255,0.8)');
-
-  } else if (layout === 'timeline-card') {
-    fi(0,0,W,H,'#fff'); fi(0,0,W,6,accent);
-    tx(muniName,14,22,'bold 11px Arial',accent); tx('Relief Operation Timeline',14,36,'9px Arial','#888'); tx(date,W-14,22,'8px Arial','#aaa','right'); ln(0,44,W,44,'#e5e7eb');
-    const milestones=[{l:'Operation opened',d:'1 Jan 2026',done:true},{l:'Distribution active',d:'2 Jan 2026',done:true},{l:'Mid-point review',d:'15 Jan 2026',done:false},{l:'Operation closes',d:'31 Jan 2026',done:false}];
-    const lx=32; ctx.strokeStyle='#e5e7eb'; ctx.lineWidth=1.5; ctx.beginPath(); ctx.moveTo(lx,52); ctx.lineTo(lx,H-20); ctx.stroke();
-    milestones.forEach((m,i)=>{ const my=58+i*Math.floor((H-78)/milestones.length); fi(0,0,0,0,''); ctx.fillStyle=m.done?accent:'#e5e7eb'; ctx.beginPath(); ctx.arc(lx,my,5,0,Math.PI*2); ctx.fill(); tx(m.l,lx+12,my+2,'bold 9px Arial',m.done?'#1a1a1a':'#aaa'); tx(m.d,lx+12,my+13,'8px Arial','#888'); });
-    if (secs.distribution) dataRow('DISTRIBUTION POINT','Town Hall Parking',Math.floor(W*0.55),52,W-Math.floor(W*0.55)-14);
-    if (secs.contact)       dataRow('CONTACT','083 000 0000',Math.floor(W*0.55),82,W-Math.floor(W*0.55)-14);
-    if (secs.hazard)        dataRow('HAZARD','Flooding',Math.floor(W*0.55),112,W-Math.floor(W*0.55)-14);
-    fi(0,H-20,W,20,lb); tx('Generated: '+date,W-10,H-7,'8px Arial','#aaa','right');
+function applyTemplateDecor(ctx, template, accentColor, SPLIT, bodyTop, H, FTR_H) {
+  if (template === 'alert-card') {
+    ctx.fillStyle = '#7f1d1d';
+    ctx.fillRect(0, bodyTop, SPLIT, 28);
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 12px Arial, sans-serif';
+    ctx.fillText('EMERGENCY ALERT', 20, bodyTop + 18);
+  } else if (template === 'clean-light') {
+    ctx.strokeStyle = '#a7f3d0';
+    ctx.lineWidth = 1;
+    roundRect(ctx, 14, bodyTop + 10, SPLIT - 28, H - bodyTop - FTR_H - 20, 10);
+    ctx.stroke();
+  } else if (template === 'social') {
+    const grad = ctx.createLinearGradient(0, bodyTop, SPLIT, H - FTR_H);
+    grad.addColorStop(0, 'rgba(15,23,42,0.08)');
+    grad.addColorStop(1, 'rgba(37,99,235,0.18)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, bodyTop, SPLIT, H - bodyTop - FTR_H);
   }
 }
 
@@ -410,7 +344,7 @@ function openPngTemplatePicker({ heading, templates, sectionDefs = [], defaultCo
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
         <h3 style="margin:0;font-size:16px">${heading}</h3>
         <div style="display:flex;align-items:center;gap:6px">
-          <button type="button" id="png-download-top" style="border:1px solid var(--accent);background:var(--accent);color:#fff;border-radius:6px;padding:4px 8px;cursor:pointer;font-size:12px">Download PNG</button>
+          <button type="button" id="png-download-top" style="border:1px solid rgba(0,0,0,.35);background:var(--accent);color:#fff;border-radius:6px;padding:5px 10px;cursor:pointer;font-size:12px;font-weight:700;box-shadow:0 0 0 1px rgba(255,255,255,.2) inset">Download PNG</button>
           <button type="button" data-close style="border:1px solid var(--border);background:var(--bg3);color:var(--text);border-radius:6px;padding:4px 8px;cursor:pointer">✕</button>
         </div>
       </div>
@@ -419,9 +353,9 @@ function openPngTemplatePicker({ heading, templates, sectionDefs = [], defaultCo
         ${templates.map((tpl, idx) => `
           <label style="display:block;border:1px solid var(--border);border-radius:8px;padding:9px;background:var(--bg3);cursor:pointer">
             <input type="radio" name="tpl" value="${tpl.key}" ${idx === 0 ? 'checked' : ''} />
-            <img alt="${tpl.label} preview" src="${templatePreviewDataUri(tpl.key)}" style="display:block;width:100%;height:64px;object-fit:cover;border-radius:6px;margin:6px 0;border:1px solid rgba(255,255,255,.22)" />
+            <img alt="${tpl.label} preview" data-template-preview="${tpl.key}" src="${templatePreviewDataUri(tpl.key)}" style="display:block;width:100%;height:64px;object-fit:cover;border-radius:6px;margin:6px 0;border:1px solid rgba(255,255,255,.22)" />
             <div style="font-weight:700;font-size:12px;margin-top:4px">${tpl.label}</div>
-            <div style="font-size:11px;color:var(--text3)">${tpl.desc || tpl.key}</div>
+            <div style="font-size:11px;color:var(--text3);display:flex;align-items:center;gap:6px">${swatchHtml((tpl.preview || '#1d4ed8').match(/#(?:[0-9a-fA-F]{3}){1,2}/)?.[0] || '#1d4ed8')} ${tpl.desc || tpl.key}</div>
           </label>
         `).join('')}
       </div>
@@ -438,6 +372,11 @@ function openPngTemplatePicker({ heading, templates, sectionDefs = [], defaultCo
           Readable text (recommended)
         </label>
       </div>
+      <div style="margin-top:8px">
+        <label style="font-size:12px;display:block">Theme color
+          <input id="png-accent-color" type="color" value="#1d4ed8" style="display:block;width:48px;height:30px;border:none;background:transparent;padding:0;margin-top:6px;cursor:pointer" />
+        </label>
+      </div>
       <div style="margin-top:12px;border-top:1px solid var(--border);padding-top:10px">
         <div style="font-size:12px;font-weight:700;margin-bottom:6px">Include sections</div>
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:6px">
@@ -446,20 +385,22 @@ function openPngTemplatePicker({ heading, templates, sectionDefs = [], defaultCo
       </div>
       <div style="position:sticky;bottom:0;display:flex;justify-content:flex-end;gap:8px;margin-top:14px;padding:10px 0 4px;background:linear-gradient(180deg, rgba(0,0,0,0), var(--bg2) 45%)">
         <button type="button" data-close style="border:1px solid var(--border);background:var(--bg3);color:var(--text);border-radius:6px;padding:7px 10px;cursor:pointer">Cancel</button>
-        <button type="button" id="png-download-now" style="border:1px solid var(--accent);background:var(--accent);color:#fff;border-radius:6px;padding:7px 12px;cursor:pointer">Download PNG</button>
+        <button type="button" id="png-download-now" style="border:1px solid rgba(0,0,0,.35);background:var(--accent);color:#fff;border-radius:6px;padding:7px 12px;cursor:pointer;font-weight:700;box-shadow:0 0 0 1px rgba(255,255,255,.2) inset">Download PNG</button>
       </div>
     </div>
   `;
   modal.querySelectorAll('[data-close]').forEach(btn => btn.addEventListener('click', () => modal.remove()));
   modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+  buildThumbnails(modal, templates);
   const doDownload = async () => {
     const template = modal.querySelector('input[name="tpl"]:checked')?.value || templates[0]?.key || 'official';
     const tone = modal.querySelector('#png-tone')?.value || 'notification';
     const readable = !!modal.querySelector('#png-readable')?.checked;
+    const accentColor = modal.querySelector('#png-accent-color')?.value || null;
     const sections = {};
     sectionGroups.forEach(sec => { sections[sec.key] = !!modal.querySelector(`[data-sec="${sec.key}"]`)?.checked; });
     modal.remove();
-    await onDownload({ template, tone, readable, sections });
+    await onDownload({ template, tone, readable, accentColor, sections });
   };
   modal.querySelector('#png-download-now')?.addEventListener('click', doDownload);
   modal.querySelector('#png-download-top')?.addEventListener('click', doDownload);
