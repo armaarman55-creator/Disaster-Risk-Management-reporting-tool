@@ -58,16 +58,7 @@ function routeTemplatePreviewDataUri(templateKey) {
     x.fillStyle = '#1d4ed8'; x.fillRect(0, 0, 180, 8);
     drawCommon('#1d4ed822', '#1d4ed833');
   }
-}
-
-// Compatibility helper for older thumbnail pipelines that call _drawRouteThumbnail(ctx, templateKey).
-function _drawRouteThumbnail(ctx, templateKey) {
-  if (!ctx || !ctx.canvas) return;
-  const { width, height } = ctx.canvas;
-  const dataUri = routeTemplatePreviewDataUri(templateKey);
-  const img = new Image();
-  img.onload = () => ctx.drawImage(img, 0, 0, width, height);
-  img.src = dataUri;
+  return c.toDataURL('image/png');
 }
 
 // Compatibility helper for older thumbnail pipelines that call _drawRouteThumbnail(ctx, templateKey).
