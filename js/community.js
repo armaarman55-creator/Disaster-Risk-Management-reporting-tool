@@ -325,6 +325,7 @@ function openPngTemplatePicker({ heading, templates, sectionDefs = [], defaultCo
           <canvas id="png-preview-canvas" width="360" height="192" style="max-width:100%;height:auto"></canvas>
         </div>
         <div style="font-size:10px;color:var(--text3);margin-top:5px">Preview updates as you change template and color</div>
+        <div id="png-preview-status" aria-live="polite" style="font-size:11px;color:var(--amber);margin-top:4px;min-height:14px"></div>
       </div>
       <div style="margin-top:12px;border-top:1px solid var(--border);padding-top:10px">
         <div style="font-size:12px;font-weight:700;margin-bottom:6px">Include sections</div>
@@ -349,6 +350,8 @@ function openPngTemplatePicker({ heading, templates, sectionDefs = [], defaultCo
     if (!canvas || !ctx) return;
     const template = modal.querySelector('input[name="tpl"]:checked')?.value || templates[0]?.key || 'official';
     const accent = modal.querySelector('#png-accent-color')?.value || '#1d4ed8';
+    const statusEl = modal.querySelector('#png-preview-status');
+    if (statusEl) statusEl.textContent = '';
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     const drawFrame = (src) => {
       const img = new Image();
@@ -371,6 +374,7 @@ function openPngTemplatePicker({ heading, templates, sectionDefs = [], defaultCo
         }
       } catch (error) {
         reportPreviewError('community-preview', error, { template, accent });
+        if (statusEl) statusEl.textContent = 'Preview unavailable right now. You can still download.';
       }
     }
     drawFrame(templatePreviewDataUri(template));

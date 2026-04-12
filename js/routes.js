@@ -173,6 +173,7 @@ function openRouteTemplatePicker({ templates, onDownload, onPreview = null }) {
               <canvas id="route-preview-canvas"></canvas>
             </div>
             <div style="font-size:10px;color:var(--text3);margin-top:5px">Preview updates as you change options</div>
+            <div id="route-preview-status" aria-live="polite" style="font-size:11px;color:var(--amber);margin-top:4px;min-height:14px"></div>
           </div>
         </div>
         <div style="padding:14px;overflow-y:auto;display:flex;flex-direction:column;gap:12px">
@@ -225,6 +226,8 @@ function openRouteTemplatePicker({ templates, onDownload, onPreview = null }) {
     if (!canvas || !ctx) return;
     const template = modal.querySelector('input[name="tpl"]:checked')?.value || templates[0]?.key || 'road-sign';
     const accent = modal.querySelector('#route-accent-color')?.value || pickerState.color;
+    const statusEl = modal.querySelector('#route-preview-status');
+    if (statusEl) statusEl.textContent = '';
     pickerState.template = template;
     pickerState.color = accent;
     syncSwatches(accent);
@@ -257,6 +260,7 @@ function openRouteTemplatePicker({ templates, onDownload, onPreview = null }) {
         }
       } catch (error) {
         reportPreviewError('route-preview', error, { template, accent });
+        if (statusEl) statusEl.textContent = 'Preview unavailable right now. You can still download.';
       }
     }
     drawFrame(routeTemplatePreviewDataUri(template));
