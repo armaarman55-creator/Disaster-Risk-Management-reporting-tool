@@ -547,7 +547,7 @@ export function getHVCDocHTML(scores, assessment, muniName) {
     const key = Math.max(1, Math.min(5, Math.round(Number(score))));
     const ref = scale?.[key];
     if (!ref) return '—';
-    return `${ref.label}: ${ref.desc}`;
+    return ref.desc;
   };
   const fmtScore = (group, fieldSuffix, v, dp = 2) => v != null
     ? `${Number(v).toFixed(dp)} (${riskRefText(group, fieldSuffix, v)})`
@@ -624,9 +624,15 @@ export async function exportAssessmentPDF(id, label) {
     const ref = scale?.[key];
     return ref?.label || '—';
   };
-  const scoreWithRef = (group, fieldSuffix, v) => v != null
-    ? `${Number(v)} <span class="dim">(${riskRefLabel(group, fieldSuffix, v)})</span>`
-    : '—';
+  const scoreWithRef = (group, fieldSuffix, v) => {
+    if (v == null) return '—';
+    const scale = descriptorScale(group, `x_${fieldSuffix}`);
+    const key = Math.max(1, Math.min(5, Math.round(Number(v))));
+    const desc = scale?.[key]?.desc;
+    return desc
+      ? `${Number(v)} <span class="dim">${desc}</span>`
+      : `${Number(v)}`;
+  };
   // Backward-compatible alias in case cached modules still call the older helper name.
   const nWithText = (group, fieldSuffix, v, _dp = 2) => scoreWithRef(group, fieldSuffix, v);
   // Backward-compatible alias in case older code paths still call prioWithText.
