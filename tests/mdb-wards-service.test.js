@@ -54,3 +54,36 @@ test('fetchMdbWardsByMunicipality returns features and discovered ward field', a
     globalThis.fetch = originalFetch;
   }
 });
+
+test('fetchMdbWardsByMunicipality returns null features when all attempts fail', async () => {
+  const originalFetch = globalThis.fetch;
+  let callCount = 0;
+  globalThis.fetch = async () => {
+    callCount += 1;
+    if (callCount === 1) {
+      return {
+        ok: true,
+        json: async () => ({
+          fields: [
+            { name: 'WARD_NUMBER' },
+            { name: 'CAT_B' },
+            { name: 'MUNICNAME' }
+          ]
+        })
+      };
+    }
+    return {
+      ok: true,
+      json: async () => ({ features: [] })
+    };
+  };
+
+  try {
+    const result = await fetchMdbWardsByMunicipality({ muniCode: 'XYZ', muniName: 'NoMatch' });
+    assert.equal(result.wardNumField, 'WARD_NUMBER');
+    assert.equal(result.features, null);
+    assert.equal(callCount >= 2, true);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
