@@ -1,7 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { hexToRgba, darkenHex, triggerDataUrlDownload, reportPreviewError } from '../js/png-utils.js';
+import {
+  hexToRgba,
+  darkenHex,
+  triggerDataUrlDownload,
+  reportPreviewError,
+  roundRect,
+  wrapText,
+  wrapRichText,
+  drawRichLine
+} from '../js/png-utils.js';
 
 test('hexToRgba supports 3-digit hex and alpha', () => {
   assert.equal(hexToRgba('#abc', 0.5), 'rgba(170, 187, 204, 0.5)');
@@ -42,4 +51,49 @@ test('reportPreviewError writes to console.error with context', () => {
   } finally {
     console.error = originalError;
   }
+});
+
+test('wrapText wraps long text by maxWidth', () => {
+  const ctx = { measureText: (s) => ({ width: s.length * 6 }) };
+  const lines = wrapText(ctx, 'alpha beta gamma delta epsilon', 60);
+  assert.equal(lines.length > 1, true);
+});
+
+test('wrapRichText preserves segments and wraps into multiple lines', () => {
+  const ctx = { measureText: (s) => ({ width: s.length * 7 }), font: '' };
+  const segments = [
+    { text: 'A very long heading for testing', bold: true },
+    { text: 'with additional detail text', bold: false }
+  ];
+  const lines = wrapRichText(ctx, segments, 90, 12);
+  assert.equal(lines.length > 1, true);
+  assert.equal(lines.flat().length > 0, true);
+});
+
+test('drawRichLine writes each segment to canvas context', () => {
+  const calls = [];
+  const ctx = {
+    font: '',
+    fillStyle: '',
+    measureText: (s) => ({ width: s.length * 5 }),
+    fillText: (text, x, y) => calls.push({ text, x, y })
+  };
+  drawRichLine(ctx, [{ text: 'Hello', bold: true }, { text: 'world', bold: false }], 10, 20, 12, '#fff');
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0].text, 'Hello');
+  assert.equal(calls[1].text.startsWith(' '), true);
+});
+
+test('roundRect executes path operations without throwing', () => {
+  const ops = [];
+  const ctx = {
+    beginPath: () => ops.push('beginPath'),
+    moveTo: () => ops.push('moveTo'),
+    lineTo: () => ops.push('lineTo'),
+    quadraticCurveTo: () => ops.push('quadraticCurveTo'),
+    closePath: () => ops.push('closePath')
+  };
+  roundRect(ctx, 0, 0, 10, 10, 2);
+  assert.equal(ops.includes('beginPath'), true);
+  assert.equal(ops.includes('closePath'), true);
 });
