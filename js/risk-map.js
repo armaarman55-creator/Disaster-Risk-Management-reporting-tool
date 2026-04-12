@@ -1,6 +1,7 @@
 // js/risk-map.js — Dedicated Risk Map page (Hazard/Vulnerability/Capacity/Priority)
 import { supabase } from './supabase.js';
 import { boundsFromCoords, extendBounds, flattenCoords, zoomToWardOnMap } from './dashboard-map.js';
+import { fetchMdbWardsByMunicipality } from './mdb-wards-service.js';
 
 const ANALYSIS_MODES = [
   { key: 'hazard', label: 'Hazard Analysis' },
@@ -761,28 +762,9 @@ async function fetchMdbWards() {
   if (!muniCode && !muniName) return null;
 
   try {
-    const BASE = 'https://services7.arcgis.com/oeoyTUJC8HEeYsRB/arcgis/rest/services/MDB_Wards_2020/FeatureServer/0/query';
-    const probeRes = await fetch(`${BASE}?where=1%3D1&outFields=*&f=json&resultRecordCount=1`);
-    const probeData = await probeRes.json();
-    const fields = (probeData.fields || []).map(f => f.name);
-    const wardNumField = fields.find(f => /ward.?n(o|um)/i.test(f)) || 'WARD_NO';
-    const codeFields = fields.filter(f => /cat_b|lb_|muni.*c/i.test(f));
-    const nameFields = fields.filter(f => /muni.*name|municname/i.test(f));
-
-    const attempts = [];
-    codeFields.forEach(f => { if (muniCode) attempts.push(`${f}='${muniCode}'`); });
-    nameFields.forEach(f => { if (muniName) attempts.push(`${f} LIKE '%${muniName}%'`); });
-
-    for (const where of attempts) {
-      const url = `${BASE}?where=${encodeURIComponent(where)}&outFields=*&outSR=4326&f=geojson&resultRecordCount=200&returnGeometry=true`;
-      const res = await fetch(url);
-      if (!res.ok) continue;
-      const data = await res.json();
-      if (data?.features?.length) {
-        _mdbWardNumField = wardNumField;
-        return data.features;
-      }
-    }
+    const { features, wardNumField } = await fetchMdbWardsByMunicipality({ muniCode, muniName });
+    _mdbWardNumField = wardNumField;
+    return features;
   } catch (e) {
     console.warn('[RiskMap] MDB API failed:', e.message);
   }
