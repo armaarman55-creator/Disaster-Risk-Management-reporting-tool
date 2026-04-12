@@ -1,6 +1,7 @@
 // js/routes.js
 import { supabase } from './supabase.js';
 import { confirmDialog } from './confirm-dialog.js';
+import { hexToRgba, darkenHex, triggerDataUrlDownload, roundRect, wrapText, wrapRichText, drawRichLine, reportPreviewError } from './png-utils.js';
 
 let _muniId   = null;
 let _closures = [];
@@ -25,6 +26,9 @@ function applyTitleTone(title, tone) {
 function swatchHtml(color = '#1d4ed8') {
   return `<span aria-hidden="true" style="display:inline-block;width:10px;height:10px;border-radius:999px;background:${color};border:1px solid rgba(255,255,255,.35)"></span>`;
 }
+
+const _rHexToRgba = hexToRgba;
+const _rDarkenHex = darkenHex;
 
 function routeTemplatePreviewDataUri(templateKey) {
   const c = document.createElement('canvas');
@@ -58,16 +62,27 @@ function routeTemplatePreviewDataUri(templateKey) {
     x.fillStyle = '#1d4ed8'; x.fillRect(0, 0, 180, 8);
     drawCommon('#1d4ed822', '#1d4ed833');
   }
+  return c.toDataURL('image/png');
 }
 
-// Compatibility helper for older thumbnail pipelines that call _drawRouteThumbnail(ctx, templateKey).
-function _drawRouteThumbnail(ctx, templateKey) {
-  if (!ctx || !ctx.canvas) return;
-  const { width, height } = ctx.canvas;
-  const dataUri = routeTemplatePreviewDataUri(templateKey);
-  const img = new Image();
-  img.onload = () => ctx.drawImage(img, 0, 0, width, height);
-  img.src = dataUri;
+function buildThumbnails(root, templates = []) {
+  const host = root || document;
+  const items = host.querySelectorAll('[data-template-preview]');
+  items.forEach(node => {
+    const key = node.getAttribute('data-template-preview');
+    if (!key) return;
+    if (node.tagName === 'IMG') {
+      node.src = routeTemplatePreviewDataUri(key);
+      return;
+    }
+    if (node.tagName === 'CANVAS') {
+      const ctx = node.getContext('2d');
+      if (!ctx) return;
+      const img = new Image();
+      img.onload = () => ctx.drawImage(img, 0, 0, node.width, node.height);
+      img.src = routeTemplatePreviewDataUri(key);
+    }
+  });
 }
 
 // Compatibility helper for older thumbnail pipelines that call _drawRouteThumbnail(ctx, templateKey).
@@ -101,31 +116,24 @@ function applyRouteTemplateDecor(ctx, template, SPLIT, bodyTop, H, FTR_H) {
   }
 }
 
-function openRouteTemplatePicker({ templates, onDownload }) {
+function openRouteTemplatePicker({ templates, onDownload, onPreview = null }) {
   document.getElementById('route-template-picker')?.remove();
 
-  let pickerState = { template: templates[0]?.key || 'road-sign', color: '#dc2626' };
-  const defaultColors = ['#dc2626','#ea580c','#1d4ed8','#374151','#7c3aed','#b45309','#0f766e'];
+  const pickerState = { template: templates[0]?.key || 'road-sign', color: '#dc2626' };
+  const defaultColors = ['#dc2626', '#ea580c', '#1d4ed8', '#374151', '#7c3aed', '#b45309', '#0f766e'];
   const sectionDefs = [
-    { key: 'reason',        label: 'Closure reason',      default: true },
-    { key: 'authority',     label: 'Authority',            default: true },
-    { key: 'closed_since',  label: 'Closed since',        default: true },
-    { key: 'reopen',        label: 'Expected reopening',   default: true },
-    { key: 'alt_route',     label: 'Alternative route',    default: true },
-    { key: 'affected_wards',label: 'Affected wards',       default: true },
-    { key: 'status_badge',  label: 'Status badge',         default: true },
-    { key: 'generated_date',label: 'Generated date',       default: false },
+    { key: 'reason', label: 'Closure reason', default: true },
+    { key: 'authority', label: 'Authority', default: true },
+    { key: 'closed_since', label: 'Closed since', default: true },
+    { key: 'reopen', label: 'Expected reopening', default: true },
+    { key: 'alt_route', label: 'Alternative route', default: true },
+    { key: 'affected_wards', label: 'Affected wards', default: true },
+    { key: 'status_badge', label: 'Status badge', default: true },
+    { key: 'generated_date', label: 'Generated date', default: false },
   ];
 
-  let pickerSections = {};
-  sectionDefs.forEach(s => { pickerSections[s.key] = s.default; });
-
-  const muniName = window._drmsaUser?.municipalities?.name || 'Municipality';
-  const date = new Date().toLocaleDateString('en-ZA');
-  const roadName = 'Main Street';
-
-  const swatchHtml = defaultColors.map(c=>`<span data-swatch="${c}" style="display:inline-block;width:20px;height:20px;border-radius:50%;background:${c};cursor:pointer;border:2px solid ${c===pickerState.color?'#fff':'transparent'};box-sizing:border-box;flex-shrink:0"></span>`).join('');
-  const sectionGroups = { 'Content': sectionDefs.filter(s=>!['status_badge','generated_date'].includes(s.key)), 'Design elements': sectionDefs.filter(s=>['status_badge','generated_date'].includes(s.key)) };
+  const presetSwatches = defaultColors.map(c => `<span data-swatch="${c}" style="display:inline-block;width:20px;height:20px;border-radius:50%;background:${c};cursor:pointer;border:2px solid ${c === pickerState.color ? '#fff' : 'transparent'};box-sizing:border-box;flex-shrink:0"></span>`).join('');
+  const sectionGroups = { Content: sectionDefs.filter(s => !['status_badge', 'generated_date'].includes(s.key)), 'Design elements': sectionDefs.filter(s => ['status_badge', 'generated_date'].includes(s.key)) };
 
   const modal = document.createElement('div');
   modal.id = 'route-template-picker';
@@ -144,21 +152,20 @@ function openRouteTemplatePicker({ templates, onDownload }) {
         ${templates.map((tpl, idx) => `
           <label style="display:block;border:1px solid var(--border);border-radius:8px;padding:9px;background:var(--bg3);cursor:pointer">
             <input type="radio" name="tpl" value="${tpl.key}" ${idx === 0 ? 'checked' : ''} />
-            <img alt="${tpl.label} preview" src="${routeTemplatePreviewDataUri(tpl.key)}" style="display:block;width:100%;height:64px;object-fit:cover;border-radius:6px;margin:6px 0;border:1px solid rgba(255,255,255,.22)" />
+            <img alt="${tpl.label} preview" data-template-preview="${tpl.key}" src="${routeTemplatePreviewDataUri(tpl.key)}" style="display:block;width:100%;height:64px;object-fit:cover;border-radius:6px;margin:6px 0;border:1px solid rgba(255,255,255,.22)" />
             <div style="font-weight:700;font-size:12px;margin-top:4px">${tpl.label}</div>
-            <div style="font-size:11px;color:var(--text3)">${tpl.desc || tpl.key}</div>
+            <div style="font-size:11px;color:var(--text3);display:flex;align-items:center;gap:6px">${swatchHtml((tpl.preview || '#1d4ed8').match(/#(?:[0-9a-fA-F]{3}){1,2}/)?.[0] || '#1d4ed8')} ${tpl.desc || tpl.key}</div>
           </label>
         `).join('')}
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;flex:1;overflow:hidden;min-height:0">
         <div style="border-right:1px solid var(--border);padding:14px;overflow-y:auto;display:flex;flex-direction:column;gap:12px">
           <div>
-            <div style="font-size:10px;font-weight:700;color:var(--text3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px">Template</div>
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:7px" id="route-tpl-grid"></div>
-          </div>
-          <div>
             <div style="font-size:10px;font-weight:700;color:var(--text3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px">Accent colour</div>
-            <div style="display:flex;gap:7px;flex-wrap:wrap" id="route-swatches">${swatchHtml}</div>
+            <div style="display:flex;gap:7px;flex-wrap:wrap" id="route-swatches">${presetSwatches}</div>
+            <label style="display:block;font-size:11px;margin-top:8px;color:var(--text2)">Custom colour
+              <input id="route-accent-color" type="color" value="${pickerState.color}" style="display:block;width:48px;height:30px;border:none;background:transparent;padding:0;margin-top:5px;cursor:pointer" />
+            </label>
           </div>
           <div>
             <div style="font-size:10px;font-weight:700;color:var(--text3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:6px">Live preview</div>
@@ -171,11 +178,11 @@ function openRouteTemplatePicker({ templates, onDownload }) {
         <div style="padding:14px;overflow-y:auto;display:flex;flex-direction:column;gap:12px">
           <div>
             <div style="font-size:10px;font-weight:700;color:var(--text3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px">Sections to include</div>
-            ${Object.entries(sectionGroups).map(([grp,secs])=>secs.length?`
+            ${Object.entries(sectionGroups).map(([grp, secs]) => secs.length ? `
               <div style="border:1px solid var(--border);border-radius:7px;overflow:hidden;margin-bottom:8px">
                 <div style="padding:7px 12px;background:var(--bg3);font-size:11px;font-weight:700;color:var(--text2);border-bottom:1px solid var(--border)">${grp}</div>
                 <div style="padding:8px 12px;display:flex;flex-direction:column;gap:6px">
-                  ${secs.map(s=>`<label style="display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer"><input type="checkbox" data-sec="${s.key}" ${s.default?'checked':''} style="width:13px;height:13px;accent-color:var(--accent)"/> ${s.label}</label>`).join('')}
+                  ${secs.map(s => `<label style="display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer"><input type="checkbox" data-sec="${s.key}" ${s.default ? 'checked' : ''} style="width:13px;height:13px;accent-color:var(--accent)"/> ${s.label}</label>`).join('')}
                 </div>
               </div>` : '').join('')}
           </div>
@@ -203,26 +210,87 @@ function openRouteTemplatePicker({ templates, onDownload }) {
       </div>
     </div>
   `;
+
+  const syncSwatches = (color) => {
+    modal.querySelectorAll('#route-swatches [data-swatch]').forEach(el => {
+      el.style.borderColor = (el.getAttribute('data-swatch') || '').toLowerCase() === String(color || '').toLowerCase() ? '#fff' : 'transparent';
+    });
+  };
+  let previewToken = 0;
+  const updatePreview = async () => {
+    const token = ++previewToken;
+    buildThumbnails(modal, templates);
+    const canvas = modal.querySelector('#route-preview-canvas');
+    const ctx = canvas?.getContext('2d');
+    if (!canvas || !ctx) return;
+    const template = modal.querySelector('input[name="tpl"]:checked')?.value || templates[0]?.key || 'road-sign';
+    const accent = modal.querySelector('#route-accent-color')?.value || pickerState.color;
+    pickerState.template = template;
+    pickerState.color = accent;
+    syncSwatches(accent);
+    const wrap = modal.querySelector('#route-preview-wrap');
+    const w = Math.max(220, Math.min(420, wrap?.clientWidth || 360));
+    const h = Math.round(w * 0.56);
+    canvas.width = w;
+    canvas.height = h;
+    const drawFrame = (src) => {
+      const img = new Image();
+      img.onload = () => {
+        if (token !== previewToken) return;
+        ctx.clearRect(0, 0, w, h);
+        ctx.drawImage(img, 0, 0, w, h);
+        ctx.fillStyle = _rHexToRgba(accent, 0.2);
+        ctx.fillRect(0, 0, w, 16);
+        ctx.fillStyle = accent;
+        ctx.fillRect(0, h - 7, w, 7);
+        ctx.strokeStyle = _rHexToRgba(accent, 0.4);
+        ctx.strokeRect(0.5, 0.5, w - 1, h - 1);
+      };
+      img.src = src;
+    };
+    if (typeof onPreview === 'function') {
+      try {
+        const dataUri = await onPreview({ template, tone: modal.querySelector('#route-tone')?.value || 'notification', readable: !!modal.querySelector('#route-readable')?.checked, color: accent });
+        if (dataUri) {
+          drawFrame(dataUri);
+          return;
+        }
+      } catch (error) {
+        reportPreviewError('route-preview', error, { template, accent });
+      }
+    }
+    drawFrame(routeTemplatePreviewDataUri(template));
+  };
+
+  modal.querySelectorAll('#route-swatches [data-swatch]').forEach(el => {
+    el.addEventListener('click', () => {
+      const color = el.getAttribute('data-swatch');
+      if (!color) return;
+      const input = modal.querySelector('#route-accent-color');
+      if (input) input.value = color;
+      updatePreview();
+    });
+  });
+  modal.querySelectorAll('input[name="tpl"], #route-accent-color, #route-tone, #route-readable, [data-sec]').forEach(el => {
+    el?.addEventListener('change', updatePreview);
+  });
   modal.querySelectorAll('[data-close]').forEach(btn => btn.addEventListener('click', () => modal.remove()));
   modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
   const doDownload = async () => {
-    const template = modal.querySelector('input[name="tpl"]:checked')?.value || templates[0]?.key || 'official';
+    const template = modal.querySelector('input[name="tpl"]:checked')?.value || templates[0]?.key || 'road-sign';
     const tone = modal.querySelector('#route-tone')?.value || 'notification';
     const readable = !!modal.querySelector('#route-readable')?.checked;
-    const sections = {
-      authority: !!modal.querySelector('[data-sec="authority"]')?.checked,
-      closed_since: !!modal.querySelector('[data-sec="closed_since"]')?.checked,
-      reopen: !!modal.querySelector('[data-sec="reopen"]')?.checked,
-      alt_route: !!modal.querySelector('[data-sec="alt_route"]')?.checked
-    };
+    const color = modal.querySelector('#route-accent-color')?.value || pickerState.color;
+    const sections = {};
+    sectionDefs.forEach(sec => { sections[sec.key] = !!modal.querySelector(`[data-sec="${sec.key}"]`)?.checked; });
     modal.remove();
-    await onDownload({ template, tone, readable, sections });
+    await onDownload({ template, tone, readable, color, sections });
   };
   modal.querySelector('#route-download-now')?.addEventListener('click', doDownload);
   modal.querySelector('#route-download-top')?.addEventListener('click', doDownload);
   document.body.appendChild(modal);
-  buildThumbnails();
-  requestAnimationFrame(()=>{ updatePreview(); });
+  buildThumbnails(modal, templates);
+  requestAnimationFrame(() => { updatePreview(); });
 }
 
 export async function initRoutes(user) {
@@ -478,7 +546,7 @@ function showEditClosureForm(closure) {
 }
 
 // ── PNG IMAGE DOWNLOAD ────────────────────────────────────
-async function downloadClosurePNG(c, template = 'road-sign', opts = {}) {
+async function renderClosurePngDataUrl(c, template = 'road-sign', opts = {}) {
   const tone      = opts.tone || 'notification';
   const readable  = opts.readable !== false;
   const accent    = opts.color || { closed:'#1a3a6b', partial:'#7a5200', open:'#1a6b3a' }[c.status] || '#1a3a6b';
@@ -521,12 +589,20 @@ async function downloadClosurePNG(c, template = 'road-sign', opts = {}) {
     if (sections.generated_date) tx(date,W-20,30,'9px Arial,sans-serif','rgba(255,255,255,0.4)','right');
     ln(10,52,W-10,52,'rgba(255,255,255,0.12)');
     if (sections.status_badge) pill(statusLabel,20,76,accent,'#fff');
-    tx(c.road_name,20,100,`bold ${readable?26:22}px Arial,sans-serif`,'#fff');
-    if (sections.reason&&c.reason) tx(`Reason: ${c.reason}`,20,120,'12px Arial,sans-serif','rgba(255,255,255,0.75)');
+    const roadLines = wrapText(ctx, c.road_name || 'Road closure', W * 0.52 - 40);
+    let roadY = 100;
+    roadLines.slice(0, 2).forEach((line, idx) => {
+      tx(line, 20, roadY + idx * (readable ? 28 : 24), `bold ${readable ? 26 : 22}px Arial,sans-serif`, '#fff');
+    });
+    let reasonY = roadY + (Math.min(roadLines.length, 2) * (readable ? 28 : 24)) + 4;
+    if (sections.reason && c.reason) {
+      tx(`Reason: ${c.reason}`, 20, reasonY, '12px Arial,sans-serif', 'rgba(255,255,255,0.75)');
+      reasonY += 20;
+    }
     const para=[{text:'The ',bold:false},{text:muniName+' DMC',bold:true},{text:` notifies road users of the closure of `,bold:false},{text:c.road_name,bold:true},...(c.reason?[{text:` due to `,bold:false},{text:c.reason,bold:true}]:[]),{text:'.',bold:false}];
-    let ty=140;
-    wrapRichText(ctx,para,W*0.52-40,bsz).forEach(l=>{drawRichLine(ctx,l,20,ty,bsz,'rgba(255,255,255,0.65)');ty+=bsz+6;});
-    if (alt&&sections.alt_route) { ty+=10; fi(20,ty,W*0.52-40,1,'rgba(255,255,255,0.15)'); ty+=14; tx('ALTERNATIVE ROUTE',20,ty,'bold 10px Arial,sans-serif',_rHexToRgba(accent,0.9)); ty+=14; const altL=wrapText(ctx,alt.description,W*0.52-40); altL.slice(0,2).forEach(l=>{tx(l,20,ty,'11px Arial,sans-serif','rgba(255,255,255,0.75)');ty+=14;}); if(alt.extra_distance) tx(`+${alt.extra_distance} km · ${alt.vehicle_suitability||'All vehicles'}`,20,ty,'10px Arial,sans-serif','rgba(255,255,255,0.55)'); }
+    let ty = Math.max(140, reasonY + 8);
+    wrapRichText(ctx, para, W * 0.52 - 40, bsz).forEach(l => { drawRichLine(ctx, l, 20, ty, bsz, 'rgba(255,255,255,0.65)'); ty += bsz + 10; });
+    if (alt && sections.alt_route) { ty += 14; fi(20, ty, W * 0.52 - 40, 1, 'rgba(255,255,255,0.15)'); ty += 18; tx('ALTERNATIVE ROUTE', 20, ty, 'bold 10px Arial,sans-serif', _rHexToRgba(accent, 0.9)); ty += 18; const altL = wrapText(ctx, alt.description, W * 0.52 - 40); altL.slice(0, 2).forEach(l => { tx(l, 20, ty, '11px Arial,sans-serif', 'rgba(255,255,255,0.75)'); ty += 16; }); if (alt.extra_distance) tx(`+${alt.extra_distance} km · ${alt.vehicle_suitability || 'All vehicles'}`, 20, ty + 2, '10px Arial,sans-serif', 'rgba(255,255,255,0.55)'); }
     const RX=Math.round(W*0.56); ln(RX,56,RX,H-10,'rgba(255,255,255,0.1)');
     let ry=64;
     if (sections.authority&&c.authority)         ry=field('Authority',c.authority,RX+16,ry,W-RX-30,false);
@@ -539,14 +615,19 @@ async function downloadClosurePNG(c, template = 'road-sign', opts = {}) {
     const bodyTop = drawHeader(); const SP=Math.round(W*0.62); const RX=SP+14;
     fi(0,bodyTop,SP,H-bodyTop-30,'#fafaf8'); fi(SP,bodyTop,W-SP,H-bodyTop-30,_rHexToRgba(accent,0.06)); ln(SP,bodyTop,SP,H-30,'#ddd');
     tx(`Road Closure ${toneWord}`,20,bodyTop+36,`bold ${readable?16:14}px Arial,sans-serif`,accent);
-    tx(c.road_name,20,bodyTop+58,`bold ${readable?22:19}px Arial,sans-serif`,'#1a1a1a');
-    if (sections.status_badge) pill(statusLabel,20,bodyTop+82,accent,'#fff');
+    const headingLines = wrapText(ctx, c.road_name || 'Road closure', SP - 40);
+    let headingY = bodyTop + 58;
+    headingLines.slice(0, 2).forEach((line, idx) => {
+      tx(line, 20, headingY + idx * (readable ? 24 : 21), `bold ${readable ? 22 : 19}px Arial,sans-serif`, '#1a1a1a');
+    });
+    const badgeY = headingY + (Math.min(headingLines.length, 2) * (readable ? 24 : 21)) + 8;
+    if (sections.status_badge) pill(statusLabel,20,badgeY,accent,'#fff');
     const para=[{text:c.road_name,bold:true},{text:' is closed to all traffic.',bold:false}];
     const para2=[{text:'The ',bold:false},{text:muniName+' DMC',bold:true},{text:' notifies road users of the closure of ',bold:false},{text:c.road_name,bold:true},...(c.reason?[{text:' due to ',bold:false},{text:c.reason,bold:true}]:[]),{text:'.',bold:false}];
-    let ty=bodyTop+100;
-    wrapRichText(ctx,para,SP-40,bsz).forEach(l=>{drawRichLine(ctx,l,20,ty,bsz,'#1a1a1a');ty+=bsz+6;});
-    ty+=6;
-    wrapRichText(ctx,para2,SP-40,bsz).forEach(l=>{drawRichLine(ctx,l,20,ty,bsz,'#555');ty+=bsz+6;});
+    let ty = Math.max(bodyTop + 100, badgeY + 28);
+    wrapRichText(ctx, para, SP - 40, bsz).forEach(l => { drawRichLine(ctx, l, 20, ty, bsz, '#1a1a1a'); ty += bsz + 10; });
+    ty += 10;
+    wrapRichText(ctx, para2, SP - 40, bsz).forEach(l => { drawRichLine(ctx, l, 20, ty, bsz, '#555'); ty += bsz + 10; });
     if (alt&&sections.alt_route) { ty+=12; fi(20,ty,SP-40,1,'#ddd'); ty+=14; tx('ALTERNATIVE ROUTE',20,ty,'bold 10px Arial,sans-serif','#3a7d44'); ty+=14; const al=wrapText(ctx,alt.description,SP-80); al.slice(0,2).forEach(l=>{tx(l,20,ty,'11px Arial,sans-serif','#1a1a1a');ty+=14;}); if(alt.extra_distance) tx(`+${alt.extra_distance} km · ${alt.vehicle_suitability||'All vehicles'}`,20,ty,'10px Arial,sans-serif','#555'); }
     let ry=bodyTop+16;
     if (sections.authority&&c.authority)         ry=field('Authority',c.authority,RX,ry,W-RX-14);
@@ -615,75 +696,13 @@ async function downloadClosurePNG(c, template = 'road-sign', opts = {}) {
     drawFooter();
   }
 
-  // Update the picker call site in bindClosureEvents to pass color
-  canvas.toBlob(blob => {
-    const url = URL.createObjectURL(blob);
-    Object.assign(document.createElement('a'),{href:url,download:`road-closure-${template}-${(c.road_name||'route').replace(/\s+/g,'-')}.png`}).click();
-    URL.revokeObjectURL(url);
-  }, 'image/png');
+  return canvas.toDataURL('image/png');
 }
 
-// ── CANVAS HELPERS ────────────────────────────────────────
-function roundRect(ctx, x, y, w, h, r) {
-  ctx.beginPath();
-  ctx.moveTo(x + r, y); ctx.lineTo(x + w - r, y);
-  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
-  ctx.lineTo(x + w, y + h - r);
-  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
-  ctx.lineTo(x + r, y + h);
-  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
-  ctx.lineTo(x, y + r);
-  ctx.quadraticCurveTo(x, y, x + r, y);
-  ctx.closePath();
-}
-
-function wrapText(ctx, text, maxWidth) {
-  const words = (text || '').split(' ');
-  const lines = []; let current = '';
-  words.forEach(word => {
-    const test = current ? current + ' ' + word : word;
-    if (ctx.measureText(test).width > maxWidth && current) {
-      lines.push(current); current = word;
-    } else current = test;
-  });
-  if (current) lines.push(current);
-  return lines;
-}
-
-function wrapRichText(ctx, segments, maxWidth, fontSize) {
-  const words = [];
-  segments.forEach(seg => {
-    seg.text.split(' ').forEach(w => { if (w) words.push({ text: w, bold: seg.bold }); });
-  });
-  const lines = []; let current = [];
-  const lineW = segs => {
-    let w = 0, first = true;
-    segs.forEach(seg => {
-      ctx.font = (seg.bold ? 'bold ' : '') + fontSize + 'px Arial, sans-serif';
-      w += ctx.measureText((first ? '' : ' ') + seg.text).width;
-      first = false;
-    });
-    return w;
-  };
-  words.forEach(word => {
-    const test = [...current, word];
-    if (lineW(test) > maxWidth && current.length) { lines.push(current); current = [word]; }
-    else current = test;
-  });
-  if (current.length) lines.push(current);
-  return lines;
-}
-
-function drawRichLine(ctx, segments, x, y, fontSize, color) {
-  let cx = x; let first = true;
-  segments.forEach(seg => {
-    ctx.font = (seg.bold ? 'bold ' : '') + fontSize + 'px Arial, sans-serif';
-    ctx.fillStyle = color;
-    const txt = (first ? '' : ' ') + seg.text;
-    ctx.fillText(txt, cx, y);
-    cx += ctx.measureText(txt).width;
-    first = false;
-  });
+async function downloadClosurePNG(c, template = 'road-sign', opts = {}) {
+  const dataUrl = await renderClosurePngDataUrl(c, template, opts);
+  if (opts.asDataUrl) return dataUrl;
+  triggerDataUrlDownload(dataUrl, `road-closure-${template}-${(c.road_name || 'route').replace(/\s+/g, '-')}.png`);
 }
 
 async function loadLogoImages() {
@@ -776,6 +795,7 @@ function bindClosureEvents() {
         const c = _closures.find(x => x.id === id); drop.remove(); if (!c) return;
         openRouteTemplatePicker({
           templates: ROUTE_PNG_TEMPLATES,
+          onPreview: ({ template, tone, readable, color }) => downloadClosurePNG(c, template, { tone, readable, color, asDataUrl: true }),
           onDownload: ({ template, tone, readable, sections, color }) => downloadClosurePNG(c, template, { tone, readable, sections, color })
         });
       });
