@@ -490,13 +490,13 @@ window.__cfgReady = (async () => {
 <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
 
 <script type="module">
-import { initPWA } from './js/pwa.js';
-import { initAuth } from './js/auth.js';
+import { initPWA } from './js/pwa.js?v=20260411';
+import { initAuth } from './js/auth.js?v=20260411';
 
 initPWA();
 
 document.getElementById('footer-signout-top')?.addEventListener('click', async () => {
-  const { signOut } = await import('./js/auth.js');
+  const { signOut } = await import('./js/auth.js?v=20260411');
   signOut();
 });
 

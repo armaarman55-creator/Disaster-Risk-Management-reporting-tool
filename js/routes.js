@@ -1,5 +1,6 @@
 // js/routes.js
 import { supabase } from './supabase.js';
+import { confirmDialog } from './confirm-dialog.js';
 
 let _muniId   = null;
 let _closures = [];
@@ -18,6 +19,11 @@ function titleToneWord(tone) {
 
 function applyTitleTone(title, tone) {
   return String(title || '').replace(/\b(Notification|Notice|Bulletin|Update)\b/i, titleToneWord(tone));
+}
+
+// Compatibility helper for older template markup that referenced swatchHtml().
+function swatchHtml(color = '#1d4ed8') {
+  return `<span aria-hidden="true" style="display:inline-block;width:10px;height:10px;border-radius:999px;background:${color};border:1px solid rgba(255,255,255,.35)"></span>`;
 }
 
 function routeTemplatePreviewDataUri(templateKey) {
@@ -55,6 +61,16 @@ function routeTemplatePreviewDataUri(templateKey) {
   return c.toDataURL('image/png');
 }
 
+// Compatibility helper for older thumbnail pipelines that call _drawRouteThumbnail(ctx, templateKey).
+function _drawRouteThumbnail(ctx, templateKey) {
+  if (!ctx || !ctx.canvas) return;
+  const { width, height } = ctx.canvas;
+  const dataUri = routeTemplatePreviewDataUri(templateKey);
+  const img = new Image();
+  img.onload = () => ctx.drawImage(img, 0, 0, width, height);
+  img.src = dataUri;
+}
+
 function applyRouteTemplateDecor(ctx, template, SPLIT, bodyTop, H, FTR_H) {
   if (template === 'alert-card') {
     ctx.fillStyle = '#7f1d1d';
@@ -80,12 +96,15 @@ function openRouteTemplatePicker({ templates, onDownload }) {
   document.getElementById('route-template-picker')?.remove();
   const modal = document.createElement('div');
   modal.id = 'route-template-picker';
-  modal.style.cssText = 'position:fixed;inset:0;z-index:10050;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:16px';
+  modal.style.cssText = 'position:fixed;inset:0;z-index:10050;background:rgba(0,0,0,.55);display:flex;align-items:flex-start;justify-content:center;padding:16px 16px 24px;overflow:auto';
   modal.innerHTML = `
-    <div style="width:min(760px,96vw);max-height:88vh;overflow:auto;background:var(--bg2);border:1px solid var(--border2);border-radius:12px;box-shadow:0 10px 36px rgba(0,0,0,.45);padding:16px">
+    <div style="width:min(760px,96vw);max-height:min(88vh,calc(100dvh - 32px));overflow:auto;background:var(--bg2);border:1px solid var(--border2);border-radius:12px;box-shadow:0 10px 36px rgba(0,0,0,.45);padding:16px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
         <h3 style="margin:0;font-size:16px">Route notice image template</h3>
-        <button type="button" data-close style="border:1px solid var(--border);background:var(--bg3);color:var(--text);border-radius:6px;padding:4px 8px;cursor:pointer">✕</button>
+        <div style="display:flex;align-items:center;gap:6px">
+          <button type="button" id="route-download-top" style="border:1px solid var(--accent);background:var(--accent);color:#fff;border-radius:6px;padding:4px 8px;cursor:pointer;font-size:12px">Download PNG</button>
+          <button type="button" data-close style="border:1px solid var(--border);background:var(--bg3);color:var(--text);border-radius:6px;padding:4px 8px;cursor:pointer">✕</button>
+        </div>
       </div>
       <div style="font-size:12px;color:var(--text3);margin-bottom:10px">Select template and content before downloading.</div>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px;margin-bottom:12px">
@@ -120,7 +139,7 @@ function openRouteTemplatePicker({ templates, onDownload }) {
           <label style="font-size:12px;display:flex;align-items:center;gap:6px"><input type="checkbox" data-sec="alt_route" checked/> Alternative route box</label>
         </div>
       </div>
-      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px">
+      <div style="position:sticky;bottom:0;display:flex;justify-content:flex-end;gap:8px;margin-top:14px;padding:10px 0 4px;background:linear-gradient(180deg, rgba(0,0,0,0), var(--bg2) 45%)">
         <button type="button" data-close style="border:1px solid var(--border);background:var(--bg3);color:var(--text);border-radius:6px;padding:7px 10px;cursor:pointer">Cancel</button>
         <button type="button" id="route-download-now" style="border:1px solid var(--accent);background:var(--accent);color:#fff;border-radius:6px;padding:7px 12px;cursor:pointer">Download PNG</button>
       </div>
@@ -128,7 +147,7 @@ function openRouteTemplatePicker({ templates, onDownload }) {
   `;
   modal.querySelectorAll('[data-close]').forEach(btn => btn.addEventListener('click', () => modal.remove()));
   modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
-  modal.querySelector('#route-download-now')?.addEventListener('click', async () => {
+  const doDownload = async () => {
     const template = modal.querySelector('input[name="tpl"]:checked')?.value || templates[0]?.key || 'official';
     const tone = modal.querySelector('#route-tone')?.value || 'notification';
     const readable = !!modal.querySelector('#route-readable')?.checked;
@@ -140,7 +159,9 @@ function openRouteTemplatePicker({ templates, onDownload }) {
     };
     modal.remove();
     await onDownload({ template, tone, readable, sections });
-  });
+  };
+  modal.querySelector('#route-download-now')?.addEventListener('click', doDownload);
+  modal.querySelector('#route-download-top')?.addEventListener('click', doDownload);
   document.body.appendChild(modal);
 }
 
@@ -796,7 +817,12 @@ function bindClosureEvents() {
 
   document.querySelectorAll('.closure-delete').forEach(btn => {
     btn.addEventListener('click', async () => {
-      if (!confirm('Delete this road closure and all its alternative routes?')) return;
+      const ok = await confirmDialog({
+        title: 'Delete road closure?',
+        message: 'This will delete the road closure and all linked alternative routes.\n\nThis action cannot be undone.',
+        confirmText: 'Delete closure'
+      });
+      if (!ok) return;
       await supabase.from('alternative_routes').delete().eq('closure_id', btn.dataset.id);
       await supabase.from('road_closures').delete().eq('id', btn.dataset.id);
       showToast('✓ Closure deleted');

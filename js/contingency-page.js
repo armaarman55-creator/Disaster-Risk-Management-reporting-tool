@@ -12,6 +12,7 @@ import { buildLibrarySections } from './contingency-section-library.js';
 import { showDownloadMenu, docHeader } from './download.js';
 import { supabase } from './supabase.js';
 import { initAssistantPanel, destroyAssistantPanel } from './contingency-dist/contingency-assistant-panel.js';
+import { confirmDialog } from './confirm-dialog.js';
 
 let _activePlanId = null;
 let _activeCategory = '';
@@ -20,6 +21,8 @@ let _context = null;
 let _autoSaveTimer = null;
 let _menuCollapsed = false;
 let _splitView = false;
+let _autoSaveFlushBound = false;
+let _lastPersistErrorMsg = '';
 
 function showToast(msg, isError = false) {
   document.querySelectorAll('.drmsa-toast').forEach(t => t.remove());
@@ -142,6 +145,16 @@ function scheduleAutoSave(planId, host = null) {
     if (host && current) syncPlanFromForm(host, current);
     persistPlan(planId);
   }, 900);
+}
+
+function flushContingencyAutoSave() {
+  const host = document.getElementById('cp-plan-detail');
+  if (!_activePlanId || !host) return;
+  const current = getPlan(_activePlanId);
+  if (!current) return;
+  clearTimeout(_autoSaveTimer);
+  syncPlanFromForm(host, current);
+  persistPlan(_activePlanId);
 }
 
 function showContingencyExportMenu(anchorBtn, plan) {
@@ -461,11 +474,16 @@ function renderPlanList() {
   });
 
   host.querySelectorAll('.cp-plan-delete[data-plan-id]').forEach(btn => {
-    btn.addEventListener('click', e => {
+    btn.addEventListener('click', async e => {
       e.stopPropagation();
       const id = btn.getAttribute('data-plan-id');
       const title = btn.getAttribute('data-plan-title') || 'this plan';
-      if (!confirm(`Delete "${title}"?\n\nThis cannot be undone.`)) return;
+      const ok = await confirmDialog({
+        title: `Delete "${title}"?`,
+        message: 'This action cannot be undone.',
+        confirmText: 'Delete plan'
+      });
+      if (!ok) return;
       const p = getPlan(id);
       if (p) setPlan({ ...p, deleted: true, status: 'deleted' });
       if (_activePlanId === id) _activePlanId = null;
@@ -609,9 +627,15 @@ async function persistPlan(planId) {
   if (!plan) return;
   try {
     await savePlanToBackend(plan, _context);
+    _lastPersistErrorMsg = '';
     return true;
   } catch (e) {
-    console.warn('[Contingency] backend save failed:', e.message || e);
+    const msg = e?.message || String(e);
+    console.warn('[Contingency] backend save failed:', msg);
+    if (msg && msg !== _lastPersistErrorMsg) {
+      showToast(`Auto-save failed: ${msg}`, true);
+      _lastPersistErrorMsg = msg;
+    }
     return false;
   }
 }
@@ -1098,4 +1122,12 @@ export async function initContingencyPage(user) {
     _splitView = !_splitView;
     applyLayoutState();
   });
+
+  if (!_autoSaveFlushBound) {
+    window.addEventListener('beforeunload', flushContingencyAutoSave);
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') flushContingencyAutoSave();
+    });
+    _autoSaveFlushBound = true;
+  }
 }
