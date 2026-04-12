@@ -1,6 +1,7 @@
 // js/community.js
 import { supabase } from './supabase.js';
 import { confirmDialog } from './confirm-dialog.js';
+import { hexToRgba, darkenHex, triggerDataUrlDownload } from './png-utils.js';
 
 let _muniId    = null;
 let _activeTab = 'shelters';
@@ -257,26 +258,8 @@ function swatchHtml(color = '#1d4ed8') {
   return `<span aria-hidden="true" style="display:inline-block;width:10px;height:10px;border-radius:999px;background:${color};border:1px solid rgba(255,255,255,.35)"></span>`;
 }
 
-function _hexToRgba(hex, alpha = 1) {
-  const v = String(hex || '').replace('#', '').trim();
-  const full = v.length === 3 ? v.split('').map(ch => ch + ch).join('') : v.padEnd(6, '0').slice(0, 6);
-  const num = Number.parseInt(full, 16);
-  const r = (num >> 16) & 255;
-  const g = (num >> 8) & 255;
-  const b = num & 255;
-  return `rgba(${r}, ${g}, ${b}, ${Math.max(0, Math.min(1, alpha))})`;
-}
-
-function _darkenHex(hex, amount = 24) {
-  const v = String(hex || '').replace('#', '').trim();
-  const full = v.length === 3 ? v.split('').map(ch => ch + ch).join('') : v.padEnd(6, '0').slice(0, 6);
-  const num = Number.parseInt(full, 16);
-  const clamp = n => Math.max(0, Math.min(255, n));
-  const r = clamp(((num >> 16) & 255) - amount);
-  const g = clamp(((num >> 8) & 255) - amount);
-  const b = clamp((num & 255) - amount);
-  return `rgb(${r}, ${g}, ${b})`;
-}
+const _hexToRgba = hexToRgba;
+const _darkenHex = darkenHex;
 
 function templatePreviewDataUri(templateKey) {
   const c = document.createElement('canvas');
@@ -745,10 +728,7 @@ async function renderShelterPngDataUrl(s, template = 'community-board', opts = {
 async function downloadShelterPNG(s, template = 'community-board', opts = {}) {
   const dataUrl = await renderShelterPngDataUrl(s, template, opts);
   if (opts.asDataUrl) return dataUrl;
-  Object.assign(document.createElement('a'), {
-    href: dataUrl,
-    download: `shelter-${template}-${(s.name || 'shelter').replace(/\s+/g, '-')}.png`
-  }).click();
+  triggerDataUrlDownload(dataUrl, `shelter-${template}-${(s.name || 'shelter').replace(/\s+/g, '-')}.png`);
 }
 
 function bindShelterEvents(shelters) {
@@ -1115,10 +1095,7 @@ async function renderReliefPngDataUrl(op, template = 'ops-brief', opts = {}) {
 async function downloadReliefPNG(op, template = 'ops-brief', opts = {}) {
   const dataUrl = await renderReliefPngDataUrl(op, template, opts);
   if (opts.asDataUrl) return dataUrl;
-  Object.assign(document.createElement('a'), {
-    href: dataUrl,
-    download: `relief-op-${template}-${(op.name || 'op').replace(/\s+/g, '-')}.png`
-  }).click();
+  triggerDataUrlDownload(dataUrl, `relief-op-${template}-${(op.name || 'op').replace(/\s+/g, '-')}.png`);
 }
 
 function bindReliefEvents(ops) {

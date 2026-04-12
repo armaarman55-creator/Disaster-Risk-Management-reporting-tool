@@ -1,6 +1,7 @@
 // js/routes.js
 import { supabase } from './supabase.js';
 import { confirmDialog } from './confirm-dialog.js';
+import { hexToRgba, darkenHex, triggerDataUrlDownload } from './png-utils.js';
 
 let _muniId   = null;
 let _closures = [];
@@ -26,26 +27,8 @@ function swatchHtml(color = '#1d4ed8') {
   return `<span aria-hidden="true" style="display:inline-block;width:10px;height:10px;border-radius:999px;background:${color};border:1px solid rgba(255,255,255,.35)"></span>`;
 }
 
-function _rHexToRgba(hex, alpha = 1) {
-  const v = String(hex || '').replace('#', '').trim();
-  const full = v.length === 3 ? v.split('').map(ch => ch + ch).join('') : v.padEnd(6, '0').slice(0, 6);
-  const num = Number.parseInt(full, 16);
-  const r = (num >> 16) & 255;
-  const g = (num >> 8) & 255;
-  const b = num & 255;
-  return `rgba(${r}, ${g}, ${b}, ${Math.max(0, Math.min(1, alpha))})`;
-}
-
-function _rDarkenHex(hex, amount = 24) {
-  const v = String(hex || '').replace('#', '').trim();
-  const full = v.length === 3 ? v.split('').map(ch => ch + ch).join('') : v.padEnd(6, '0').slice(0, 6);
-  const num = Number.parseInt(full, 16);
-  const clamp = n => Math.max(0, Math.min(255, n));
-  const r = clamp(((num >> 16) & 255) - amount);
-  const g = clamp(((num >> 8) & 255) - amount);
-  const b = clamp((num & 255) - amount);
-  return `rgb(${r}, ${g}, ${b})`;
-}
+const _rHexToRgba = hexToRgba;
+const _rDarkenHex = darkenHex;
 
 function routeTemplatePreviewDataUri(templateKey) {
   const c = document.createElement('canvas');
@@ -717,10 +700,7 @@ async function renderClosurePngDataUrl(c, template = 'road-sign', opts = {}) {
 async function downloadClosurePNG(c, template = 'road-sign', opts = {}) {
   const dataUrl = await renderClosurePngDataUrl(c, template, opts);
   if (opts.asDataUrl) return dataUrl;
-  Object.assign(document.createElement('a'), {
-    href: dataUrl,
-    download: `road-closure-${template}-${(c.road_name || 'route').replace(/\s+/g, '-')}.png`
-  }).click();
+  triggerDataUrlDownload(dataUrl, `road-closure-${template}-${(c.road_name || 'route').replace(/\s+/g, '-')}.png`);
 }
 
 // ── CANVAS HELPERS ────────────────────────────────────────
