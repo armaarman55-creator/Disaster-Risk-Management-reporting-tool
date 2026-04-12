@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "tsc",
+    "lint": "node --check js/*.js && node --check tests/*.test.js",
     "test": "node --test tests/*.test.js"
   },
   "devDependencies": {
