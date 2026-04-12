@@ -561,7 +561,7 @@ function showEditClosureForm(closure) {
 }
 
 // ── PNG IMAGE DOWNLOAD ────────────────────────────────────
-async function downloadClosurePNG(c, template = 'road-sign', opts = {}) {
+async function renderClosurePngDataUrl(c, template = 'road-sign', opts = {}) {
   const tone      = opts.tone || 'notification';
   const readable  = opts.readable !== false;
   const accent    = opts.color || { closed:'#1a3a6b', partial:'#7a5200', open:'#1a6b3a' }[c.status] || '#1a3a6b';
@@ -711,12 +711,16 @@ async function downloadClosurePNG(c, template = 'road-sign', opts = {}) {
     drawFooter();
   }
 
-  if (opts.asDataUrl) return canvas.toDataURL('image/png');
-  canvas.toBlob(blob => {
-    const url = URL.createObjectURL(blob);
-    Object.assign(document.createElement('a'),{href:url,download:`road-closure-${template}-${(c.road_name||'route').replace(/\s+/g,'-')}.png`}).click();
-    URL.revokeObjectURL(url);
-  }, 'image/png');
+  return canvas.toDataURL('image/png');
+}
+
+async function downloadClosurePNG(c, template = 'road-sign', opts = {}) {
+  const dataUrl = await renderClosurePngDataUrl(c, template, opts);
+  if (opts.asDataUrl) return dataUrl;
+  Object.assign(document.createElement('a'), {
+    href: dataUrl,
+    download: `road-closure-${template}-${(c.road_name || 'route').replace(/\s+/g, '-')}.png`
+  }).click();
 }
 
 // ── CANVAS HELPERS ────────────────────────────────────────
