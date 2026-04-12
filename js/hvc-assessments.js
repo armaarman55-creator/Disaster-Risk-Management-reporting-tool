@@ -547,7 +547,7 @@ export function getHVCDocHTML(scores, assessment, muniName) {
     const key = Math.max(1, Math.min(5, Math.round(Number(score))));
     const ref = scale?.[key];
     if (!ref) return '—';
-    return `${ref.label}: ${ref.desc}`;
+    return ref.desc;
   };
   const fmtScore = (group, fieldSuffix, v, dp = 2) => v != null
     ? `${Number(v).toFixed(dp)} (${riskRefText(group, fieldSuffix, v)})`
@@ -624,9 +624,25 @@ export async function exportAssessmentPDF(id, label) {
     const ref = scale?.[key];
     return ref?.label || '—';
   };
-  const scoreWithRef = (group, fieldSuffix, v) => v != null
-    ? `${Number(v)} <span class="dim">(${riskRefLabel(group, fieldSuffix, v)})</span>`
-    : '—';
+  const scoreWithRef = (group, fieldSuffix, v) => {
+    if (v == null) return '—';
+    const scale = descriptorScale(group, `x_${fieldSuffix}`);
+    const key = Math.max(1, Math.min(5, Math.round(Number(v))));
+    const desc = scale?.[key]?.desc;
+    return desc
+      ? `${Number(v)} <span class="dim">${desc}</span>`
+      : `${Number(v)}`;
+  };
+  // Helper for hazard sub-fields whose scales live at DESCRIPTORS top level
+  const hazardRef = (fieldKey, v) => {
+    if (v == null) return '—';
+    const scale = descriptorScale(fieldKey, '');
+    const key = Math.max(1, Math.min(5, Math.round(Number(v))));
+    const desc = scale?.[key]?.desc;
+    return desc
+      ? `${Number(v)} <span class="dim">${desc}</span>`
+      : `${Number(v)}`;
+  };
   // Backward-compatible alias in case cached modules still call the older helper name.
   const nWithText = (group, fieldSuffix, v, _dp = 2) => scoreWithRef(group, fieldSuffix, v);
   // Backward-compatible alias in case older code paths still call prioWithText.
@@ -641,12 +657,12 @@ export async function exportAssessmentPDF(id, label) {
       <td><strong>${s.hazard_name || '—'}</strong></td>
       <td class="dim">${s.hazard_category || '—'}</td>
       <td class="num">${n(s.hazard_score)}</td>
-      <td class="num">${nWithText('vulnerability', 'vp', s.vulnerability_score)}</td>
-      <td class="num">${nWithText('capacity', 'ci', s.capacity_score)}</td>
+      <td class="num">${n(s.vulnerability_score)}</td>
+      <td class="num">${n(s.capacity_score)}</td>
       <td class="num">${n(s.resilience_index, 3)}</td>
       <td class="num bold">${n(s.risk_rating)}</td>
       <td>${bandBadge(s.risk_band)}</td>
-      <td class="num">${prioWithText(s.priority_index, s.priority_level)}</td>
+      <td class="num">${n(s.priority_index)}</td>
       <td>${prioBadge(s.priority_level)}</td>
     </tr>`).join('');
 
@@ -655,10 +671,10 @@ export async function exportAssessmentPDF(id, label) {
     <tr>
       <td>${i + 1}</td>
       <td><strong>${s.hazard_name || '—'}</strong></td>
-      <td class="num">${s.affected_area  ?? '—'}</td>
-      <td class="num">${s.probability    ?? '—'}</td>
-      <td class="num">${s.frequency      ?? '—'}</td>
-      <td class="num">${s.predictability ?? '—'}</td>
+      <td class="num">${hazardRef('affected_area', s.affected_area)}</td>
+      <td class="num">${hazardRef('probability', s.probability)}</td>
+      <td class="num">${hazardRef('frequency', s.frequency)}</td>
+      <td class="num">${hazardRef('predictability', s.predictability)}</td>
       <td class="num bold">${n(s.hazard_score)}</td>
     </tr>`).join('');
 
@@ -725,8 +741,8 @@ export async function exportAssessmentPDF(id, label) {
   .report-meta{font-size:8.5px;color:#666;text-align:right;line-height:1.8}
 
   /* ── Section headings ── */
-  .section{margin:22px 0 10px;page-break-inside:avoid}
-  .section-title{font-size:12px;font-weight:800;color:#1a3a6b;text-transform:uppercase;letter-spacing:.5px;padding:7px 12px;background:#eef2f7;border-left:5px solid #1a3a6b;margin-bottom:8px}
+  .section{margin:6px 0 4px}
+  .section-title{font-size:12px;font-weight:800;color:#1a3a6b;text-transform:uppercase;letter-spacing:.5px;padding:7px 12px;background:#eef2f7;border-left:5px solid #1a3a6b;margin-bottom:8px;page-break-after:avoid}
   .section-sub{font-size:8.5px;color:#666;margin-bottom:8px;padding-left:2px}
 
   /* ── Tables ── */
