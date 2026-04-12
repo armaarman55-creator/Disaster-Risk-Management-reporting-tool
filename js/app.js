@@ -186,7 +186,7 @@ async function loadPageModule(pageId) {
         break;
       }
       case 'hvc': {
-        const m = await import('./hvc.js');
+        const m = await import('./hvc.js?v=20260414');
         m.initHVC(_user);
         break;
       }
