@@ -1,11 +1,15 @@
 // js/sitrep.js
 import { supabase } from './supabase.js';
 import { showDownloadMenu, docHeader } from './download.js';
+import { confirmDialog } from './confirm-dialog.js';
 
 let _muniId = null;
 let _user = null;
 let _currentSitrep = null;
 let _activeTab = 'form';
+let _sitrepAutoSaveTimer = null;
+let _sitrepAutoSaveBusy = false;
+let _sitrepAutoSaveQueued = false;
 
 export async function initSitrep(user) {
   _user = user;
@@ -56,7 +60,12 @@ async function renderSitrepList() {
       e.stopPropagation();
       const id  = btn.dataset.id;
       const num = btn.dataset.num;
-      if (!confirm(`Delete SITREP-${num}? This cannot be undone.`)) return;
+      const ok = await confirmDialog({
+        title: `Delete SITREP-${num}?`,
+        message: 'This action cannot be undone.',
+        confirmText: 'Delete SitRep'
+      });
+      if (!ok) return;
       const { error } = await supabase.from('sitreps').delete().eq('id', id);
       if (error) { alert('Delete failed: ' + error.message); return; }
       await renderSitrepList();
@@ -479,35 +488,83 @@ function bindFormEvents(s) {
     cb.addEventListener('change', updateLinkedCounts);
   });
  
+  const triggerAutoSave = () => scheduleSitrepAutoSave(s.id);
+  document.querySelectorAll('#sr-body input, #sr-body textarea, #sr-body select').forEach(el => {
+    el.addEventListener('input', triggerAutoSave);
+    el.addEventListener('change', triggerAutoSave);
+  });
+
   document.getElementById('sr-save-btn')?.addEventListener('click', async () => {
-    const { error } = await supabase.from('sitreps').update({
-      incident_name: document.getElementById('sr-name')?.value,
-      hazard_type: document.getElementById('sr-hazard')?.value,
-      affected_wards: document.getElementById('sr-wards')?.value.split(',').map(w=>w.trim()),
-      status: document.getElementById('sr-status')?.value,
-      displaced_persons: parseInt(document.getElementById('sr-displaced')?.value)||0,
-      injuries: parseInt(document.getElementById('sr-injuries')?.value)||0,
-      fatalities: parseInt(document.getElementById('sr-fatalities')?.value)||0,
-      properties_damaged: parseInt(document.getElementById('sr-properties')?.value)||0,
-      narrative:       document.getElementById('sr-narrative')?.value,
-      issued_by:       document.getElementById('sr-authorised-by')?.value,
-      next_due:        document.getElementById('sr-next-due')?.value,
-      persons_sheltered: parseInt(document.getElementById('sr-sheltered')?.value)||0,
-      roads_closed:    parseInt(document.getElementById('sr-roads')?.value)||0,
-      linked_shelters: [...document.querySelectorAll('.sr-link-shelter:checked')].map(cb=>cb.value),
-      linked_closures: [...document.querySelectorAll('.sr-link-closure:checked')].map(cb=>cb.value),
-      updated_at:      new Date().toISOString()
-    }).eq('id', s.id);
-    if (!error) {
+    const ok = await persistSitrepForm(s.id);
+    if (ok) {
       showToast('✓ SitRep saved successfully!');
       // Collapse form back to list after short delay
       setTimeout(async () => {
         await initSitrep({ municipality_id: _muniId });
       }, 1200);
-    } else {
-      showToast('Error saving SitRep: ' + error.message, true);
     }
   });
+}
+
+function readSitrepFormPayload() {
+  return {
+    incident_name: document.getElementById('sr-name')?.value,
+    hazard_type: document.getElementById('sr-hazard')?.value,
+    affected_wards: (document.getElementById('sr-wards')?.value || '').split(',').map(w => w.trim()).filter(Boolean),
+    status: document.getElementById('sr-status')?.value,
+    displaced_persons: parseInt(document.getElementById('sr-displaced')?.value) || 0,
+    injuries: parseInt(document.getElementById('sr-injuries')?.value) || 0,
+    fatalities: parseInt(document.getElementById('sr-fatalities')?.value) || 0,
+    properties_damaged: parseInt(document.getElementById('sr-properties')?.value) || 0,
+    narrative: document.getElementById('sr-narrative')?.value,
+    issued_by: document.getElementById('sr-authorised-by')?.value,
+    next_due: document.getElementById('sr-next-due')?.value,
+    persons_sheltered: parseInt(document.getElementById('sr-sheltered')?.value) || 0,
+    roads_closed: parseInt(document.getElementById('sr-roads')?.value) || 0,
+    linked_shelters: [...document.querySelectorAll('.sr-link-shelter:checked')].map(cb => cb.value),
+    linked_closures: [...document.querySelectorAll('.sr-link-closure:checked')].map(cb => cb.value),
+    updated_at: new Date().toISOString()
+  };
+}
+
+async function persistSitrepForm(id) {
+  if (!id) return false;
+  const { error } = await supabase.from('sitreps').update(readSitrepFormPayload()).eq('id', id);
+  if (error) {
+    showToast('Auto-save failed: ' + error.message, true);
+    return false;
+  }
+  return true;
+}
+
+function scheduleSitrepAutoSave(id) {
+  if (!id) return;
+  clearTimeout(_sitrepAutoSaveTimer);
+  _sitrepAutoSaveTimer = setTimeout(() => runSitrepAutoSave(id), 1200);
+}
+
+async function runSitrepAutoSave(id) {
+  if (_sitrepAutoSaveBusy) {
+    _sitrepAutoSaveQueued = true;
+    return;
+  }
+  _sitrepAutoSaveBusy = true;
+  const ok = await persistSitrepForm(id);
+  if (ok) {
+    const badge = document.getElementById('sr-pub-lbl');
+    if (badge && !badge.textContent.includes('SAVED')) {
+      const prev = badge.textContent;
+      badge.textContent = `${prev} · SAVED`;
+      setTimeout(() => {
+        if (badge.textContent.includes('SAVED')) badge.textContent = prev;
+      }, 1200);
+    }
+  }
+  _sitrepAutoSaveBusy = false;
+  if (_sitrepAutoSaveQueued) {
+    _sitrepAutoSaveQueued = false;
+    scheduleSitrepAutoSave(id);
+  }
 }
  
 function bindTimelineEvents(s) {
