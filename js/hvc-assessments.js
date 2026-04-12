@@ -633,6 +633,16 @@ export async function exportAssessmentPDF(id, label) {
       ? `${Number(v)} <span class="dim">${desc}</span>`
       : `${Number(v)}`;
   };
+  // Helper for hazard sub-fields whose scales live at DESCRIPTORS top level
+  const hazardRef = (fieldKey, v) => {
+    if (v == null) return '—';
+    const scale = descriptorScale(fieldKey, '');
+    const key = Math.max(1, Math.min(5, Math.round(Number(v))));
+    const desc = scale?.[key]?.desc;
+    return desc
+      ? `${Number(v)} <span class="dim">${desc}</span>`
+      : `${Number(v)}`;
+  };
   // Backward-compatible alias in case cached modules still call the older helper name.
   const nWithText = (group, fieldSuffix, v, _dp = 2) => scoreWithRef(group, fieldSuffix, v);
   // Backward-compatible alias in case older code paths still call prioWithText.
@@ -661,10 +671,10 @@ export async function exportAssessmentPDF(id, label) {
     <tr>
       <td>${i + 1}</td>
       <td><strong>${s.hazard_name || '—'}</strong></td>
-      <td class="num">${scoreWithRef('hazard', 'aa', s.affected_area)}</td>
-      <td class="num">${scoreWithRef('hazard', 'pb', s.probability)}</td>
-      <td class="num">${scoreWithRef('hazard', 'fr', s.frequency)}</td>
-      <td class="num">${scoreWithRef('hazard', 'pr', s.predictability)}</td>
+      <td class="num">${hazardRef('affected_area', s.affected_area)}</td>
+      <td class="num">${hazardRef('probability', s.probability)}</td>
+      <td class="num">${hazardRef('frequency', s.frequency)}</td>
+      <td class="num">${hazardRef('predictability', s.predictability)}</td>
       <td class="num bold">${n(s.hazard_score)}</td>
     </tr>`).join('');
 
@@ -731,8 +741,8 @@ export async function exportAssessmentPDF(id, label) {
   .report-meta{font-size:8.5px;color:#666;text-align:right;line-height:1.8}
 
   /* ── Section headings ── */
-  .section{margin:6px 0 4px;page-break-inside:avoid}
-  .section-title{font-size:12px;font-weight:800;color:#1a3a6b;text-transform:uppercase;letter-spacing:.5px;padding:7px 12px;background:#eef2f7;border-left:5px solid #1a3a6b;margin-bottom:8px}
+  .section{margin:6px 0 4px}
+  .section-title{font-size:12px;font-weight:800;color:#1a3a6b;text-transform:uppercase;letter-spacing:.5px;padding:7px 12px;background:#eef2f7;border-left:5px solid #1a3a6b;margin-bottom:8px;page-break-after:avoid}
   .section-sub{font-size:8.5px;color:#666;margin-bottom:8px;padding-left:2px}
 
   /* ── Tables ── */
