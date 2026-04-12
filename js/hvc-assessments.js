@@ -541,13 +541,29 @@ export async function getHVCXLSXBlob(scores, assessment, muniName) {
 // ── WORD DOWNLOAD ─────────────────────────────────────────
 export function getHVCDocHTML(scores, assessment, muniName) {
   const label = assessment.label || `${assessment.season || ''} ${assessment.year || ''}`;
+  const riskRefText = (group, fieldSuffix, score) => {
+    if (score == null || Number.isNaN(Number(score))) return '—';
+    const scale = descriptorScale(group, `x_${fieldSuffix}`);
+    const key = Math.max(1, Math.min(5, Math.round(Number(score))));
+    const ref = scale?.[key];
+    if (!ref) return '—';
+    return `${ref.label}: ${ref.desc}`;
+  };
+  const fmtScore = (group, fieldSuffix, v, dp = 2) => v != null
+    ? `${Number(v).toFixed(dp)} (${riskRefText(group, fieldSuffix, v)})`
+    : '—';
+  const fmtPriority = (idx, level) => {
+    if (idx == null && !level) return '—';
+    if (idx == null) return `${level || '—'}`;
+    return `${Number(idx).toFixed(2)} (${riskRefText('priority', 'pi', idx)})`;
+  };
   const rows  = scores.map((s, i) => `
     <tr>
       <td>${i + 1}</td><td><strong>${s.hazard_name}</strong></td><td>${s.hazard_category || '—'}</td>
-      <td>${s.hazard_score?.toFixed(2) || '—'}</td><td>${s.vulnerability_score?.toFixed(2) || '—'}</td>
-      <td>${s.capacity_score?.toFixed(2) || '—'}</td><td>${s.resilience_index?.toFixed(3) || '—'}</td>
+      <td>${s.hazard_score?.toFixed(2) || '—'}</td><td>${fmtScore('vulnerability', 'vp', s.vulnerability_score)}</td>
+      <td>${fmtScore('capacity', 'ci', s.capacity_score)}</td><td>${s.resilience_index?.toFixed(3) || '—'}</td>
       <td><strong>${s.risk_rating?.toFixed(2) || '—'}</strong></td><td>${s.risk_band || '—'}</td>
-      <td>${s.priority_level || '—'}</td>
+      <td>${fmtPriority(s.priority_index, s.priority_level)}</td>
       <td>${Array.isArray(s.affected_wards) && s.affected_wards.length ? 'Wards ' + s.affected_wards.join(', ') : '—'}</td>
     </tr>`).join('');
   return `${docHeader(`HVC Assessment — ${label}`, muniName, `Lead assessor: ${assessment.lead_assessor || '—'}`)}
@@ -625,12 +641,12 @@ export async function exportAssessmentPDF(id, label) {
       <td><strong>${s.hazard_name || '—'}</strong></td>
       <td class="dim">${s.hazard_category || '—'}</td>
       <td class="num">${n(s.hazard_score)}</td>
-      <td class="num">${n(s.vulnerability_score)}</td>
-      <td class="num">${n(s.capacity_score)}</td>
+      <td class="num">${nWithText('vulnerability', 'vp', s.vulnerability_score)}</td>
+      <td class="num">${nWithText('capacity', 'ci', s.capacity_score)}</td>
       <td class="num">${n(s.resilience_index, 3)}</td>
       <td class="num bold">${n(s.risk_rating)}</td>
       <td>${bandBadge(s.risk_band)}</td>
-      <td class="num">${n(s.priority_index)}</td>
+      <td class="num">${prioWithText(s.priority_index, s.priority_level)}</td>
       <td>${prioBadge(s.priority_level)}</td>
     </tr>`).join('');
 
