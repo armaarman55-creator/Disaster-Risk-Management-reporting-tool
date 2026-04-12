@@ -26,6 +26,16 @@ function swatchHtml(color = '#1d4ed8') {
   return `<span aria-hidden="true" style="display:inline-block;width:10px;height:10px;border-radius:999px;background:${color};border:1px solid rgba(255,255,255,.35)"></span>`;
 }
 
+function _rHexToRgba(hex, alpha = 1) {
+  const v = String(hex || '').replace('#', '').trim();
+  const full = v.length === 3 ? v.split('').map(ch => ch + ch).join('') : v.padEnd(6, '0').slice(0, 6);
+  const num = Number.parseInt(full, 16);
+  const r = (num >> 16) & 255;
+  const g = (num >> 8) & 255;
+  const b = num & 255;
+  return `rgba(${r}, ${g}, ${b}, ${Math.max(0, Math.min(1, alpha))})`;
+}
+
 function routeTemplatePreviewDataUri(templateKey) {
   const c = document.createElement('canvas');
   c.width = 180; c.height = 96;
@@ -59,6 +69,26 @@ function routeTemplatePreviewDataUri(templateKey) {
     drawCommon('#1d4ed822', '#1d4ed833');
   }
   return c.toDataURL('image/png');
+}
+
+function buildThumbnails(root, templates = []) {
+  const host = root || document;
+  const items = host.querySelectorAll('[data-template-preview]');
+  items.forEach(node => {
+    const key = node.getAttribute('data-template-preview');
+    if (!key) return;
+    if (node.tagName === 'IMG') {
+      node.src = routeTemplatePreviewDataUri(key);
+      return;
+    }
+    if (node.tagName === 'CANVAS') {
+      const ctx = node.getContext('2d');
+      if (!ctx) return;
+      const img = new Image();
+      img.onload = () => ctx.drawImage(img, 0, 0, node.width, node.height);
+      img.src = routeTemplatePreviewDataUri(key);
+    }
+  });
 }
 
 // Compatibility helper for older thumbnail pipelines that call _drawRouteThumbnail(ctx, templateKey).
@@ -95,28 +125,21 @@ function applyRouteTemplateDecor(ctx, template, SPLIT, bodyTop, H, FTR_H) {
 function openRouteTemplatePicker({ templates, onDownload }) {
   document.getElementById('route-template-picker')?.remove();
 
-  let pickerState = { template: templates[0]?.key || 'road-sign', color: '#dc2626' };
-  const defaultColors = ['#dc2626','#ea580c','#1d4ed8','#374151','#7c3aed','#b45309','#0f766e'];
+  const pickerState = { template: templates[0]?.key || 'road-sign', color: '#dc2626' };
+  const defaultColors = ['#dc2626', '#ea580c', '#1d4ed8', '#374151', '#7c3aed', '#b45309', '#0f766e'];
   const sectionDefs = [
-    { key: 'reason',        label: 'Closure reason',      default: true },
-    { key: 'authority',     label: 'Authority',            default: true },
-    { key: 'closed_since',  label: 'Closed since',        default: true },
-    { key: 'reopen',        label: 'Expected reopening',   default: true },
-    { key: 'alt_route',     label: 'Alternative route',    default: true },
-    { key: 'affected_wards',label: 'Affected wards',       default: true },
-    { key: 'status_badge',  label: 'Status badge',         default: true },
-    { key: 'generated_date',label: 'Generated date',       default: false },
+    { key: 'reason', label: 'Closure reason', default: true },
+    { key: 'authority', label: 'Authority', default: true },
+    { key: 'closed_since', label: 'Closed since', default: true },
+    { key: 'reopen', label: 'Expected reopening', default: true },
+    { key: 'alt_route', label: 'Alternative route', default: true },
+    { key: 'affected_wards', label: 'Affected wards', default: true },
+    { key: 'status_badge', label: 'Status badge', default: true },
+    { key: 'generated_date', label: 'Generated date', default: false },
   ];
 
-  let pickerSections = {};
-  sectionDefs.forEach(s => { pickerSections[s.key] = s.default; });
-
-  const muniName = window._drmsaUser?.municipalities?.name || 'Municipality';
-  const date = new Date().toLocaleDateString('en-ZA');
-  const roadName = 'Main Street';
-
-  const swatchHtml = defaultColors.map(c=>`<span data-swatch="${c}" style="display:inline-block;width:20px;height:20px;border-radius:50%;background:${c};cursor:pointer;border:2px solid ${c===pickerState.color?'#fff':'transparent'};box-sizing:border-box;flex-shrink:0"></span>`).join('');
-  const sectionGroups = { 'Content': sectionDefs.filter(s=>!['status_badge','generated_date'].includes(s.key)), 'Design elements': sectionDefs.filter(s=>['status_badge','generated_date'].includes(s.key)) };
+  const presetSwatches = defaultColors.map(c => `<span data-swatch="${c}" style="display:inline-block;width:20px;height:20px;border-radius:50%;background:${c};cursor:pointer;border:2px solid ${c === pickerState.color ? '#fff' : 'transparent'};box-sizing:border-box;flex-shrink:0"></span>`).join('');
+  const sectionGroups = { Content: sectionDefs.filter(s => !['status_badge', 'generated_date'].includes(s.key)), 'Design elements': sectionDefs.filter(s => ['status_badge', 'generated_date'].includes(s.key)) };
 
   const modal = document.createElement('div');
   modal.id = 'route-template-picker';
@@ -135,21 +158,20 @@ function openRouteTemplatePicker({ templates, onDownload }) {
         ${templates.map((tpl, idx) => `
           <label style="display:block;border:1px solid var(--border);border-radius:8px;padding:9px;background:var(--bg3);cursor:pointer">
             <input type="radio" name="tpl" value="${tpl.key}" ${idx === 0 ? 'checked' : ''} />
-            <img alt="${tpl.label} preview" src="${routeTemplatePreviewDataUri(tpl.key)}" style="display:block;width:100%;height:64px;object-fit:cover;border-radius:6px;margin:6px 0;border:1px solid rgba(255,255,255,.22)" />
+            <img alt="${tpl.label} preview" data-template-preview="${tpl.key}" src="${routeTemplatePreviewDataUri(tpl.key)}" style="display:block;width:100%;height:64px;object-fit:cover;border-radius:6px;margin:6px 0;border:1px solid rgba(255,255,255,.22)" />
             <div style="font-weight:700;font-size:12px;margin-top:4px">${tpl.label}</div>
-            <div style="font-size:11px;color:var(--text3)">${tpl.desc || tpl.key}</div>
+            <div style="font-size:11px;color:var(--text3);display:flex;align-items:center;gap:6px">${swatchHtml((tpl.preview || '#1d4ed8').match(/#(?:[0-9a-fA-F]{3}){1,2}/)?.[0] || '#1d4ed8')} ${tpl.desc || tpl.key}</div>
           </label>
         `).join('')}
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;flex:1;overflow:hidden;min-height:0">
         <div style="border-right:1px solid var(--border);padding:14px;overflow-y:auto;display:flex;flex-direction:column;gap:12px">
           <div>
-            <div style="font-size:10px;font-weight:700;color:var(--text3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px">Template</div>
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:7px" id="route-tpl-grid"></div>
-          </div>
-          <div>
             <div style="font-size:10px;font-weight:700;color:var(--text3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px">Accent colour</div>
-            <div style="display:flex;gap:7px;flex-wrap:wrap" id="route-swatches">${swatchHtml}</div>
+            <div style="display:flex;gap:7px;flex-wrap:wrap" id="route-swatches">${presetSwatches}</div>
+            <label style="display:block;font-size:11px;margin-top:8px;color:var(--text2)">Custom colour
+              <input id="route-accent-color" type="color" value="${pickerState.color}" style="display:block;width:48px;height:30px;border:none;background:transparent;padding:0;margin-top:5px;cursor:pointer" />
+            </label>
           </div>
           <div>
             <div style="font-size:10px;font-weight:700;color:var(--text3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:6px">Live preview</div>
@@ -162,11 +184,11 @@ function openRouteTemplatePicker({ templates, onDownload }) {
         <div style="padding:14px;overflow-y:auto;display:flex;flex-direction:column;gap:12px">
           <div>
             <div style="font-size:10px;font-weight:700;color:var(--text3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px">Sections to include</div>
-            ${Object.entries(sectionGroups).map(([grp,secs])=>secs.length?`
+            ${Object.entries(sectionGroups).map(([grp, secs]) => secs.length ? `
               <div style="border:1px solid var(--border);border-radius:7px;overflow:hidden;margin-bottom:8px">
                 <div style="padding:7px 12px;background:var(--bg3);font-size:11px;font-weight:700;color:var(--text2);border-bottom:1px solid var(--border)">${grp}</div>
                 <div style="padding:8px 12px;display:flex;flex-direction:column;gap:6px">
-                  ${secs.map(s=>`<label style="display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer"><input type="checkbox" data-sec="${s.key}" ${s.default?'checked':''} style="width:13px;height:13px;accent-color:var(--accent)"/> ${s.label}</label>`).join('')}
+                  ${secs.map(s => `<label style="display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer"><input type="checkbox" data-sec="${s.key}" ${s.default ? 'checked' : ''} style="width:13px;height:13px;accent-color:var(--accent)"/> ${s.label}</label>`).join('')}
                 </div>
               </div>` : '').join('')}
           </div>
@@ -194,26 +216,70 @@ function openRouteTemplatePicker({ templates, onDownload }) {
       </div>
     </div>
   `;
+
+  const syncSwatches = (color) => {
+    modal.querySelectorAll('#route-swatches [data-swatch]').forEach(el => {
+      el.style.borderColor = (el.getAttribute('data-swatch') || '').toLowerCase() === String(color || '').toLowerCase() ? '#fff' : 'transparent';
+    });
+  };
+  const updatePreview = () => {
+    buildThumbnails(modal, templates);
+    const canvas = modal.querySelector('#route-preview-canvas');
+    const ctx = canvas?.getContext('2d');
+    if (!canvas || !ctx) return;
+    const template = modal.querySelector('input[name="tpl"]:checked')?.value || templates[0]?.key || 'road-sign';
+    const accent = modal.querySelector('#route-accent-color')?.value || pickerState.color;
+    pickerState.template = template;
+    pickerState.color = accent;
+    syncSwatches(accent);
+    const wrap = modal.querySelector('#route-preview-wrap');
+    const w = Math.max(220, Math.min(420, wrap?.clientWidth || 360));
+    const h = Math.round(w * 0.56);
+    canvas.width = w;
+    canvas.height = h;
+    const img = new Image();
+    img.onload = () => {
+      ctx.clearRect(0, 0, w, h);
+      ctx.drawImage(img, 0, 0, w, h);
+      ctx.fillStyle = _rHexToRgba(accent, 0.2);
+      ctx.fillRect(0, 0, w, 16);
+      ctx.fillStyle = accent;
+      ctx.fillRect(0, h - 7, w, 7);
+      ctx.strokeStyle = _rHexToRgba(accent, 0.4);
+      ctx.strokeRect(0.5, 0.5, w - 1, h - 1);
+    };
+    img.src = routeTemplatePreviewDataUri(template);
+  };
+
+  modal.querySelectorAll('#route-swatches [data-swatch]').forEach(el => {
+    el.addEventListener('click', () => {
+      const color = el.getAttribute('data-swatch');
+      if (!color) return;
+      const input = modal.querySelector('#route-accent-color');
+      if (input) input.value = color;
+      updatePreview();
+    });
+  });
+  modal.querySelectorAll('input[name="tpl"], #route-accent-color, #route-tone, #route-readable, [data-sec]').forEach(el => {
+    el?.addEventListener('change', updatePreview);
+  });
   modal.querySelectorAll('[data-close]').forEach(btn => btn.addEventListener('click', () => modal.remove()));
   modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
   const doDownload = async () => {
-    const template = modal.querySelector('input[name="tpl"]:checked')?.value || templates[0]?.key || 'official';
+    const template = modal.querySelector('input[name="tpl"]:checked')?.value || templates[0]?.key || 'road-sign';
     const tone = modal.querySelector('#route-tone')?.value || 'notification';
     const readable = !!modal.querySelector('#route-readable')?.checked;
-    const sections = {
-      authority: !!modal.querySelector('[data-sec="authority"]')?.checked,
-      closed_since: !!modal.querySelector('[data-sec="closed_since"]')?.checked,
-      reopen: !!modal.querySelector('[data-sec="reopen"]')?.checked,
-      alt_route: !!modal.querySelector('[data-sec="alt_route"]')?.checked
-    };
+    const color = modal.querySelector('#route-accent-color')?.value || pickerState.color;
+    const sections = {};
+    sectionDefs.forEach(sec => { sections[sec.key] = !!modal.querySelector(`[data-sec="${sec.key}"]`)?.checked; });
     modal.remove();
-    await onDownload({ template, tone, readable, sections });
+    await onDownload({ template, tone, readable, color, sections });
   };
   modal.querySelector('#route-download-now')?.addEventListener('click', doDownload);
   modal.querySelector('#route-download-top')?.addEventListener('click', doDownload);
   document.body.appendChild(modal);
-  buildThumbnails();
-  requestAnimationFrame(()=>{ updatePreview(); });
+  buildThumbnails(modal, templates);
+  requestAnimationFrame(() => { updatePreview(); });
 }
 
 export async function initRoutes(user) {
