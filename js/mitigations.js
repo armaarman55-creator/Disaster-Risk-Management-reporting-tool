@@ -9,6 +9,14 @@ export async function initMitigations(user) {
       <div class="card" style="padding:14px">
         <div class="h3">Mitigation Library</div>
         <div id="mitigations-meta" style="font-size:11px;color:var(--text3);margin-top:4px">Loading mitigation register…</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+          <input class="fl-input" id="mitigations-search" placeholder="Search intervention, hazard, KPA…" style="max-width:280px"/>
+          <select class="fl-sel" id="mitigations-source-filter" style="max-width:180px">
+            <option value="">All sources</option>
+            <option value="municipal">Municipal</option>
+            <option value="library">Library</option>
+          </select>
+        </div>
         <div style="margin-top:10px">
           <button class="btn btn-sm" id="mitigations-open-idp">Open IDP register</button>
         </div>
@@ -40,24 +48,45 @@ export async function initMitigations(user) {
   }
 
   const rows = data || [];
-  const localRows = rows.filter(r => !r.is_library);
-  const libraryRows = rows.filter(r => !!r.is_library);
-  meta.textContent = `${localRows.length} municipal mitigations · ${libraryRows.length} library items`;
+  const searchEl = document.getElementById('mitigations-search');
+  const sourceEl = document.getElementById('mitigations-source-filter');
 
-  if (!rows.length) {
-    list.innerHTML = `<div style="padding:16px;font-size:12px;color:var(--text3)">No mitigations available yet.</div>`;
-    return;
+  function filteredRows() {
+    const q = String(searchEl?.value || '').trim().toLowerCase();
+    const source = sourceEl?.value || '';
+    return rows.filter(row => {
+      const hay = `${row.intervention || ''} ${row.hazard || ''} ${row.kpa || ''} ${row.status || ''}`.toLowerCase();
+      const matchSearch = !q || hay.includes(q);
+      const matchSource = !source || (source === 'library' ? !!row.is_library : !row.is_library);
+      return matchSearch && matchSource;
+    });
   }
 
-  list.innerHTML = rows.map((row) => `
-    <div style="padding:12px 14px;border-bottom:1px solid var(--border);display:grid;gap:3px">
-      <div style="display:flex;justify-content:space-between;gap:8px;align-items:center">
-        <div style="font-size:12px;font-weight:700;color:var(--text);min-width:0">${escapeHtml(row.intervention || 'Untitled mitigation')}</div>
-        <span class="chip ${row.is_library ? 'chip-muted' : ''}" style="font-size:10px">${row.is_library ? 'Library' : 'Municipal'}</span>
+  function renderList() {
+    const filtered = filteredRows();
+    const localRows = filtered.filter(r => !r.is_library);
+    const libraryRows = filtered.filter(r => !!r.is_library);
+    meta.textContent = `${localRows.length} municipal mitigations · ${libraryRows.length} library items`;
+
+    if (!filtered.length) {
+      list.innerHTML = `<div style="padding:16px;font-size:12px;color:var(--text3)">No mitigations match your filters.</div>`;
+      return;
+    }
+
+    list.innerHTML = filtered.map((row) => `
+      <div style="padding:12px 14px;border-bottom:1px solid var(--border);display:grid;gap:3px">
+        <div style="display:flex;justify-content:space-between;gap:8px;align-items:center">
+          <div style="font-size:12px;font-weight:700;color:var(--text);min-width:0">${escapeHtml(row.intervention || 'Untitled mitigation')}</div>
+          <span class="chip ${row.is_library ? 'chip-muted' : ''}" style="font-size:10px">${row.is_library ? 'Library' : 'Municipal'}</span>
+        </div>
+        <div style="font-size:11px;color:var(--text3)">Hazard: ${escapeHtml(row.hazard || '—')} · KPA: ${escapeHtml(row.kpa || '—')} · Status: ${escapeHtml(row.status || 'draft')}</div>
       </div>
-      <div style="font-size:11px;color:var(--text3)">Hazard: ${escapeHtml(row.hazard || '—')} · KPA: ${escapeHtml(row.kpa || '—')} · Status: ${escapeHtml(row.status || 'draft')}</div>
-    </div>
-  `).join('');
+    `).join('');
+  }
+
+  searchEl?.addEventListener('input', renderList);
+  sourceEl?.addEventListener('change', renderList);
+  renderList();
 }
 
 function escapeHtml(v) {
