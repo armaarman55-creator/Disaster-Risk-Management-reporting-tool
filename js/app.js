@@ -144,7 +144,13 @@ async function enforceContingencyAssistantScope(pageId) {
   if (pageId === 'contingency') return;
   try {
     const m = await import('./contingency-dist/contingency-assistant-panel.js');
+    m.destroyAssistantPanel?.();
     m.teardownAssistantPanel?.();
+
+    document.getElementById('ca-panel')?.classList.remove('ca-open');
+    document.body.classList.remove('ca-open');
+    const toggle = document.getElementById('ca-toggle');
+    if (toggle) toggle.textContent = '✦ Assistant';
   } catch (e) {
     console.warn('Contingency assistant cleanup skipped:', e);
   }
