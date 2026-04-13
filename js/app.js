@@ -144,6 +144,7 @@ async function enforceContingencyAssistantScope(pageId) {
   if (pageId === 'contingency') return;
   try {
     const m = await import('./contingency-dist/contingency-assistant-panel.js');
+    m.destroyAssistantPanel?.();
     m.teardownAssistantPanel?.();
     m.destroyAssistantPanel?.();
   } catch (e) {
