@@ -128,14 +128,14 @@ export async function renderHVCPage() {
 function _pageShell() {
   return `
     <div style="display:flex;flex-direction:column;height:100%;overflow:hidden">
-      <div style="padding:12px 20px;background:var(--bg2);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0">
+      <div style="padding:12px 20px;background:var(--bg2);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;gap:10px;flex-wrap:wrap">
         <div>
           <div style="font-size:15px;font-weight:800;color:var(--text)">HVC Assessment Tool</div>
           <div style="font-size:11px;color:var(--text3);margin-top:1px">Hazard · Vulnerability · Capacity — DMA Act 57 of 2002 · Annexure 3</div>
         </div>
-        <div style="display:flex;gap:8px">
-          <button class="btn btn-sm" id="hvc-ref-btn">Risk reference</button>
-          <button class="btn btn-sm btn-red" id="hvc-new-btn">+ New assessment</button>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn btn-sm" id="hvc-ref-btn" style="width:auto">Risk reference</button>
+          <button class="btn btn-sm btn-red" id="hvc-new-btn" style="width:auto">+ New assessment</button>
         </div>
       </div>
       <div style="flex:1;overflow-y:auto" id="hvc-content">
@@ -156,7 +156,7 @@ function _bindHeaderBtns(isDraft) {
 // ── NEW ASSESSMENT FORM ───────────────────────────────────
 export function renderNewForm() {
   const cats = Object.keys(HAZARD_CATEGORIES);
-  return `<div style="padding:22px">
+  return `<div style="padding:22px 22px calc(22px + env(safe-area-inset-bottom,0px))">
     <div class="panel" style="margin-bottom:16px">
       <div class="ph"><div class="ph-title">Assessment details</div></div>
       <div class="pb">

@@ -38,10 +38,13 @@
 .cp-preview-body p{margin:0 0 8px}
 
 @media (max-width: 900px){
+  .cp-layout{grid-template-columns:1fr !important}
   .cp-layout.generate-collapsed{grid-template-columns:1fr !important}
   .cp-actions{justify-content:flex-start}
+  #cp-sidebar,#cp-plan-detail{min-width:0}
 }
 @media (max-width: 680px){
+  .cp-layout{padding-bottom:calc(16px + env(safe-area-inset-bottom,0px)) !important}
   .cp-detail-head{flex-direction:column}
   .cp-layout.split-view #cp-plan-detail .cp-detail-wrap{grid-template-columns:1fr}
   #cp-plan-detail .cp-preview-pane{max-height:none}
