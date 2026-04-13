@@ -403,6 +403,21 @@ export function destroyAssistantPanel() {
     _listeners.forEach(({ el, type, fn }) => el.removeEventListener(type, fn));
     _listeners.length = 0;
 }
+// ─── Public: teardown — full cleanup when leaving contingency page ───────────
+export function teardownAssistantPanel() {
+    destroyAssistantPanel();
+    if (_debounceTimer)
+        clearTimeout(_debounceTimer);
+    _debounceTimer = null;
+    _lastContextKey = '';
+    _lastData = null;
+    _currentTab = 'legislation';
+    document.getElementById('ca-panel')?.remove();
+    document.getElementById('ca-toggle')?.remove();
+    document.getElementById('ca-styles')?.remove();
+    document.body.classList.remove('ca-open');
+    _panelBuilt = false;
+}
 // ─── Attach focus/click listeners to every data-assistant-trigger element ────
 function attachBlockListeners() {
     document.querySelectorAll('[data-assistant-trigger]').forEach(el => {
