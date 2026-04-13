@@ -224,13 +224,22 @@ async function loadPageModule(pageId) {
         break;
       }
       case 'history':
-        renderPlaceholder('history', 'Assessment history', 'All completed HVC assessments will appear here.');
+        {
+          const m = await import('./history.js');
+          m.initHistory(_user);
+        }
         break;
       case 'mitigations':
-        renderPlaceholder('mitigations', 'Mitigation library', 'Pre-built mitigations from the hazard library.');
+        {
+          const m = await import('./mitigations.js');
+          m.initMitigations(_user);
+        }
         break;
       case 'reports':
-        renderPlaceholder('reports', 'Reports', 'Export centre — SitReps, HVC reports and IDP summaries.');
+        {
+          const m = await import('./reports.js');
+          m.initReports(_user);
+        }
         break;
     }
   } catch(e) {
