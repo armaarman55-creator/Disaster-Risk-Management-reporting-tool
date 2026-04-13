@@ -145,6 +145,7 @@ async function enforceContingencyAssistantScope(pageId) {
   try {
     const m = await import('./contingency-dist/contingency-assistant-panel.js');
     m.teardownAssistantPanel?.();
+    m.destroyAssistantPanel?.();
   } catch (e) {
     console.warn('Contingency assistant cleanup skipped:', e);
   }
