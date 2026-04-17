@@ -74,12 +74,27 @@ async function getRequesterAuthUser(env, authHeader) {
   return { user };
 }
 
-async function getUserProfile(env, userId) {
-  const q = `/rest/v1/user_profiles?id=eq.${encodeURIComponent(userId)}&select=id,role,municipality_id,email,full_name&limit=1`;
+async function fetchProfileByFilter(env, filterQuery) {
+  const q = `/rest/v1/user_profiles?${filterQuery}&select=id,role,municipality_id,full_name&limit=1`;
   const res = await supabaseRequest(env, q, { method: 'GET' });
   if (!res.ok) return null;
-  const rows = await res.json();
+  const rows = await res.json().catch(() => []);
   return rows?.[0] || null;
+}
+
+async function getUserProfile(env, authUser) {
+  const userId = authUser?.id ? String(authUser.id).trim() : '';
+
+  if (userId) {
+    const byId = await fetchProfileByFilter(env, `id=eq.${encodeURIComponent(userId)}`);
+    if (byId) return byId;
+
+    // Backward compatibility for deployments where profile links to auth user id via auth_user_id.
+    const byAuthUserId = await fetchProfileByFilter(env, `auth_user_id=eq.${encodeURIComponent(userId)}`);
+    if (byAuthUserId) return byAuthUserId;
+  }
+
+  return null;
 }
 
 export async function onRequest(context) {
@@ -109,9 +124,13 @@ export async function onRequest(context) {
       return json({ error: authError || 'Not authenticated.' }, 401);
     }
 
-    const requester = await getUserProfile(env, user.id);
+    const requester = await getUserProfile(env, user);
     if (!requester) {
-      return json({ error: 'Requester profile not found.' }, 403);
+      return json({
+        error: 'Requester profile not found. Ensure user_profiles has a row linked by id (or auth_user_id in legacy schemas).',
+        requester_auth_id: user.id,
+        requester_email: user.email || null
+      }, 403);
     }
     if (!['admin', 'disaster_officer'].includes(requester.role)) {
       return json({ error: 'Only admin/disaster_officer can invite users.' }, 403);
