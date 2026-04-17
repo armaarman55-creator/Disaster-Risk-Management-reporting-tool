@@ -172,6 +172,7 @@ export async function onRequest(context) {
 
     const inviteData = await inviteRes.json().catch(() => ({}));
     const invitedUserId = inviteData?.user?.id || inviteData?.id || null;
+    let passwordSetupEmailSent = false;
     if (invitedUserId) {
       await supabaseRequest(
         env,
@@ -190,11 +191,21 @@ export async function onRequest(context) {
       );
     }
 
+    const passwordSetupRes = await supabaseRequest(env, '/auth/v1/recover', {
+      method: 'POST',
+      body: JSON.stringify({
+        email,
+        ...(redirectTo ? { redirect_to: redirectTo } : {})
+      })
+    });
+    passwordSetupEmailSent = passwordSetupRes.ok;
+
     return json({
       ok: true,
       invited_email: email,
       municipality_id: targetMunicipalityId,
       user_role: inviteRole,
+      password_setup_email_sent: passwordSetupEmailSent,
       invite: inviteData
     }, 200);
   } catch (e) {

@@ -379,7 +379,8 @@ function showInviteForm() {
       </div>`;
       document.getElementById('inv-name').value = '';
       document.getElementById('inv-email').value = '';
-      showToast(`Invite sent to ${email}`);
+      const setupNote = payload?.password_setup_email_sent ? ' + password setup email sent' : '';
+      showToast(`Invite sent to ${email}${setupNote}`);
       await loadUsers();
     }
     btn.textContent = 'Send invite'; btn.disabled = false;
