@@ -343,12 +343,33 @@ function showInviteForm() {
     btn.textContent = 'Sending…'; btn.disabled = true;
     errEl.style.display = 'none';
 
-    const { error } = await supabase.auth.admin.inviteUserByEmail(email, {
-      data: { full_name: name, municipality_id: _user.municipality_id, user_role: role, invited_by_admin: 'true' }
-    });
+    const { data: sessionData } = await supabase.auth.getSession();
+    const token = sessionData?.session?.access_token;
+    if (!token) {
+      errEl.textContent = 'Your session expired. Please sign in again.';
+      errEl.style.display = 'block';
+      btn.textContent = 'Send invite'; btn.disabled = false;
+      return;
+    }
 
-    if (error) {
-      errEl.textContent = error.message; errEl.style.display = 'block';
+    const resp = await fetch('/api/invite-user', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`
+      },
+      body: JSON.stringify({
+        email,
+        full_name: name,
+        user_role: role,
+        municipality_id: _user.municipality_id
+      })
+    });
+    const payload = await resp.json().catch(() => ({}));
+
+    if (!resp.ok) {
+      errEl.textContent = payload?.error || 'Failed to send invite';
+      errEl.style.display = 'block';
     } else {
       const inviteRoleLabel = { disaster_officer: 'DRMO', planner: 'IDP Planner', viewer: 'Viewer', admin: 'Admin' }[role] || role;
       sentEl.innerHTML += `<div style="font-size:11px;color:var(--green);padding:4px 0;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px">
