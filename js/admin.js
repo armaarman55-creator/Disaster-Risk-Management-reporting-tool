@@ -298,7 +298,8 @@ async function loadUsers() {
               : ['disaster_officer','planner','viewer']
             ).map(r=>`<option value="${r}" ${u.role===r?'selected':''}>${roleLabel(r)}</option>`).join('')}
              </select>
-             <button class="btn btn-sm btn-red" onclick="suspendUser('${u.id}')">✕</button>`
+             <button class="btn btn-sm btn-red" onclick="suspendUser('${u.id}')">Suspend</button>
+             <button class="btn btn-sm" style="border-color:var(--red);color:var(--red)" onclick="removeUser('${u.id}')">Remove</button>`
           : '<span style="font-size:10px;color:var(--text3);font-family:monospace">You</span>'}
       </div>
     </div>`).join('');
@@ -452,6 +453,31 @@ window.suspendUser = async function(id, name) {
     await writeAudit('suspend', 'user', id, `Suspended user: ${name||id}`, { status:'active' }, { status:'suspended' });
     showToast('✓ User suspended');
   } else showToast(error.message, true);
+  loadUsers();
+};
+
+window.removeUser = async function(id) {
+  if (!confirm('Remove this user permanently? This deletes auth access and profile.')) return;
+  const { data: sessionData } = await supabase.auth.getSession();
+  const token = sessionData?.session?.access_token;
+  if (!token) { showToast('Session expired. Please sign in again.', true); return; }
+
+  const resp = await fetch('/api/remove-user', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`
+    },
+    body: JSON.stringify({ target_user_id: id })
+  });
+  const payload = await resp.json().catch(() => ({}));
+  if (!resp.ok) {
+    showToast(payload?.error || 'Failed to remove user', true);
+    return;
+  }
+
+  await writeAudit('remove', 'user', id, `Removed user: ${id}`, {}, { removed: true });
+  showToast('✓ User removed');
   loadUsers();
 };
 

@@ -171,6 +171,25 @@ export async function onRequest(context) {
     }
 
     const inviteData = await inviteRes.json().catch(() => ({}));
+    const invitedUserId = inviteData?.user?.id || inviteData?.id || null;
+    if (invitedUserId) {
+      await supabaseRequest(
+        env,
+        '/rest/v1/user_profiles?on_conflict=id',
+        {
+          method: 'POST',
+          headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
+          body: JSON.stringify([{
+            id: invitedUserId,
+            full_name: fullName,
+            role: inviteRole,
+            municipality_id: targetMunicipalityId,
+            status: 'active'
+          }])
+        }
+      );
+    }
+
     return json({
       ok: true,
       invited_email: email,
