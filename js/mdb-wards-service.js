@@ -1,4 +1,21 @@
-const MDB_WARDS_BASE = 'https://services7.arcgis.com/oeoyTUJC8HEeYsRB/arcgis/rest/services/MDB_Wards_2020/FeatureServer/0/query';
+const DEFAULT_MDB_WARDS_BASE = 'https://services7.arcgis.com/oeoyTUJC8HEeYsRB/arcgis/rest/services/MDB_Wards_2020/FeatureServer/0/query';
+
+function resolveMdbWardsBase() {
+  const globalOverride = typeof globalThis !== 'undefined' ? globalThis?.DRMSA_MDB_WARDS_QUERY_URL : null;
+  const localOverride = (() => {
+    try {
+      return typeof globalThis !== 'undefined' && globalThis?.localStorage
+        ? globalThis.localStorage.getItem('drmsa.mdbWardsQueryUrl')
+        : null;
+    } catch (_) {
+      return null;
+    }
+  })();
+
+  const candidate = (globalOverride || localOverride || '').trim();
+  if (candidate && /\/FeatureServer\/\d+\/query/i.test(candidate)) return candidate;
+  return DEFAULT_MDB_WARDS_BASE;
+}
 
 function escapeWhereValue(value) {
   return String(value || '').trim().replace(/'/g, "''");
@@ -11,7 +28,7 @@ export async function fetchMdbWardsByMunicipality({ muniCode, muniName }) {
 
   let fields = [];
   try {
-    const probeRes = await fetch(`${MDB_WARDS_BASE}?where=1%3D1&outFields=*&f=json&resultRecordCount=1`);
+    const probeRes = await fetch(`${resolveMdbWardsBase()}?where=1%3D1&outFields=*&f=json&resultRecordCount=1`);
     if (probeRes.ok) {
       const probeData = await probeRes.json();
       fields = (probeData.fields || []).map(f => f.name);
@@ -33,7 +50,7 @@ export async function fetchMdbWardsByMunicipality({ muniCode, muniName }) {
   });
 
   for (const where of new Set(attempts)) {
-    const url = `${MDB_WARDS_BASE}?where=${encodeURIComponent(where)}&outFields=*&outSR=4326&f=geojson&resultRecordCount=200&returnGeometry=true`;
+    const url = `${resolveMdbWardsBase()}?where=${encodeURIComponent(where)}&outFields=*&outSR=4326&f=geojson&resultRecordCount=200&returnGeometry=true`;
     try {
       const res = await fetch(url);
       if (!res.ok) continue;

@@ -298,7 +298,8 @@ async function loadUsers() {
               : ['disaster_officer','planner','viewer']
             ).map(r=>`<option value="${r}" ${u.role===r?'selected':''}>${roleLabel(r)}</option>`).join('')}
              </select>
-             <button class="btn btn-sm btn-red" onclick="suspendUser('${u.id}')">✕</button>`
+             <button class="btn btn-sm btn-red" onclick="suspendUser('${u.id}')">Suspend</button>
+             <button class="btn btn-sm" style="border-color:var(--red);color:var(--red)" onclick="removeUser('${u.id}')">Remove</button>`
           : '<span style="font-size:10px;color:var(--text3);font-family:monospace">You</span>'}
       </div>
     </div>`).join('');
@@ -343,12 +344,33 @@ function showInviteForm() {
     btn.textContent = 'Sending…'; btn.disabled = true;
     errEl.style.display = 'none';
 
-    const { error } = await supabase.auth.admin.inviteUserByEmail(email, {
-      data: { full_name: name, municipality_id: _user.municipality_id, user_role: role, invited_by_admin: 'true' }
-    });
+    const { data: sessionData } = await supabase.auth.getSession();
+    const token = sessionData?.session?.access_token;
+    if (!token) {
+      errEl.textContent = 'Your session expired. Please sign in again.';
+      errEl.style.display = 'block';
+      btn.textContent = 'Send invite'; btn.disabled = false;
+      return;
+    }
 
-    if (error) {
-      errEl.textContent = error.message; errEl.style.display = 'block';
+    const resp = await fetch('/api/invite-user', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`
+      },
+      body: JSON.stringify({
+        email,
+        full_name: name,
+        user_role: role,
+        municipality_id: _user.municipality_id
+      })
+    });
+    const payload = await resp.json().catch(() => ({}));
+
+    if (!resp.ok) {
+      errEl.textContent = payload?.error || 'Failed to send invite';
+      errEl.style.display = 'block';
     } else {
       const inviteRoleLabel = { disaster_officer: 'DRMO', planner: 'IDP Planner', viewer: 'Viewer', admin: 'Admin' }[role] || role;
       sentEl.innerHTML += `<div style="font-size:11px;color:var(--green);padding:4px 0;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px">
@@ -357,7 +379,8 @@ function showInviteForm() {
       </div>`;
       document.getElementById('inv-name').value = '';
       document.getElementById('inv-email').value = '';
-      showToast(`Invite sent to ${email}`);
+      const setupNote = payload?.password_setup_email_sent ? ' + password setup email sent' : '';
+      showToast(`Invite sent to ${email}${setupNote}`);
       await loadUsers();
     }
     btn.textContent = 'Send invite'; btn.disabled = false;
@@ -431,6 +454,31 @@ window.suspendUser = async function(id, name) {
     await writeAudit('suspend', 'user', id, `Suspended user: ${name||id}`, { status:'active' }, { status:'suspended' });
     showToast('✓ User suspended');
   } else showToast(error.message, true);
+  loadUsers();
+};
+
+window.removeUser = async function(id) {
+  if (!confirm('Remove this user permanently? This deletes auth access and profile.')) return;
+  const { data: sessionData } = await supabase.auth.getSession();
+  const token = sessionData?.session?.access_token;
+  if (!token) { showToast('Session expired. Please sign in again.', true); return; }
+
+  const resp = await fetch('/api/remove-user', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`
+    },
+    body: JSON.stringify({ target_user_id: id })
+  });
+  const payload = await resp.json().catch(() => ({}));
+  if (!resp.ok) {
+    showToast(payload?.error || 'Failed to remove user', true);
+    return;
+  }
+
+  await writeAudit('remove', 'user', id, `Removed user: ${id}`, {}, { removed: true });
+  showToast('✓ User removed');
   loadUsers();
 };
 
